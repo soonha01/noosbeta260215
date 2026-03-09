@@ -5,7 +5,7 @@
 
 <mapper namespace="com.noos.backend.auth.mapper.AuthMapper">
 
-    <insert id="signup">
+    <insert id="insertUser">
 
         INSERT INTO users
         (
