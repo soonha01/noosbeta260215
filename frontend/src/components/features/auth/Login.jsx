@@ -363,14 +363,51 @@ const Login = ({ onBack }) => {
     }, 800);
   };
 
-  const handleLoginClick = (e) => {
-    e.preventDefault();
-    setIsTransitioning(true);
-    setTimeout(() => {
-      setAuthStage('device-question');
-      setIsTransitioning(false);
-    }, 500);
+  //로그인 클릭 시 백엔드 요청 POST
+  const handleLoginClick = async (e) => {
+  e.preventDefault(); // 폼 제출 시 페이지 새로고침 방지
+  
+  // 백엔드 <-> 프론트 구조 일치
+  const loginPayload = {
+    loginId: email,    // 사용자가 입력한 email 상태값
+    password: password // 사용자가 입력한 password 상태값
   };
+
+  try {
+    setIsTransitioning(true);
+
+    //백엔드로 로그인 요청 전송
+    const response = await fetch("http://localhost:8080/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(loginPayload),
+    });
+
+    //응답 결과 처리
+    if (response.ok) {
+      const result = await response.text();
+      
+      if (result === "ok") {
+        setTimeout(() => {
+          setAuthStage('device-question');
+          setIsTransitioning(false);
+        }, 500);
+      } else {
+        setIsTransitioning(false);
+        alert("아이디 또는 비밀번호가 올바르지 않습니다.");
+      }
+    } else {
+      setIsTransitioning(false);
+      alert("로그인 요청 중 서버 에러가 발생했습니다.");
+    }
+  } catch (error) {
+    setIsTransitioning(false);
+    console.error("통신 에러:", error);
+    alert("서버와 연결할 수 없습니다.");
+  }
+};
 
   const handleMuseChoice = (choice) => {
     if (isTransitioning) return;
@@ -676,6 +713,10 @@ const Login = ({ onBack }) => {
                         name="email"
                         placeholder="you@example.com"
                         required
+
+                        //이메일
+                        value={email} 
+                        onChange={(e) => setEmail(e.target.value)}
                       />
 
                       <label className="auth-label" htmlFor="login-password">Password</label>
@@ -686,6 +727,10 @@ const Login = ({ onBack }) => {
                         name="password"
                         placeholder="••••••••"
                         required
+
+                        //패스워드
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                       />
                     </div>
 

@@ -6,7 +6,6 @@
 <mapper namespace="com.noos.backend.auth.mapper.AuthMapper">
 
     <insert id="insertUser">
-
         INSERT INTO users
         (
             login_id,
@@ -23,5 +22,12 @@
             )
 
     </insert>
+
+    <select id="checkUser" resultType="int">
+        SELECT COUNT(*)
+        FROM users
+        WHERE login_id = #{loginId}
+          AND password_hash = #{password}
+    </select>
 
 </mapper>
