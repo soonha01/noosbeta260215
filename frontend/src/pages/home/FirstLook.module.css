@@ -1,0 +1,294 @@
+/* 블랙&화이트 우주 테마 */
+.container {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  background: #000000;
+}
+
+.spaceBackground {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at 30% 70%,
+    rgba(40, 40, 40, 0.3) 0%,
+    rgba(0, 0, 0, 0.8) 40%,
+    #000000 100%
+  ),
+  radial-gradient(
+    ellipse at 70% 30%,
+    rgba(60, 60, 60, 0.2) 0%,
+    rgba(0, 0, 0, 0.9) 50%,
+    transparent 100%
+  );
+  z-index: 0;
+}
+
+/* 새로운 중앙 정렬 헤더 */
+.headerContainer {
+  position: absolute;
+  top: 15vh;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.headerBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 1.5rem;
+  padding: 0.72rem 1.4rem;
+  backdrop-filter: blur(15px);
+  box-shadow:
+    0 0 20px rgba(255, 255, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  width: fit-content;
+  min-width: 264px;
+}
+
+.badgeText {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.76rem;
+  font-weight: 500;
+  font-family: "Cardinal Fruit", "Inter", "Arial", sans-serif;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  text-align: center;
+  flex: 1;
+}
+
+.dividerDot {
+  width: 6px;
+  height: 6px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.8) 50%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+  border-radius: 50%;
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.6),
+    0 0 16px rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+/* 메인 컨텐츠 */
+.mainContent {
+  text-align: center;
+  z-index: 10;
+  max-width: 90vw;
+  perspective: 1000px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: clamp(1.8rem, 4.8vw, 3.2rem);
+  font-weight: 500;
+  line-height: 1.08;
+  margin-bottom: 1.35rem;
+  color: #ffffff;
+  font-family: "Cardinal Fruit", "Inter", "Arial", sans-serif;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.3),
+    0 0 20px rgba(255, 255, 255, 0.1),
+    0 0 40px rgba(255, 255, 255, 0.05);
+}
+
+/* 우주선 발사 버튼 */
+.launchButton {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  gap: 1rem;
+  padding: 1.2rem 2.5rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3rem;
+  color: #FFFFFF;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 5px 20px rgba(255, 255, 255, 0.1),
+    0 0 30px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.launchButton:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.15) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 8px 30px rgba(255, 255, 255, 0.2),
+    0 0 40px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.rocketIcon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.5));
+}
+
+.launchText {
+  font-family: "Cardinal Fruit", "Inter", monospace;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.launchTrail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.02) 50%,
+    transparent 100%
+  );
+  border-radius: 3rem;
+  pointer-events: none;
+}
+
+.thrusterGlow {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.thrusterParticle {
+  position: absolute;
+  width: 4px;
+  height: 8px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(255, 255, 255, 0.6) 50%,
+    transparent 100%
+  );
+  border-radius: 2px;
+  left: calc(50% + var(--offset, 0px));
+  filter: blur(1px);
+}
+
+.thrusterParticle:nth-child(1) { --offset: -15px; }
+.thrusterParticle:nth-child(2) { --offset: -9px; }
+.thrusterParticle:nth-child(3) { --offset: -3px; }
+.thrusterParticle:nth-child(4) { --offset: 3px; }
+.thrusterParticle:nth-child(5) { --offset: 9px; }
+.thrusterParticle:nth-child(6) { --offset: 15px; }
+
+/* 글로우 이펙트 */
+.glowEffect {
+  position: absolute;
+  bottom: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 600px;
+  height: 150px;
+  background: radial-gradient(
+    ellipse,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.05) 40%,
+    transparent 70%
+  );
+  filter: blur(50px);
+  z-index: 2;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .headerBadge {
+    min-width: 230px;
+    padding: 0.62rem 1.1rem;
+    gap: 0.8rem;
+  }
+
+  .badgeText {
+    font-size: 0.7rem;
+  }
+
+  .dividerDot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .title {
+    font-size: clamp(1.45rem, 7.2vw, 2.25rem);
+    margin-bottom: 1.15rem;
+  }
+
+  .launchButton {
+    padding: 1rem 2rem;
+    font-size: 1rem;
+  }
+
+  .rocketIcon {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .spacecraft {
+    top: 2rem;
+  }
+
+  .spacecraftBody {
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.8rem 1.2rem;
+  }
+
+  .launchButton {
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 1.5rem;
+  }
+}
