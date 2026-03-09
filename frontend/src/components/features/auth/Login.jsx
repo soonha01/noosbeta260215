@@ -262,7 +262,13 @@ const Login = ({ onBack }) => {
   const [showSolarEntryWarp, setShowSolarEntryWarp] = useState(false);
   const [authStage, setAuthStage] = useState('login');
   const warpExitTimerRef = useRef(null);
+
+  //이름, 이메일 ,패스워드
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+
   const [surveyAnswers, setSurveyAnswers] = useState(() => createInitialStateSurveyAnswers());
   const [surveyStepIndex, setSurveyStepIndex] = useState(0);
 
@@ -582,6 +588,7 @@ const Login = ({ onBack }) => {
                   <Step>
                     <h2>Personal Information</h2>
                     <input
+                     //회원가입->(이름입력)
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Your full name"
@@ -599,7 +606,10 @@ const Login = ({ onBack }) => {
                   <Step>
                     <h2>Account Details</h2>
                     <input
+                    //회원가입->(이메일 입력)
                       type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       placeholder="Email address"
                       style={{
                         width: '100%',
@@ -612,7 +622,10 @@ const Login = ({ onBack }) => {
                       }}
                     />
                     <input
+                    ////회원가입->(비밀번호 입력)
                       type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                       placeholder="Password"
                       style={{
                         width: '100%',

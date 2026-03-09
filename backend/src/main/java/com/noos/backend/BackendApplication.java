@@ -1,11 +1,13 @@
 package com.noos.backend;
 
+
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@MapperScan("com.noos.backend.auth.mapper")
+
 @SpringBootApplication
+@MapperScan("com.noos.backend.**.mapper")  // 하위 모든 mapper 스캔
 public class BackendApplication {
 
     public static void main(String[] args) {
