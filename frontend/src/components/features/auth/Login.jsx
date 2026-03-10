@@ -15,6 +15,8 @@ import {
   createInitialStateSurveyAnswers,
 } from '../../../lib/stateSurvey';
 
+// import { MockMuseClient } from 'muse-js'; // 기기 없을 때 -> 나중에는 web-muse로 바꿔야함
+
 const SolarExplorer = lazy(() => import('../solar/SolarExplorer'));
 
 const RESULT_NEXT_STEP_MESSAGE =
@@ -255,12 +257,36 @@ const SolarEntryWarpOverlay = () => {
   );
 };
 
+// 라이브러리 대신 우리가 직접 만든 가짜 기기 클래스
+class MyMockMuseClient {
+  constructor() {
+    this.eegReadings = {
+      subscribe: (callback) => {
+        // 0.5초마다 가짜 뇌파 데이터를 생성해서 전달
+        this.interval = setInterval(() => {
+          callback({
+            electrode: Math.floor(Math.random() * 4), // 0~3번 전극
+            samples: Array.from({ length: 12 }, () => Math.random() * 100 - 50),
+            timestamp: Date.now()
+          });
+        }, 500);
+      }
+    };
+  }
+  async connect() { return Promise.resolve(); } // 연결 성공 시뮬레이션
+  async start() { return Promise.resolve(); }   // 시작 성공 시뮬레이션
+}
+
 const Login = ({ onBack }) => {
   const [showStepper, setShowStepper] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showSolarExplorer, setShowSolarExplorer] = useState(false);
   const [showSolarEntryWarp, setShowSolarEntryWarp] = useState(false);
   const [authStage, setAuthStage] = useState('login');
+
+  //뇌파 데이터
+  const [eegData, setEegData] = useState(null);
+
   const warpExitTimerRef = useRef(null);
 
   //이름, 이메일 ,패스워드
@@ -409,13 +435,40 @@ const Login = ({ onBack }) => {
   }
 };
 
-  const handleMuseChoice = (choice) => {
+//Muse기기 유무 확인
+  const handleMuseChoice = async(choice) => {
     if (isTransitioning) return;
 
     if (choice === 'yes') {
       setAuthStage('device-connecting');
+
+      try {
+        //가짜 기기 생성 및 시작
+        const client = new MyMockMuseClient();
+        
+        //실제 블루투스 팝업 대기 느낌을 위해 약간의 딜레이
+        await new Promise(resolve => setTimeout(resolve, 800)); 
+        
+        await client.connect();
+        await client.start();
+
+        // 데이터 스트림 구독 (콘솔에서 확인)
+        client.eegReadings.subscribe(reading => {
+          //나중에 Spring Boot 웹소켓으로 쏨
+          console.log("EEG Stream (Mock):", reading.samples);
+          setEegData(reading.samples);
+        });
+        
+
+        console.log("Muse S Athena Simulator 활성화 완료");
+
+      } catch (error) {
+        console.error("기기 시뮬레이션 오류:", error);
+        setAuthStage('device-question');
+      }
       return;
     }
+
 
     setIsTransitioning(true);
     window.setTimeout(() => {
@@ -788,6 +841,11 @@ const Login = ({ onBack }) => {
                   <div className="flow-card flow-card-analysis">
                     <p className="flow-kicker">Device Connection</p>
                     <h2 className="flow-title">Muse S Athena를 연결중입니다.</h2>
+
+                    {/* 데이터 수신 확인용) */}
+                    <p style={{ fontSize: '12px', color: '#00ff00', fontFamily: 'monospace' }}>
+                      {eegData ? `Streaming: ${eegData[0].toFixed(2)}μV` : 'Initializing...'}
+                    </p>
                     <p className="flow-description">
                       응답 분석과 동일한 처리 흐름으로 디바이스 상태를 점검하고 있습니다.
                     </p>
