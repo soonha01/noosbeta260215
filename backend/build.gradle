@@ -42,6 +42,10 @@ dependencies {
     // 테스트 기본 라이브러리
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 
+    // Spring Security와 OAuth2 Client
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+
 }
 
 tasks.named('test') {

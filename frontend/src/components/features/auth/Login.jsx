@@ -381,13 +381,16 @@ const Login = ({ onBack }) => {
     })
   });
 
-
     setIsTransitioning(true);
     setTimeout(() => {
       setShowStepper(false);
       setIsTransitioning(false);
     }, 800);
   };
+
+  // 백엔드의 구글 OAuth2 기본 진입점으로 리다이렉트
+  const handleGoogleLogin = () => {
+  window.location.href = 'http://localhost:8080/oauth2/authorization/google'; };
 
   //로그인 클릭 시 백엔드 요청 POST
   const handleLoginClick = async (e) => {
@@ -788,13 +791,28 @@ const Login = ({ onBack }) => {
                     </div>
 
                     <div className="social-login">
-                      <button type="button" className="social-button" aria-label="Login with Google">
+                      <button 
+                        type="button" 
+                        className="social-button" 
+                        aria-label="Login with Google"
+                        onClick={handleGoogleLogin} // 클릭 이벤트 추가
+                      >
                         <Chrome aria-hidden="true" size={16} strokeWidth={1.8} />
                       </button>
-                      <button type="button" className="social-button" aria-label="Login with GitHub">
+
+                      <button 
+                        type="button" 
+                        className="social-button" 
+                        aria-label="Login with GitHub"
+                          >
                         <Github aria-hidden="true" size={16} strokeWidth={1.8} />
                       </button>
-                      <button type="button" className="social-button" aria-label="Login with Apple">
+
+                      <button 
+                        type="button" 
+                        className="social-button" 
+                        aria-label="Login with Apple"
+                        >
                         <Apple aria-hidden="true" size={16} strokeWidth={1.8} />
                       </button>
                     </div>
