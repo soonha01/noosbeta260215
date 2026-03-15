@@ -5,58 +5,63 @@
 
 <mapper namespace="com.noos.backend.auth.mapper.AuthMapper">
 
-    <insert id="insertUser">
-        INSERT INTO users
-        (
-            login_id,
-            password_hash,
-            display_name,
-            provider,
-            created_at
-        )
-        VALUES
+    <!--회원가입 -->
+        <insert id="insertUser">
+            INSERT INTO users
             (
-                #{loginId},
-                #{password},
-                #{displayName},
-                'local',
-                NOW()
+                login_id,
+                password_hash,
+                display_name,
+                provider,
+                created_at
             )
+            VALUES
+                (
+                    #{loginId},
+                    #{password},
+                    #{displayName},
+                    'local',
+                    NOW()
+                )
 
-    </insert>
-
-    <select id="checkUser" resultType="int">
-        SELECT COUNT(*)
-        FROM users
-        WHERE login_id = #{loginId}
-          AND password_hash = #{password}
-          AND provider = 'local'
-    </select>
+        </insert>
 
 
+    <!--로그인 -->
+        <select id="checkUser" resultType="int">
+            SELECT COUNT(*)
+            FROM users
+            WHERE login_id = #{loginId}
+              AND password_hash = #{password}
+              AND provider = 'local'
+        </select>
 
-    <insert id="saveOrUpdateOAuthUser">
-        INSERT INTO users (
-            login_id,
-            display_name,
-            provider,
-            provider_id,
-            created_at
-        ) VALUES (
-                     #{loginId},
-                     #{displayName},
-                     #{provider},
-                     #{providerId},
-                     NOW()
-                 )
-            ON DUPLICATE KEY UPDATE
-                                 display_name = #{displayName},
-                                 updated_at = NOW()
-    </insert>
 
-    <select id="findByProviderInfo" resultType="com.noos.backend.auth.dto.User">
-        SELECT * FROM users
-        WHERE provider = #{provider} AND provider_id = #{providerId}
-    </select>
+    <!--구글,애플,깃 로그인 정보 저장 -->
+        <insert id="saveOrUpdateOAuthUser">
+            INSERT INTO users (
+                login_id,
+                display_name,
+                provider,
+                provider_id,
+                created_at
+            ) VALUES (
+                         #{loginId},
+                         #{displayName},
+                         #{provider},
+                         #{providerId},
+                         NOW()
+                     )
+                ON DUPLICATE KEY UPDATE
+                                     display_name = #{displayName},
+                                     updated_at = NOW()
+        </insert>
 
-</mapper>
+
+
+        <select id="findByProviderInfo" resultType="com.noos.backend.auth.dto.User">
+            SELECT * FROM users
+            WHERE provider = #{provider} AND provider_id = #{providerId}
+        </select>
+
+    </mapper>

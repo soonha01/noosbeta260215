@@ -294,6 +294,9 @@ const Login = ({ onBack }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  //Next스텝
+  const [activeStep, setActiveStep] = useState(1);
+
 
   const [surveyAnswers, setSurveyAnswers] = useState(() => createInitialStateSurveyAnswers());
   const [surveyStepIndex, setSurveyStepIndex] = useState(0);
@@ -673,6 +676,14 @@ const Login = ({ onBack }) => {
                   onFinalStepCompleted={handleStepperComplete}
                   backButtonText="Previous"
                   nextButtonText="Next"
+
+                  onStepChange={(newStep) => setActiveStep(newStep)}
+                  disableStepIndicators={true}
+                  nextButtonProps={{
+                    disabled: 
+                      (activeStep === 2 && !name.trim()) || // 1단계: 이름이 비어있으면 막음
+                      (activeStep === 3 && (!email.trim() || !password.trim())) // 2단계: 이메일이나 비번이 비어있으면 막음
+                  }}
                 >
                   <Step>
                     <h2>Welcome to Sign Up!</h2>
