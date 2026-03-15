@@ -282,7 +282,12 @@ const Login = ({ onBack }) => {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showSolarExplorer, setShowSolarExplorer] = useState(false);
   const [showSolarEntryWarp, setShowSolarEntryWarp] = useState(false);
-  const [authStage, setAuthStage] = useState('login');
+  
+  //주소창을 확인해서 로그인 성공이면 바로 기기 체크 화면으로 이동
+  const [authStage, setAuthStage] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('login') === 'success' ? 'device-question' : 'login';
+  });
 
   //뇌파 데이터
   const [eegData, setEegData] = useState(null);
@@ -326,6 +331,18 @@ const Login = ({ onBack }) => {
     }
     return 0.5;
   }, [authStage, isTransitioning]);
+
+  //소셜 로그인 성공 로직 추가
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('login') === 'success') {
+      // 0.1초 뒤에 주소창을 깨끗하게 정리 (localhost:3000 으로 만듦)
+      const timeoutId = setTimeout(() => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, []);
 
   useEffect(() => {
     const timeoutIds = [];

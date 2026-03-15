@@ -1269,11 +1269,21 @@ function App() {
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
-    // URL에 main=true 파라미터가 있으면 메인 페이지로 바로 이동
-    if (searchParams.get('main') === 'true') {
-      setShowFirstLook(false);
-    }
-  }, [searchParams]);
+  // 주소창에서 파라미터들을 읽어옵니다.
+  const loginStatus = searchParams.get('login');
+  const isMain = searchParams.get('main');
+
+  //소셜 로그인 성공 시 (?login=success)
+  if (loginStatus === 'success') {
+    setShowFirstLook(false); // 인트로 화면을 끄고
+    setShowLogin(true);      // 로그인 컴포넌트(Login.jsx)를 강제로 띄움
+  } 
+  
+  //메인 이동 시 (?main=true)
+  else if (isMain === 'true') {
+    setShowFirstLook(false);
+  }
+}, [searchParams]);
 
   const handleJumpToMain = () => {
     setIsTransitioning(true);
