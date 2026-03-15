@@ -394,7 +394,11 @@ const Login = ({ onBack }) => {
   // 백엔드의 구글 OAuth2 기본 진입점으로 리다이렉트
   const handleGoogleLogin = () => {
   window.location.href = 'http://localhost:8080/oauth2/authorization/google'; };
-
+  
+  //깃허브
+  const handleGithubLogin = () => {
+  window.location.href = 'http://localhost:8080/oauth2/authorization/github'; };
+  
   //로그인 클릭 시 백엔드 요청 POST
   const handleLoginClick = async (e) => {
   e.preventDefault(); // 폼 제출 시 페이지 새로고침 방지
@@ -815,7 +819,8 @@ const Login = ({ onBack }) => {
                         type="button" 
                         className="social-button" 
                         aria-label="Login with GitHub"
-                          >
+                        onClick={handleGithubLogin}
+                      >
                         <Github aria-hidden="true" size={16} strokeWidth={1.8} />
                       </button>
 
