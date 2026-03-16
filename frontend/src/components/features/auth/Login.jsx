@@ -17,7 +17,7 @@ import {
 } from '../../../lib/stateSurvey';
 import { createMuseClient } from '../../../lib/muse';
 
-// import { MockMuseClient } from 'muse-js'; // 기기 없을 때 -> 나중에는 web-muse로 바꿔야함
+
 
 const SolarExplorer = lazy(() => import('../solar/SolarExplorer'));
 
@@ -27,44 +27,6 @@ const CURRENT_STATE_STORAGE_KEY = 'noos_current_state';
 const DEVICE_CONNECTION_RESULT = {
   title: 'Muse S Athena 연결 완료',
   summary: '디바이스 연결 및 신호 확인이 완료되었습니다. Solar Explorer 진입 준비가 끝났습니다.',
-  conclusion:
-    '연결 상태가 안정적으로 확보되었습니다. 원하시는 집중이나 감정상태를 행성을 선택하여 보다 나은 환경을 만들어보세요.',
-  keyIndicators: [
-    '연결 품질 100/100',
-    '센서 접촉 98/100',
-    '신호 안정성 96/100',
-    '전송 준비도 100/100',
-  ],
-  dimensions: [
-    {
-      key: 'connection',
-      label: '연결 상태',
-      scoreText: 'READY',
-      detailText: '하드웨어 연결 및 동기화 완료',
-      levelText: '완료',
-    },
-    {
-      key: 'signal',
-      label: '신호 품질',
-      scoreText: '96/100',
-      detailText: '노이즈 억제 및 안정 구간 확보',
-      levelText: '안정',
-    },
-    {
-      key: 'contact',
-      label: '센서 접촉',
-      scoreText: '98/100',
-      detailText: '전극 접촉 상태 양호',
-      levelText: '양호',
-    },
-    {
-      key: 'sync',
-      label: '데이터 동기화',
-      scoreText: 'LIVE',
-      detailText: '실시간 데이터 스트림 준비 완료',
-      levelText: '활성',
-    },
-  ],
 };
 const SURVEY_METHOD_NOTE =
   '본 결과는 K-PANAS/KSS/PSS-4 기반의 비의료적 상태 스크리닝입니다.';
@@ -263,25 +225,6 @@ const SolarEntryWarpOverlay = () => {
   );
 };
 
-// 라이브러리 대신 우리가 직접 만든 가짜 기기 클래스
-/* class MyMockMuseClient {
-  constructor() {
-    this.eegReadings = {
-      subscribe: (callback) => {
-        // 0.5초마다 가짜 뇌파 데이터를 생성해서 전달
-        this.interval = setInterval(() => {
-          callback({
-            electrode: Math.floor(Math.random() * 4), // 0~3번 전극
-            samples: Array.from({ length: 12 }, () => Math.random() * 100 - 50),
-            timestamp: Date.now()
-          });
-        }, 500);
-      }
-    };
-  }
-  async connect() { return Promise.resolve(); } // 연결 성공 시뮬레이션
-  async start() { return Promise.resolve(); }   // 시작 성공 시뮬레이션
-} */
 
 const Login = ({ onBack }) => {
   const [showStepper, setShowStepper] = useState(false);
@@ -656,18 +599,15 @@ const Login = ({ onBack }) => {
         keyIndicators: surveyResult?.keyIndicators || [],
         measuredAt: now,
       });
-    } else if (authStage === 'device-success') {
-      saveCurrentStateSnapshot({
-        source: 'muse',
-        sourceLabel: 'Muse S Athena 측정',
-        title: DEVICE_CONNECTION_RESULT.title,
-        summary: DEVICE_CONNECTION_RESULT.summary,
-        conclusion: DEVICE_CONNECTION_RESULT.conclusion,
-        dimensions: DEVICE_CONNECTION_RESULT.dimensions,
-        keyIndicators: DEVICE_CONNECTION_RESULT.keyIndicators,
-        measuredAt: now,
-      });
-    }
+      } else if (authStage === 'device-success') {
+        saveCurrentStateSnapshot({
+          source: 'muse',
+          sourceLabel: 'Muse S Athena 측정',
+          title: DEVICE_CONNECTION_RESULT.title,
+          summary: DEVICE_CONNECTION_RESULT.summary,
+          measuredAt: now,
+        });
+      }
 
     setIsTransitioning(true);
     if (warpExitTimerRef.current) {
