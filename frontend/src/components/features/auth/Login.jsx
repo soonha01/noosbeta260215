@@ -7,6 +7,7 @@ import Stepper, { Step } from './Stepper';
 import BackButton from '../../ui/buttons/BackButton';
 import StateSurveyPage from './StateSurveyPage';
 import StateSurveyResultPage from './StateSurveyResultPage';
+import MuseSignalDashboard from './MuseSignalDashboard';
 import {
   STATE_SURVEY_SECTIONS,
   STATE_SURVEY_TOTAL_ITEMS,
@@ -14,6 +15,7 @@ import {
   countAnsweredStateSurvey,
   createInitialStateSurveyAnswers,
 } from '../../../lib/stateSurvey';
+import { createMuseClient } from '../../../lib/muse';
 
 // import { MockMuseClient } from 'muse-js'; // 기기 없을 때 -> 나중에는 web-muse로 바꿔야함
 
@@ -68,8 +70,9 @@ const SURVEY_METHOD_NOTE =
   '본 결과는 K-PANAS/KSS/PSS-4 기반의 비의료적 상태 스크리닝입니다.';
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const DEVICE_CONNECTING_STAGE_DURATION_MS = 2100;
-const DEVICE_COMPLETE_STAGE_DURATION_MS = 4250;
+const DEVICE_CONNECTING_STAGE_DURATION_MS = 1400;
+const MEASUREMENT_DURATION_SEC = 8;
+const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
 const WARP_EXIT_FADE_DURATION_MS = 2300;
@@ -77,6 +80,9 @@ const SOLAR_ENTRY_FADE_IN_DURATION_SEC = 2.8;
 const SOLAR_ENTRY_WARP_OVERLAY_DURATION_MS = 2200;
 const WARP_SCENE_FADE_IN_DURATION_SEC = 1.5;
 const WARP_STAR_COUNT = 120;
+const EEG_SAMPLE_RATE = 256;
+const MAX_EEG_BUFFER_SIZE = EEG_SAMPLE_RATE * MEASUREMENT_DURATION_SEC + 256;
+const EEG_UI_FLUSH_INTERVAL_MS = 50;
 const NOOP_PLANET_SELECT = () => {};
 const saveCurrentStateSnapshot = (payload) => {
   try {
@@ -258,7 +264,7 @@ const SolarEntryWarpOverlay = () => {
 };
 
 // 라이브러리 대신 우리가 직접 만든 가짜 기기 클래스
-class MyMockMuseClient {
+/* class MyMockMuseClient {
   constructor() {
     this.eegReadings = {
       subscribe: (callback) => {
@@ -275,7 +281,7 @@ class MyMockMuseClient {
   }
   async connect() { return Promise.resolve(); } // 연결 성공 시뮬레이션
   async start() { return Promise.resolve(); }   // 시작 성공 시뮬레이션
-}
+} */
 
 const Login = ({ onBack }) => {
   const [showStepper, setShowStepper] = useState(false);
@@ -290,9 +296,15 @@ const Login = ({ onBack }) => {
   });
 
   //뇌파 데이터
-  const [eegData, setEegData] = useState(null);
+  const [eegData, setEegData] = useState([]);
+  const [measuredEegData, setMeasuredEegData] = useState([]);
+  const [measurementProgressPercent, setMeasurementProgressPercent] = useState(0);
 
   const warpExitTimerRef = useRef(null);
+  const museClientRef = useRef(null);
+  const museSubscriptionRef = useRef(null);
+  const eegBufferRef = useRef([]);
+  const eegFlushTimerRef = useRef(null);
 
   //이름, 이메일 ,패스워드
   const [name, setName] = useState('');
@@ -319,6 +331,9 @@ const Login = ({ onBack }) => {
   const currentSurveyAnswer = currentSurveyItem
     ? surveyAnswers[currentSurveyItem.key]
     : null;
+  const latestEegReading = eegData.length ? eegData[eegData.length - 1] : null;
+  const latestEegValue = latestEegReading?.samples?.[0] ?? null;
+  const resultEegData = measuredEegData.length ? measuredEegData : eegData;
 
   const surveyResult = useMemo(
     () => buildStateSurveyAnalysis(surveyAnswers),
@@ -346,13 +361,50 @@ const Login = ({ onBack }) => {
 
   useEffect(() => {
     const timeoutIds = [];
+    let measurementProgressTimerId = null;
 
     if (authStage === 'device-connecting') {
-      timeoutIds.push(setTimeout(() => setAuthStage('device-complete'), DEVICE_CONNECTING_STAGE_DURATION_MS));
+      timeoutIds.push(
+        setTimeout(() => {
+          setMeasurementProgressPercent(0);
+          setAuthStage('device-complete');
+        }, DEVICE_CONNECTING_STAGE_DURATION_MS)
+      );
     }
 
     if (authStage === 'device-complete') {
-      timeoutIds.push(setTimeout(() => setAuthStage('device-success'), DEVICE_COMPLETE_STAGE_DURATION_MS));
+      const measurementStartedAt = Date.now();
+
+      setMeasurementProgressPercent(0);
+      measurementProgressTimerId = window.setInterval(() => {
+        const elapsedMs = Date.now() - measurementStartedAt;
+        const nextProgress = Math.min(
+          100,
+          Math.round((elapsedMs / DEVICE_MEASUREMENT_STAGE_DURATION_MS) * 100)
+        );
+        setMeasurementProgressPercent(nextProgress);
+      }, 100);
+
+      timeoutIds.push(
+        setTimeout(() => {
+          const frozenReadings = [...eegBufferRef.current];
+
+          setMeasurementProgressPercent(100);
+          setMeasuredEegData(frozenReadings);
+          setEegData(frozenReadings);
+          museSubscriptionRef.current?.unsubscribe?.();
+          museSubscriptionRef.current = null;
+
+          const disconnectPromise = museClientRef.current?.disconnect?.();
+          museClientRef.current = null;
+
+          Promise.resolve(disconnectPromise).catch((error) => {
+            console.error('Failed to disconnect Muse client after measurement:', error);
+          });
+
+          setAuthStage('device-success');
+        }, DEVICE_MEASUREMENT_STAGE_DURATION_MS)
+      );
     }
 
     if (authStage === 'analysis-loading') {
@@ -365,12 +417,30 @@ const Login = ({ onBack }) => {
 
     return () => {
       timeoutIds.forEach((id) => clearTimeout(id));
+      if (measurementProgressTimerId) {
+        clearInterval(measurementProgressTimerId);
+      }
       if (warpExitTimerRef.current) {
         clearTimeout(warpExitTimerRef.current);
         warpExitTimerRef.current = null;
       }
     };
   }, [authStage]);
+
+  useEffect(() => {
+    return () => {
+      museSubscriptionRef.current?.unsubscribe?.();
+      museSubscriptionRef.current = null;
+
+      if (eegFlushTimerRef.current) {
+        clearTimeout(eegFlushTimerRef.current);
+        eegFlushTimerRef.current = null;
+      }
+
+      museClientRef.current?.disconnect?.();
+      museClientRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showSolarExplorer) return undefined;
@@ -463,27 +533,61 @@ const Login = ({ onBack }) => {
 };
 
 //Muse기기 유무 확인
+  const scheduleEegFlush = () => {
+    if (eegFlushTimerRef.current) return;
+
+    eegFlushTimerRef.current = window.setTimeout(() => {
+      eegFlushTimerRef.current = null;
+      setEegData([...eegBufferRef.current]);
+    }, EEG_UI_FLUSH_INTERVAL_MS);
+  };
+
+  const resetMuseStream = () => {
+    museSubscriptionRef.current?.unsubscribe?.();
+    museSubscriptionRef.current = null;
+    museClientRef.current?.disconnect?.();
+    museClientRef.current = null;
+    eegBufferRef.current = [];
+    setEegData([]);
+    setMeasuredEegData([]);
+    setMeasurementProgressPercent(0);
+
+    if (eegFlushTimerRef.current) {
+      clearTimeout(eegFlushTimerRef.current);
+      eegFlushTimerRef.current = null;
+    }
+  };
+
   const handleMuseChoice = async(choice) => {
     if (isTransitioning) return;
 
     if (choice === 'yes') {
       setAuthStage('device-connecting');
+      resetMuseStream();
 
       try {
         //가짜 기기 생성 및 시작
-        const client = new MyMockMuseClient();
+        const client = await createMuseClient({
+          mode: 'mock',
+        });
+        museClientRef.current = client;
         
         //실제 블루투스 팝업 대기 느낌을 위해 약간의 딜레이
-        await new Promise(resolve => setTimeout(resolve, 800)); 
         
         await client.connect();
         await client.start();
 
         // 데이터 스트림 구독 (콘솔에서 확인)
-        client.eegReadings.subscribe(reading => {
+        museSubscriptionRef.current = client.subscribe((reading) => {
           //나중에 Spring Boot 웹소켓으로 쏨
+          eegBufferRef.current.push(reading);
+
+          if (eegBufferRef.current.length > MAX_EEG_BUFFER_SIZE) {
+            eegBufferRef.current.splice(0, eegBufferRef.current.length - MAX_EEG_BUFFER_SIZE);
+          }
+
+          scheduleEegFlush();
           console.log("EEG Stream (Mock):", reading.samples);
-          setEegData(reading.samples);
         });
         
 
@@ -491,6 +595,7 @@ const Login = ({ onBack }) => {
 
       } catch (error) {
         console.error("기기 시뮬레이션 오류:", error);
+        resetMuseStream();
         setAuthStage('device-question');
       }
       return;
@@ -656,9 +761,12 @@ const Login = ({ onBack }) => {
           transition={{ duration: DEVICE_SUCCESS_FADE_IN_DURATION_SEC, ease: [0.16, 1, 0.3, 1] }}
           style={{ position: 'absolute', inset: 0 }}
         >
-          <StateSurveyResultPage
-            surveyResult={DEVICE_CONNECTION_RESULT}
-            resultEyebrow="Connection Complete"
+          <MuseSignalDashboard
+            eegData={resultEegData}
+            title="Muse S Athena 측정 완료"
+            summary={`${MEASUREMENT_DURATION_SEC}초 기준선 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
+            nextStepMessage={RESULT_NEXT_STEP_MESSAGE}
+            measurementDurationSec={MEASUREMENT_DURATION_SEC}
             resultCurrentLabel="연결 상태"
             interpretationTitle="Connection Summary"
             resultPanelTitle="Connection Scores"
@@ -890,12 +998,12 @@ const Login = ({ onBack }) => {
 
                 {authStage === 'device-connecting' && (
                   <div className="flow-card flow-card-analysis">
-                    <p className="flow-kicker">Device Connection</p>
+                    <p className="flow-kicker">측정 모드</p>
                     <h2 className="flow-title">Muse S Athena를 연결중입니다.</h2>
 
                     {/* 데이터 수신 확인용) */}
                     <p style={{ fontSize: '12px', color: '#00ff00', fontFamily: 'monospace' }}>
-                      {eegData ? `Streaming: ${eegData[0].toFixed(2)}μV` : 'Initializing...'}
+                      {latestEegValue !== null ? `Streaming: ${latestEegValue.toFixed(2)}uV` : 'Initializing...'}
                     </p>
                     <p className="flow-description">
                       응답 분석과 동일한 처리 흐름으로 디바이스 상태를 점검하고 있습니다.
@@ -918,14 +1026,50 @@ const Login = ({ onBack }) => {
 
                 {authStage === 'device-complete' && (
                   <div className="flow-card flow-card-analysis flow-card-device-complete">
-                    <p className="flow-kicker">Device Connection</p>
+                    <p className="flow-kicker">측정 모드</p>
                     <h2 className="flow-title">연결완료!</h2>
                     <p className="flow-description">
                       Muse S Athena 연결 및 초기 동기화가 끝났습니다. 연결 상태를 불러오고 있습니다.
                     </p>
+                    <div style={{ width: 'min(100%, 520px)', marginTop: 22 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: 12,
+                          color: 'rgba(255,255,255,0.68)',
+                          marginBottom: 10,
+                        }}
+                      >
+                      <span>진행률</span>
+                        <span>{measurementProgressPercent}%</span>
+                      </div>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: 10,
+                          borderRadius: 999,
+                          background: 'rgba(255,255,255,0.12)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: 'block',
+                            width: `${measurementProgressPercent}%`,
+                            height: '100%',
+                            borderRadius: 999,
+                            background: 'linear-gradient(90deg, rgba(127,227,255,0.55), rgba(255,255,255,0.95))',
+                            boxShadow: '0 0 18px rgba(127,227,255,0.45)',
+                            transition: 'width 120ms linear',
+                          }}
+                        />
+                      </div>
+                    </div>
                     <div className="connection-complete-badge" aria-hidden="true">
                       <span className="connection-complete-dot" />
-                      <span className="connection-complete-label">Connected</span>
+                      <span className="connection-complete-label">{`${Math.round((measurementProgressPercent / 100) * MEASUREMENT_DURATION_SEC)}초 / ${MEASUREMENT_DURATION_SEC}초`}</span>
                     </div>
                   </div>
                 )}
