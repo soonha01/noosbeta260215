@@ -49,7 +49,8 @@ export function createMockMuseClient(options = {}) {
 
     const currentSample = mockSamples[currentIndex];
     const reading = {
-      timestamp: currentSample.timestamp,
+      timestamp: Date.now(),
+      sourceTimestamp: currentSample.timestamp,
       electrode: null,
       samples: currentSample.samples,
       channels: currentSample.channels,

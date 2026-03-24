@@ -29,83 +29,225 @@ const SECTION_STYLE = {
   boxShadow: '0 18px 48px rgba(0,0,0,0.2)',
 };
 
-const formatMicrovolts = (value) => `${value >= 0 ? '+' : ''}${value.toFixed(1)} uV`;
+const CHART_FRAME = {
+  width: 760,
+  height: 360,
+  margin: {
+    top: 18,
+    right: 24,
+    bottom: 42,
+    left: 82,
+  },
+};
 
-const createWavePath = (samples, width, height) => {
-  if (!samples.length) return '';
-
-  const amplitude = Math.max(
+const getChartAmplitude = (seriesCollection) =>
+  Math.max(
     1,
-    ...samples.map((sample) => Math.abs(Number.isFinite(sample) ? sample : 0))
+    ...seriesCollection.flatMap(({ samples }) =>
+      samples.map((sample) => Math.abs(Number.isFinite(sample) ? sample : 0))
+    )
   );
+
+const createWavePath = (
+  samples,
+  timestamps,
+  { width, baselineY, rowAmplitude, offsetX, amplitude, startTimestamp, durationMs }
+) => {
+  if (!samples.length) return '';
 
   return samples
     .map((sample, index) => {
-      const x = (index / Math.max(1, samples.length - 1)) * width;
+      const timestamp = Number.isFinite(timestamps[index]) ? timestamps[index] : startTimestamp;
+      const elapsedMs = Math.max(0, timestamp - startTimestamp);
+      const clampedRatio = Math.min(1, elapsedMs / Math.max(1, durationMs));
+      const x = offsetX + clampedRatio * width;
       const normalized = (Number.isFinite(sample) ? sample : 0) / amplitude;
-      const y = height / 2 - normalized * (height * 0.3);
+      const y = baselineY - normalized * rowAmplitude;
       return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(' ');
 };
 
-const WaveCard = ({ series }) => {
-  const latestValue = series.samples.length ? series.samples[series.samples.length - 1] : 0;
+const CombinedWaveChart = ({ seriesCollection, measurementDurationSec }) => {
+  const timestamps = seriesCollection[0]?.timestamps ?? [];
+  const startTimestamp = timestamps.length ? timestamps[0] : 0;
+  const endTimestamp = timestamps.length ? timestamps[timestamps.length - 1] : startTimestamp;
+  const actualDurationMs = Math.max(0, endTimestamp - startTimestamp);
+  const durationSec = measurementDurationSec || actualDurationMs / 1000 || 1;
+  const durationMs = Math.max(1, durationSec * 1000);
+  const amplitude = getChartAmplitude(seriesCollection);
+  const { width, height, margin } = CHART_FRAME;
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const rowHeight = plotHeight / Math.max(1, seriesCollection.length);
+  const rowAmplitude = rowHeight * 0.34;
+  const xTicks = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    return {
+      key: `x-${index}`,
+      x: margin.left + plotWidth * ratio,
+      label: `${(durationSec * ratio).toFixed(durationSec >= 4 ? 1 : 2)}s`,
+    };
+  });
 
   return (
-    <article
-      style={{
-        padding: '10px 12px 8px',
-        borderRadius: 16,
-        border: '1px solid rgba(255,255,255,0.08)',
-        background: 'rgba(255,255,255,0.02)',
-      }}
-    >
+    <div style={{ display: 'grid', gap: 12 }}>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          marginBottom: 6,
+          borderRadius: 18,
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.012))',
+          overflow: 'hidden',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: CHANNEL_COLORS[series.key],
-              boxShadow: `0 0 14px ${CHANNEL_COLORS[series.key]}`,
-            }}
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          style={{ width: '100%', height: 'clamp(260px, 34vw, 360px)', display: 'block' }}
+        >
+          <rect
+            x={margin.left}
+            y={margin.top}
+            width={plotWidth}
+            height={plotHeight}
+            fill="rgba(255,255,255,0.01)"
           />
-          <strong style={{ fontSize: 15 }}>{series.key}</strong>
-        </div>
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'rgba(255,255,255,0.74)' }}>
-          {formatMicrovolts(latestValue)}
-        </span>
-      </div>
 
-      <svg viewBox="0 0 300 64" preserveAspectRatio="none" style={{ width: '100%', height: 64, display: 'block' }}>
-        <path
-          d="M 0 32 L 300 32"
-          fill="none"
-          stroke="rgba(255,255,255,0.11)"
-          strokeWidth="1"
-          strokeDasharray="4 6"
-        />
-        <path
-          d={createWavePath(series.samples, 300, 64)}
-          fill="none"
-          stroke={CHANNEL_COLORS[series.key]}
-          strokeWidth="1.8"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-      </svg>
-    </article>
+          {seriesCollection.map((series, index) => {
+            const baselineY = margin.top + rowHeight * index + rowHeight / 2;
+
+            return (
+              <g key={series.key}>
+                <line
+                  x1={margin.left}
+                  y1={baselineY}
+                  x2={margin.left + plotWidth}
+                  y2={baselineY}
+                  stroke="rgba(255,255,255,0.14)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={margin.left - 14}
+                  y={baselineY + 4}
+                  fill="rgba(255,255,255,0.9)"
+                  fontSize="14"
+                  textAnchor="end"
+                >
+                  {series.key}
+                </text>
+                <path
+                  d={createWavePath(series.samples, series.timestamps ?? [], {
+                    width: plotWidth,
+                    baselineY,
+                    rowAmplitude,
+                    offsetX: margin.left,
+                    amplitude,
+                    startTimestamp,
+                    durationMs,
+                  })}
+                  fill="none"
+                  stroke={CHANNEL_COLORS[series.key]}
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  opacity="0.96"
+                />
+              </g>
+            );
+          })}
+
+          {Array.from({ length: Math.max(0, seriesCollection.length - 1) }, (_, index) => {
+            const separatorY = margin.top + rowHeight * (index + 1);
+            return (
+              <line
+                key={`separator-${index}`}
+                x1={margin.left}
+                y1={separatorY}
+                x2={margin.left + plotWidth}
+                y2={separatorY}
+                stroke="rgba(255,255,255,0.05)"
+                strokeWidth="1"
+              />
+            );
+          })}
+
+          {xTicks.map((tick) => (
+            <g key={tick.key}>
+              <line
+                x1={tick.x}
+                y1={margin.top}
+                x2={tick.x}
+                y2={margin.top + plotHeight}
+                stroke="rgba(255,255,255,0.07)"
+                strokeWidth="1"
+              />
+              <text
+                x={tick.x}
+                y={margin.top + plotHeight + 20}
+                fill="rgba(255,255,255,0.56)"
+                fontSize="11"
+                textAnchor="middle"
+              >
+                {tick.label}
+              </text>
+            </g>
+          ))}
+
+          <line
+            x1={margin.left}
+            y1={margin.top}
+            x2={margin.left}
+            y2={margin.top + plotHeight}
+            stroke="rgba(255,255,255,0.2)"
+            strokeWidth="1.2"
+          />
+          <line
+            x1={margin.left + plotWidth}
+            y1={margin.top}
+            x2={margin.left + plotWidth}
+            y2={margin.top + plotHeight}
+            stroke="rgba(255,255,255,0.2)"
+            strokeWidth="1.2"
+          />
+          <line
+            x1={margin.left}
+            y1={margin.top + plotHeight}
+            x2={margin.left + plotWidth}
+            y2={margin.top + plotHeight}
+            stroke="rgba(255,255,255,0.2)"
+            strokeWidth="1.2"
+          />
+
+          <text
+            x={margin.left + plotWidth / 2}
+            y={height - 8}
+            fill="rgba(255,255,255,0.56)"
+            fontSize="12"
+            textAnchor="middle"
+          >
+            Time (s)
+          </text>
+          <text
+            x="18"
+            y={margin.top + plotHeight / 2}
+            fill="rgba(255,255,255,0.56)"
+            fontSize="12"
+            textAnchor="middle"
+            transform={`rotate(-90 18 ${margin.top + plotHeight / 2})`}
+          >
+            Amplitude (uV)
+          </text>
+          <text
+            x={margin.left}
+            y={margin.top - 6}
+            fill="rgba(255,255,255,0.52)"
+            fontSize="11"
+          >
+            ±{amplitude.toFixed(0)} uV 기준
+          </text>
+        </svg>
+      </div>
+    </div>
   );
 };
 
@@ -118,7 +260,11 @@ const MuseSignalDashboard = ({
   nextStepMessage = '원하시는 집중이나 감정상태에 맞는 행성을 선택해 다음 단계로 이동하세요.',
   measurementDurationSec = 8,
 }) => {
-  const waveformSeries = useMemo(() => getRecentChannelSeries(eegData, 120), [eegData]);
+  const waveformPointLimit = Math.max(120, Math.round(DEFAULT_SAMPLE_RATE * measurementDurationSec));
+  const waveformSeries = useMemo(
+    () => getRecentChannelSeries(eegData, waveformPointLimit),
+    [eegData, waveformPointLimit]
+  );
   const fftAnalysis = useMemo(
     () => analyzeEegBands(eegData, { sampleRate: DEFAULT_SAMPLE_RATE, fftSize: DEFAULT_FFT_SIZE }),
     [eegData]
@@ -275,17 +421,10 @@ const MuseSignalDashboard = ({
               </div>
             </div>
 
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gap: 10,
-              }}
-            >
-              {waveformSeries.map((series) => (
-                <WaveCard key={series.key} series={series} />
-              ))}
-            </div>
+            <CombinedWaveChart
+              seriesCollection={waveformSeries}
+              measurementDurationSec={measurementDurationSec}
+            />
           </div>
 
           <div style={{ ...SECTION_STYLE, padding: 16, alignSelf: 'start', height: 'fit-content' }}>

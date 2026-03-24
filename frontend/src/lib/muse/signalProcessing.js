@@ -67,9 +67,14 @@ const computeBandPowersForSamples = (samples, sampleRate) => {
 
 export const getRecentChannelSeries = (readings, maxPoints = 240) => {
   const recentReadings = readings.slice(-maxPoints);
+  const timestamps = recentReadings.map((reading, index) => {
+    const timestamp = Number(reading?.timestamp);
+    return Number.isFinite(timestamp) ? timestamp : index;
+  });
 
   return CHANNEL_KEYS.map((channelKey) => ({
     key: channelKey,
+    timestamps,
     samples: recentReadings.map((reading) => reading?.channels?.[channelKey] ?? 0),
   }));
 };
