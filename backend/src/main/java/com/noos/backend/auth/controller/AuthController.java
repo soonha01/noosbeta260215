@@ -19,6 +19,8 @@ public class AuthController {
         return "ok";
     }
 
+    //test
+
     //로그인 요청
     @PostMapping("/login")
     public String login(@RequestBody SignupRequest request) {
