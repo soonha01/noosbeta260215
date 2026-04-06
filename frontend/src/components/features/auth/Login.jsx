@@ -16,6 +16,8 @@ import {
   createInitialStateSurveyAnswers,
 } from '../../../lib/stateSurvey';
 import { createMuseClient } from '../../../lib/muse';
+import { DEFAULT_FFT_SIZE, analyzeEegBands } from '../../../lib/muse/signalProcessing';
+import { createEegAnalysisPayload, submitEegAnalysis } from '../../../lib/eegAnalysisApi';
 
 
 
@@ -242,12 +244,14 @@ const Login = ({ onBack }) => {
   const [eegData, setEegData] = useState([]);
   const [measuredEegData, setMeasuredEegData] = useState([]);
   const [measurementProgressPercent, setMeasurementProgressPercent] = useState(0);
+  const [measurementCompletedAt, setMeasurementCompletedAt] = useState(null);
 
   const warpExitTimerRef = useRef(null);
   const museClientRef = useRef(null);
   const museSubscriptionRef = useRef(null);
   const eegBufferRef = useRef([]);
   const eegFlushTimerRef = useRef(null);
+  const eegAnalysisRequestKeyRef = useRef(null);
 
   //이름, 이메일 ,패스워드
   const [name, setName] = useState('');
@@ -282,6 +286,17 @@ const Login = ({ onBack }) => {
     () => buildStateSurveyAnalysis(surveyAnswers),
     [surveyAnswers]
   );
+  const museFftAnalysis = useMemo(() => {
+    if (!measuredEegData.length) {
+      return null;
+    }
+
+    return analyzeEegBands(measuredEegData, {
+      sampleRate: EEG_SAMPLE_RATE,
+      fftSize: DEFAULT_FFT_SIZE,
+    });
+  }, [measuredEegData]);
+
   const authStageFadeDurationSec = useMemo(() => {
     if (isTransitioning) return AUTH_TO_WARP_FADE_DURATION_SEC;
     if (authStage === 'device-complete' || authStage === 'analysis-loading') {
@@ -331,10 +346,12 @@ const Login = ({ onBack }) => {
       timeoutIds.push(
         setTimeout(() => {
           const frozenReadings = [...eegBufferRef.current];
+          const measuredAt = new Date().toISOString();
 
           setMeasurementProgressPercent(100);
           setMeasuredEegData(frozenReadings);
           setEegData(frozenReadings);
+          setMeasurementCompletedAt(measuredAt);
           museSubscriptionRef.current?.unsubscribe?.();
           museSubscriptionRef.current = null;
 
@@ -395,6 +412,45 @@ const Login = ({ onBack }) => {
 
     return () => clearTimeout(timeoutId);
   }, [showSolarExplorer]);
+
+  useEffect(() => {
+    if (authStage !== 'device-success' || !measurementCompletedAt || !museFftAnalysis) {
+      return undefined;
+    }
+
+    if (museFftAnalysis.sampleCount < 64) {
+      return undefined;
+    }
+
+    if (eegAnalysisRequestKeyRef.current === measurementCompletedAt) {
+      return undefined;
+    }
+
+    const payload = createEegAnalysisPayload({
+      analysis: museFftAnalysis,
+      measuredAt: measurementCompletedAt,
+      measurementDurationSec: MEASUREMENT_DURATION_SEC,
+    });
+
+    if (!payload) {
+      return undefined;
+    }
+
+    eegAnalysisRequestKeyRef.current = measurementCompletedAt;
+
+    const controller = new AbortController();
+
+    submitEegAnalysis(payload, { signal: controller.signal }).catch((error) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      eegAnalysisRequestKeyRef.current = null;
+      console.error('Failed to submit EEG analysis:', error);
+    });
+
+    return () => controller.abort();
+  }, [authStage, measurementCompletedAt, museFftAnalysis]);
 
   const handleSignUpClick = () => {
     setShowStepper(true);
@@ -491,9 +547,11 @@ const Login = ({ onBack }) => {
     museClientRef.current?.disconnect?.();
     museClientRef.current = null;
     eegBufferRef.current = [];
+    eegAnalysisRequestKeyRef.current = null;
     setEegData([]);
     setMeasuredEegData([]);
     setMeasurementProgressPercent(0);
+    setMeasurementCompletedAt(null);
 
     if (eegFlushTimerRef.current) {
       clearTimeout(eegFlushTimerRef.current);
@@ -703,6 +761,7 @@ const Login = ({ onBack }) => {
         >
           <MuseSignalDashboard
             eegData={resultEegData}
+            fftAnalysis={museFftAnalysis}
             title="Muse S Athena 측정 완료"
             summary={`${MEASUREMENT_DURATION_SEC}초 기준선 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
             nextStepMessage={RESULT_NEXT_STEP_MESSAGE}

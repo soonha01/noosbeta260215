@@ -253,6 +253,7 @@ const CombinedWaveChart = ({ seriesCollection, measurementDurationSec }) => {
 
 const MuseSignalDashboard = ({
   eegData,
+  fftAnalysis: providedFftAnalysis,
   isTransitioning,
   onConfirm,
   title = 'Muse S Athena 측정 완료',
@@ -266,8 +267,13 @@ const MuseSignalDashboard = ({
     [eegData, waveformPointLimit]
   );
   const fftAnalysis = useMemo(
-    () => analyzeEegBands(eegData, { sampleRate: DEFAULT_SAMPLE_RATE, fftSize: DEFAULT_FFT_SIZE }),
-    [eegData]
+    () =>
+      providedFftAnalysis ??
+      analyzeEegBands(eegData, {
+        sampleRate: DEFAULT_SAMPLE_RATE,
+        fftSize: DEFAULT_FFT_SIZE,
+      }),
+    [providedFftAnalysis, eegData]
   );
 
   const guideByKey = useMemo(
