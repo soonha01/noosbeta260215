@@ -27,7 +27,15 @@
 
     <!-- 비밀번호 검증에 사용할 로컬 계정 조회 -->
     <select id="findLocalUserByLoginId" resultType="com.noos.backend.auth.dto.User">
-        SELECT *
+        SELECT
+            user_id AS userId,
+            login_id AS loginId,
+            password_hash AS passwordHash,
+            display_name AS displayName,
+            provider AS provider,
+            provider_id AS providerId,
+            created_at AS createdAt,
+            updated_at AS updatedAt
         FROM users
         WHERE login_id = #{loginId}
           AND provider = 'local'
@@ -55,7 +63,15 @@
 
     <!-- 기존 소셜 로그인 계정 조회 -->
     <select id="findByProviderInfo" resultType="com.noos.backend.auth.dto.User">
-        SELECT *
+        SELECT
+            user_id AS userId,
+            login_id AS loginId,
+            password_hash AS passwordHash,
+            display_name AS displayName,
+            provider AS provider,
+            provider_id AS providerId,
+            created_at AS createdAt,
+            updated_at AS updatedAt
         FROM users
         WHERE provider = #{provider}
           AND provider_id = #{providerId}
