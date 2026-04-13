@@ -34,7 +34,6 @@ const SURVEY_METHOD_NOTE =
   '본 결과는 K-PANAS/KSS/PSS-4 기반의 비의료적 상태 스크리닝입니다.';
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const DEVICE_CONNECTING_STAGE_DURATION_MS = 1400;
 const MEASUREMENT_DURATION_SEC = 8;
 const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
@@ -321,15 +320,6 @@ const Login = ({ onBack }) => {
     const timeoutIds = [];
     let measurementProgressTimerId = null;
 
-    if (authStage === 'device-connecting') {
-      timeoutIds.push(
-        setTimeout(() => {
-          setMeasurementProgressPercent(0);
-          setAuthStage('device-complete');
-        }, DEVICE_CONNECTING_STAGE_DURATION_MS)
-      );
-    }
-
     if (authStage === 'device-complete') {
       const measurementStartedAt = Date.now();
 
@@ -567,13 +557,13 @@ const Login = ({ onBack }) => {
       resetMuseStream();
 
       try {
-        //가짜 기기 생성 및 시작
+        // 실제 Muse 기기 연결 및 시작
         const client = await createMuseClient({
-          mode: 'mock',
+          mode: 'web',
         });
         museClientRef.current = client;
         
-        //실제 블루투스 팝업 대기 느낌을 위해 약간의 딜레이
+        // Web Bluetooth 페어링 창에서 사용자가 기기를 선택할 때까지 여기서 대기합니다.
         
         await client.connect();
         await client.start();
@@ -588,14 +578,16 @@ const Login = ({ onBack }) => {
           }
 
           scheduleEegFlush();
-          console.log("EEG Stream (Mock):", reading.samples);
+          console.log("EEG Stream (Muse):", reading.samples);
         });
         
 
-        console.log("Muse S Athena Simulator 활성화 완료");
+        console.log("Muse S Athena 활성화 완료");
+        setMeasurementProgressPercent(0);
+        setAuthStage('device-complete');
 
       } catch (error) {
-        console.error("기기 시뮬레이션 오류:", error);
+        console.error("Muse 기기 연결 오류:", error);
         resetMuseStream();
         setAuthStage('device-question');
       }
