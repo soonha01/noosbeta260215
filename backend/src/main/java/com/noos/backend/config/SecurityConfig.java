@@ -1,6 +1,7 @@
 package com.noos.backend.config;
 
 import com.noos.backend.auth.service.CustomOAuth2UserService;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -26,11 +27,9 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable()) // 현재 API 흐름에서는 CSRF를 비활성화
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/login/**", "/api/auth/**").permitAll() // 인증 진입 경로는 허용
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/", "/error", "/login/**", "/api/auth/**", "/api/eeg/**", "/api/ai/**").permitAll() // 인증 진입 경로는 허용
                         .anyRequest().authenticated() // 그 외 요청은 인증 필요
-                )
-                .oauth2Login(oauth2 -> oauth2
-                        .defaultSuccessUrl("http://localhost:3000/?login=success", true) // 로그인 성공 시 프론트로 이동
                 );
 
         return http.build();

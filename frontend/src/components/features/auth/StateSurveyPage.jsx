@@ -1,11 +1,9 @@
 import React, { useMemo } from 'react';
+import {
+  STATE_SURVEY_HEADER_SUBTITLE,
+  STATE_SURVEY_HEADER_TITLE,
+} from '../../../lib/stateSurvey';
 import './StateSurveyPage.css';
-
-const QUESTION_GUIDE_BY_SECTION = Object.freeze({
-  kpanas: '아래 문장이 현재 감정 상태를 얼마나 잘 설명하는지 선택해 주세요.',
-  kss: '현재 순간의 각성/졸림 정도를 가장 가까운 단계로 선택해 주세요.',
-  pss4: '지난 7일을 떠올리며, 각 문장이 얼마나 자주 해당됐는지 선택해 주세요.',
-});
 
 const StateSurveyPage = ({
   currentSurveyItem,
@@ -26,10 +24,8 @@ const StateSurveyPage = ({
   const options = currentSurveyItem.options || [];
   const isDense = options.length > 6;
   const questionGuide = useMemo(
-    () =>
-      QUESTION_GUIDE_BY_SECTION[currentSurveyItem.sectionId] ||
-      QUESTION_GUIDE_BY_SECTION.pss4,
-    [currentSurveyItem.sectionId]
+    () => currentSurveyItem.sectionDescription || '현재 상태를 가장 잘 설명하는 응답을 선택해 주세요.',
+    [currentSurveyItem.sectionDescription]
   );
 
   return (
@@ -37,8 +33,8 @@ const StateSurveyPage = ({
       <form className="state-survey-card" onSubmit={onSubmit}>
         <div className="state-survey-head">
           <p className="state-survey-kicker">Validated Survey</p>
-          <h2 className="state-survey-title">현재 심리/감정 상태를 측정합니다.</h2>
-          <p className="state-survey-subtitle">K-PANAS(20), KSS(1), PSS-4(4) 검증 척도 기반 설문입니다.</p>
+          <h2 className="state-survey-title">{STATE_SURVEY_HEADER_TITLE}</h2>
+          <p className="state-survey-subtitle">{STATE_SURVEY_HEADER_SUBTITLE}</p>
         </div>
 
         <div className="state-survey-progress-row">

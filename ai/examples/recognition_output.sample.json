@@ -1,0 +1,163 @@
+{
+  "session_type": "recognition",
+  "session_id": "demo-recognition-session",
+  "analyzed_at": "2026-04-18T09:09:27+00:00",
+  "measured_at": "2026-04-18T12:00:00+09:00",
+  "session_partition": {
+    "current": "recognition",
+    "reserved_next": [
+      "intervention",
+      "adaptation",
+      "longitudinal"
+    ]
+  },
+  "input_summary": {
+    "device_type": "Muse S Athena",
+    "feature_source": "band-summary",
+    "raw_reading_count": 0,
+    "baseline_mode": "population-prior",
+    "context": {
+      "task_label": "resting-baseline",
+      "eyes_state": "unknown"
+    }
+  },
+  "quality": {
+    "usable": true,
+    "score": 0.55,
+    "sample_count": 256,
+    "sample_rate_hz": 256.0,
+    "warnings": [
+      "Only band summary was provided; channel-level inference is limited."
+    ],
+    "mean_outlier_ratio": 0.0,
+    "mean_jump_ratio": 0.0,
+    "mean_flatline_ratio": 0.0
+  },
+  "bands": {
+    "global_relative": {
+      "delta": 0.08,
+      "theta": 0.16,
+      "alpha": 0.38,
+      "beta": 0.28,
+      "gamma": 0.1
+    },
+    "regional_relative": {
+      "frontal": {
+        "delta": 0.08,
+        "theta": 0.16,
+        "alpha": 0.38,
+        "beta": 0.28,
+        "gamma": 0.1
+      },
+      "posterior": {
+        "delta": 0.08,
+        "theta": 0.16,
+        "alpha": 0.38,
+        "beta": 0.28,
+        "gamma": 0.1
+      }
+    },
+    "dominant_band": "alpha"
+  },
+  "features": {
+    "snapshot": {
+      "global_delta_relative": 0.08,
+      "global_theta_relative": 0.16,
+      "global_alpha_relative": 0.38,
+      "global_beta_relative": 0.28,
+      "global_gamma_relative": 0.1,
+      "frontal_theta_relative": 0.16,
+      "frontal_alpha_relative": 0.38,
+      "frontal_beta_relative": 0.28,
+      "posterior_alpha_relative": 0.38,
+      "theta_beta_ratio": 0.5714,
+      "alpha_beta_ratio": 1.3571,
+      "beta_alpha_ratio": 0.7368,
+      "theta_alpha_ratio": 0.4211,
+      "frontal_theta_beta_ratio": 0.5714,
+      "faa_alpha_log_ratio": 0.0
+    },
+    "baseline_delta": {},
+    "artifact_indicators": {
+      "high_frequency_ratio": 0.1,
+      "delta_ratio": 0.08
+    }
+  },
+  "state_profile": {
+    "dominant_state": "mixed_state",
+    "label": "단일 상태로 고정되지 않은 혼합 패턴",
+    "dimensions": {
+      "mental_workload": {
+        "key": "mental_workload",
+        "score": 0.333,
+        "level": "low",
+        "confidence": 0.486
+      },
+      "fatigue_risk": {
+        "key": "fatigue_risk",
+        "score": 0.192,
+        "level": "very_low",
+        "confidence": 0.566
+      },
+      "stress_load": {
+        "key": "stress_load",
+        "score": 0.408,
+        "level": "moderate",
+        "confidence": 0.494
+      },
+      "relaxation_level": {
+        "key": "relaxation_level",
+        "score": 0.464,
+        "level": "moderate",
+        "confidence": 0.399
+      },
+      "cortical_arousal": {
+        "key": "cortical_arousal",
+        "score": 0.593,
+        "level": "moderate",
+        "confidence": 0.414
+      },
+      "focus_readiness": {
+        "key": "focus_readiness",
+        "score": 0.685,
+        "level": "elevated",
+        "confidence": 0.359
+      }
+    },
+    "summary": [
+      "dominant_state=mixed_state",
+      "mental_workload=low",
+      "fatigue_risk=very_low",
+      "stress_load=moderate"
+    ]
+  },
+  "reference_profile": {
+    "generated_at": "2026-04-18T09:09:27+00:00",
+    "device_type": "Muse S Athena",
+    "session_type": "recognition",
+    "features": {
+      "global_delta_relative": 0.08,
+      "global_theta_relative": 0.16,
+      "global_alpha_relative": 0.38,
+      "global_beta_relative": 0.28,
+      "global_gamma_relative": 0.1,
+      "frontal_theta_relative": 0.16,
+      "frontal_alpha_relative": 0.38,
+      "frontal_beta_relative": 0.28,
+      "posterior_alpha_relative": 0.38,
+      "theta_beta_ratio": 0.5714,
+      "alpha_beta_ratio": 1.3571,
+      "beta_alpha_ratio": 0.7368,
+      "theta_alpha_ratio": 0.4211,
+      "frontal_theta_beta_ratio": 0.5714,
+      "faa_alpha_log_ratio": 0.0
+    }
+  },
+  "limitations": [
+    "이 결과는 의료 진단이나 정신질환 판정이 아니라 상태 추정 리포트다.",
+    "Muse 4채널(AF7/AF8/TP9/TP10)은 full-cap EEG보다 공간 정보가 적다.",
+    "consumer-grade dry electrode 특성상 artifact와 세션 간 변동성이 더 크다.",
+    "이번 결과는 원시 샘플이 아니라 밴드 요약값 기반이어서 신뢰도가 더 낮다.",
+    "개인 기준선이 없어서 population prior 기반 해석만 수행했다."
+  ]
+}

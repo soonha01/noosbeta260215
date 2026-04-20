@@ -1,0 +1,22 @@
+{
+  "session_type": "intervention",
+  "session_id": "demo-intervention-session",
+  "planet": "Neptune",
+  "duration_sec": 900,
+  "recognition_result": {
+    "quality": {
+      "score": 0.74
+    },
+    "state_profile": {
+      "label": "스트레스 부하가 있는 혼합 상태",
+      "dimensions": {
+        "mental_workload": { "score": 0.62, "confidence": 0.71 },
+        "fatigue_risk": { "score": 0.44, "confidence": 0.68 },
+        "stress_load": { "score": 0.71, "confidence": 0.72 },
+        "relaxation_level": { "score": 0.28, "confidence": 0.64 },
+        "cortical_arousal": { "score": 0.66, "confidence": 0.69 },
+        "focus_readiness": { "score": 0.46, "confidence": 0.62 }
+      }
+    }
+  }
+}

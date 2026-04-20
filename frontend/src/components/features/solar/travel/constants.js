@@ -1,5 +1,8 @@
+import { PLANET_LIGHTING_PREVIEW } from './lightingPreview';
+
 export const STEP_SEATING = 'seating';
 export const STEP_TICKET = 'ticket';
+export const STEP_GENERATING = 'generating';
 export const STEP_PLAYER = 'player';
 export const STEP_DASHBOARD = 'dashboard';
 export const STEP_PROFILE = 'profile';
@@ -11,6 +14,7 @@ export const STATE_STORAGE_KEY = 'noos_current_state';
 export const FEEDBACK_STORAGE_KEY = 'noos_feedback_history';
 export const MEMO_STORAGE_KEY = 'noos_dashboard_note';
 export const PROFILE_STORAGE_KEY = 'noos_user_profile';
+export const AI_CONTEXT_STORAGE_KEY = 'noos_ai_context';
 
 export const TRACK_DURATION_SEC = 226;
 
@@ -27,73 +31,82 @@ export const PLANET_MEDIA = {
     title: 'Mercury',
     moodTarget: '순간 점화 집중',
     description:
-      '태양과 가장 가까운 고속 궤도. 빠른 시작과 강한 추진력이 필요한 순간에 적합한 환경입니다.',
+      '망설임을 줄이고 빠르게 시작할 수 있도록 돕는 환경입니다. 짧은 시간 안에 집중을 켜고, 작업 진입 속도를 끌어올리고 싶을 때 적합합니다.',
     trackName: 'Mercury Pulse',
     image: 'https://www.solarsystemscope.com/images/textures/full/2k_makemake_fictional.jpg',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.mercury,
   },
   venus: {
     title: 'Venus',
-    moodTarget: '창의적 몰입',
+    moodTarget: '온기 있는 창의',
     description:
-      '감각적이고 따뜻한 밀도의 흐름. 아이디어를 확장하고 섬세한 표현을 끌어올리는 분위기입니다.',
+      '감각과 감정을 부드럽게 깨워 아이디어가 자연스럽게 흐르도록 돕는 환경입니다. 글쓰기, 디자인, 브랜딩처럼 섬세한 표현과 연상이 필요한 순간에 어울립니다.',
     trackName: 'Venus Drift',
     image: 'https://nasa3d.arc.nasa.gov/shared_assets/images/ven0aaa2/ven0aaa2-copy-428-321.jpg',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.venus,
   },
   earth: {
     title: 'Earth',
     moodTarget: '균형형 집중',
     description:
-      '안정적인 리듬과 균형 잡힌 공간. 장시간의 업무와 학습을 편안하게 지속하기 위한 환경입니다.',
+      '과하게 긴장하지 않으면서도 안정적으로 집중을 유지하도록 설계된 환경입니다. 장시간 업무, 학습, 루틴 작업을 편안하게 이어가고 싶을 때 적합합니다.',
     trackName: 'Earth Balance',
     image: 'https://img00.deviantart.net/04ef/i/2009/114/3/e/new_earth_texture_map_by_lightondesigns.jpg',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.earth,
   },
   mars: {
     title: 'Mars',
-    moodTarget: '결단/실행 모드',
+    moodTarget: '결단과 실행',
     description:
-      '강한 결단과 실행을 밀어주는 추진형 환경. 시작을 미루는 시간을 줄이고 돌파력을 올려줍니다.',
+      '미루고 있던 일을 바로 행동으로 옮길 수 있도록 추진력을 높이는 환경입니다. 빠른 결단, 실행, 돌파가 필요한 순간에 가장 잘 맞습니다.',
     trackName: 'Mars Forward',
     image: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/217233/mars_texture.jpg',
     audio: '/media/travel-player/audio/mars/mars.mp3',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.mars,
   },
   jupiter: {
     title: 'Jupiter',
-    moodTarget: '확장형 리더십',
+    moodTarget: '전략적 존재감',
     description:
-      '넓고 단단한 스케일의 집중감. 큰 결정을 내리거나 팀 단위 사고를 정리할 때 적합한 분위기입니다.',
+      '큰 그림을 보고 판단의 중심을 잡을 수 있도록 돕는 환경입니다. 중요한 선택, 발표 준비, 리더십이 필요한 상황에서 넓고 단단한 사고를 지원합니다.',
     trackName: 'Jupiter Command',
     image: 'https://www.jpl.nasa.gov/spaceimages/images/largesize/PIA07782_hires.jpg',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.jupiter,
   },
   saturn: {
     title: 'Saturn',
     moodTarget: '깊은 사유',
     description:
-      '차분하고 오래 지속되는 사고의 밀도. 전략 수립, 기획, 연구와 같은 긴 호흡 작업에 적합합니다.',
+      '느리고 정교한 사고를 오래 유지할 수 있도록 돕는 환경입니다. 기획, 연구, 구조 설계, 철학적 정리처럼 긴 호흡의 사고가 필요한 순간에 적합합니다.',
     trackName: 'Saturn Ring Study',
     image: 'https://www.solarsystemscope.com/images/textures/full/2k_saturn.jpg',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.saturn,
   },
   uranus: {
     title: 'Uranus',
     moodTarget: '전환형 창의',
     description:
-      '기존 틀을 벗어나 새로운 관점을 확장하는 흐름. 구조 전환이 필요한 창의 작업에 적합합니다.',
+      '익숙한 방식에서 벗어나 새로운 관점으로 사고를 전환하도록 돕는 환경입니다. 막힌 아이디어를 깨고, 발상 전환이나 실험적 접근이 필요할 때 어울립니다.',
     trackName: 'Uranus Shift',
     image: 'https://img00.deviantart.net/957c/i/2017/165/4/9/uranus_texture_map_by_jcpag2010-db7yjwb.png',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.uranus,
   },
   neptune: {
     title: 'Neptune',
     moodTarget: '딥워크 몰입',
     description:
-      '잡음을 최대한 억제하고 깊은 몰입 상태로 진입하는 환경. 코딩, 독서, 분석 작업에 최적화됩니다.',
+      '외부 잡음을 최대한 줄이고 좁고 깊은 집중 상태로 들어가도록 설계된 환경입니다. 코딩, 독서, 논문, 분석처럼 높은 몰입 밀도가 필요한 작업에 적합합니다.',
     trackName: 'Neptune Deep Focus',
     image: 'https://www.solarsystemscope.com/images/textures/full/2k_neptune.jpg',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.neptune,
   },
   pluto: {
     title: 'Pluto',
-    moodTarget: '회복/정리',
+    moodTarget: '회복과 리셋',
     description:
-      '하루를 정리하고 내면을 안정시키는 정돈형 환경. 회복과 전환, 수면 전 루틴에 적합합니다.',
+      '긴장을 낮추고 감각을 천천히 가라앉히며 하루를 정리하도록 돕는 환경입니다. 과부하 이후 회복, 정서적 안정, 전환이 필요한 시간에 가장 잘 맞습니다.',
     trackName: 'Pluto Calm Night',
     image: 'https://pre00.deviantart.net/4677/th/pre/f/2015/314/4/e/pluto_map__2015_nov_10__by_snowfall_the_cat-d918tlb.png',
+    lightingPreview: PLANET_LIGHTING_PREVIEW.pluto,
   },
 };

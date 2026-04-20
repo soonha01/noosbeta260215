@@ -445,6 +445,163 @@ export const DescriptionText = styled.p`
   overflow: hidden;
 `;
 
+export const LightingPanel = styled.div`
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}38`};
+  background: linear-gradient(180deg, rgba(11, 11, 11, 0.94), rgba(5, 5, 5, 0.9));
+  padding: 0.58rem 0.62rem;
+  display: grid;
+  gap: 0.44rem;
+  flex-shrink: 0;
+`;
+
+export const LightingTitle = styled.p`
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: ${({ $accent }) => `${$accent || '#ffffff'}d8`};
+  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
+`;
+
+export const LightingSummary = styled.p`
+  margin: 0;
+  color: rgba(233, 239, 252, 0.86);
+  font-size: 10px;
+  line-height: 1.5;
+`;
+
+export const LightingTagRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.26rem;
+`;
+
+export const LightingTag = styled.span`
+  min-height: 22px;
+  padding: 0 0.42rem;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}55`};
+  background: ${({ $accent }) => `${$accent || '#ffffff'}10`};
+  color: ${({ $accent }) => $accent || '#fff'};
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
+`;
+
+export const LightingSwatchRow = styled.div`
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+
+  > div {
+    min-width: 0;
+    flex: 1;
+  }
+`;
+
+export const LightingSwatch = styled.div`
+  width: 100%;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #fff;
+`;
+
+export const LightingSwatchLabel = styled.p`
+  margin: 0.18rem 0 0;
+  color: rgba(214, 225, 248, 0.72);
+  font-size: 9px;
+  line-height: 1.4;
+  word-break: break-word;
+`;
+
+export const LightingMetricGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem;
+`;
+
+export const LightingMetricCard = styled.div`
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}2c`};
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.36rem 0.42rem;
+  display: grid;
+  gap: 0.12rem;
+`;
+
+export const LightingMetricLabel = styled.p`
+  margin: 0;
+  color: rgba(205, 217, 241, 0.66);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
+`;
+
+export const LightingMetricValue = styled.p`
+  margin: 0;
+  color: #f5f7ff;
+  font-size: 11px;
+  line-height: 1.35;
+  font-family: 'Freesentation Bold', 'Cardinal Fruit', sans-serif;
+`;
+
+export const LightingMeta = styled.p`
+  margin: 0;
+  color: rgba(223, 232, 248, 0.8);
+  font-size: 10px;
+  line-height: 1.45;
+`;
+
+export const LightingCode = styled.code`
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.94);
+  font-family: 'SF Mono', 'Menlo', monospace;
+`;
+
+export const LightingPhaseGrid = styled.div`
+  display: grid;
+  gap: 0.34rem;
+`;
+
+export const LightingPhaseCard = styled.div`
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}28`};
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.42rem;
+  display: grid;
+  gap: 0.22rem;
+`;
+
+export const LightingPhaseLabel = styled.p`
+  margin: 0;
+  color: ${({ $accent }) => $accent || '#fff'};
+  font-size: 11px;
+  font-family: 'Freesentation Bold', 'Cardinal Fruit', sans-serif;
+`;
+
+export const LightingPhaseMeta = styled.p`
+  margin: 0;
+  color: rgba(212, 224, 245, 0.72);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+`;
+
+export const LightingCitationRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+`;
+
+export const LightingCitationLink = styled.a`
+  color: ${({ $accent }) => $accent || '#fff'};
+  text-decoration: none;
+  border-bottom: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}55`};
+  font-size: 10px;
+  line-height: 1.3;
+`;
+
 export const AiConnectedPanel = styled.div`
   border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}88`};
   background: rgba(9, 9, 9, 0.92);
@@ -523,6 +680,161 @@ export const DangerAction = styled.button`
   flex: 1;
 `;
 
+export const GenerationPage = styled.div`
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.06), transparent 36%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.04), transparent 30%),
+    #000;
+  color: #f5f7ff;
+  display: grid;
+  align-content: center;
+`;
+
+export const GenerationGrid = styled.div`
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(320px, 0.94fr);
+  gap: 0.9rem;
+
+  @media (max-width: 980px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+export const GenerationCard = styled.div`
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}42`};
+  background: linear-gradient(165deg, rgba(10, 10, 10, 0.95), rgba(4, 4, 4, 0.9));
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.42);
+`;
+
+export const GenerationHeader = styled.div`
+  display: grid;
+  gap: 0.34rem;
+`;
+
+export const GenerationEyebrow = styled.p`
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: ${({ $accent }) => `${$accent || '#ffffff'}cc`};
+  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
+`;
+
+export const GenerationTitle = styled.h2`
+  margin: 0;
+  color: ${({ $accent }) => $accent || '#fff'};
+  font-size: clamp(28px, 3.3vw, 42px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  font-family: 'Freesentation Black', 'Cardinal Fruit', sans-serif;
+`;
+
+export const GenerationBody = styled.p`
+  margin: 0;
+  color: rgba(232, 239, 252, 0.84);
+  font-size: 14px;
+  line-height: 1.7;
+  max-width: 56ch;
+`;
+
+export const GenerationMeta = styled.p`
+  margin: 0;
+  color: rgba(210, 223, 246, 0.72);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
+`;
+
+export const GenerationProgressLabel = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: rgba(236, 242, 255, 0.88);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
+
+  strong {
+    color: #fff;
+    font-size: 14px;
+    font-family: 'Freesentation Bold', 'Cardinal Fruit', sans-serif;
+  }
+`;
+
+export const GenerationProgressBar = styled.div`
+  margin-top: 0.32rem;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+`;
+
+export const GenerationProgressFill = styled.div`
+  height: 100%;
+  min-width: 6px;
+  background: linear-gradient(
+    90deg,
+    ${({ $accent }) => `${$accent || '#ffffff'}80`},
+    ${({ $accent }) => $accent || '#fff'}
+  );
+  transition: width 0.5s ease;
+`;
+
+export const GenerationStatusList = styled.ul`
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.44rem;
+`;
+
+export const GenerationStatusItem = styled.li`
+  border: 1px solid
+    ${({ $accent, $isActive }) =>
+      $isActive ? `${$accent || '#ffffff'}68` : 'rgba(255, 255, 255, 0.12)'};
+  background: ${({ $accent, $isActive }) =>
+    $isActive ? `${$accent || '#ffffff'}14` : 'rgba(255, 255, 255, 0.03)'};
+  color: ${({ $isActive }) => ($isActive ? 'rgba(248, 250, 255, 0.94)' : 'rgba(212, 224, 245, 0.62)')};
+  padding: 0.72rem 0.78rem;
+  font-size: 13px;
+  line-height: 1.55;
+  transition: border-color 0.24s ease, background 0.24s ease, color 0.24s ease;
+`;
+
+export const GenerationActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+`;
+
+export const GenerationAction = styled.button`
+  ${actionBase}
+  min-width: 170px;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}88`};
+  background: ${({ $accent }) => `${$accent || '#ffffff'}14`};
+  color: ${({ $accent }) => $accent || '#fff'};
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    border-color: ${({ $accent }) => $accent || '#fff'};
+    background: ${({ $accent }) => `${$accent || '#ffffff'}22`};
+    transform: translateY(-1px);
+  }
+`;
+
 export const PanelPage = styled.div`
   min-height: 100%;
   background: #000;
@@ -568,12 +880,20 @@ export const DashboardGrid = styled.div`
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
 
+  .dash-wide {
+    grid-column: 1 / -1;
+  }
+
   .dash-note {
     grid-column: 1 / -1;
   }
 
   @media (max-width: 760px) {
     grid-template-columns: 1fr;
+
+    .dash-wide {
+      grid-column: auto;
+    }
 
     .dash-note {
       grid-column: auto;
@@ -733,27 +1053,31 @@ export const ModalLayer = styled(motion.div)`
 
 export const ModalCard = styled(motion.div)`
   width: min(92vw, 460px);
-  border: 1px solid ${({ $accent }) => ($accent ? `${$accent}70` : 'rgba(255, 255, 255, 0.24)')};
-  background: rgba(7, 7, 7, 0.96);
-  color: #fff;
+  border-radius: 0;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}4d`};
+  background:
+    radial-gradient(circle at 18% 16%, ${({ $accent }) => `${$accent || '#ffffff'}10`}, transparent 36%),
+    linear-gradient(165deg, rgba(10, 10, 10, 0.97), rgba(4, 4, 4, 0.94));
+  color: #f5f7ff;
   padding: 1rem;
   display: grid;
   gap: 0.8rem;
   position: relative;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
 `;
 
 export const ModalTitle = styled.h3`
   margin: 0;
-  color: ${({ $accent }) => ($accent ? $accent : '#fff')};
+  color: ${({ $accent }) => $accent || '#fff'};
   font-size: 24px;
   line-height: 1.1;
-  letter-spacing: -0.02em;
-  font-family: 'Freesentation Bold', 'Cardinal Fruit', sans-serif;
+  letter-spacing: -0.04em;
+  font-family: 'Freesentation Black', 'Cardinal Fruit', sans-serif;
 `;
 
 export const ModalBody = styled.p`
   margin: 0;
-  color: ${({ $accent }) => ($accent ? `${$accent}cc` : 'rgba(224, 233, 250, 0.84)')};
+  color: rgba(226, 236, 255, 0.82);
   font-size: 14px;
   line-height: 1.6;
 `;
@@ -768,15 +1092,21 @@ export const ModalPrimaryButton = styled.button`
   flex: 1;
   min-width: 170px;
   height: 40px;
-  border: 1px solid ${({ $accent }) => $accent || 'rgba(255, 255, 255, 0.62)'};
+  border: 1px solid ${({ $accent }) => $accent || '#fff'};
   border-radius: 0;
   background: ${({ $accent }) => $accent || '#fff'};
   color: #000;
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
   cursor: pointer;
+  transition: filter 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
 
   &:disabled {
     opacity: 0.45;
@@ -788,15 +1118,22 @@ export const ModalGhostButton = styled.button`
   flex: 1;
   min-width: 140px;
   height: 40px;
-  border: 1px solid ${({ $accent }) => ($accent ? `${$accent}70` : 'rgba(255, 255, 255, 0.32)')};
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}88`};
   border-radius: 0;
-  background: ${({ $accent }) => ($accent ? `${$accent}14` : 'rgba(14, 14, 14, 0.9)')};
-  color: ${({ $accent }) => ($accent ? $accent : 'rgba(255, 255, 255, 0.92)')};
+  background: ${({ $accent }) => `${$accent || '#ffffff'}12`};
+  color: ${({ $accent }) => $accent || '#fff'};
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
   cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    border-color: ${({ $accent }) => $accent || '#fff'};
+    background: ${({ $accent }) => `${$accent || '#ffffff'}20`};
+    transform: translateY(-1px);
+  }
 `;
 
 export const CloseModalButton = styled.button`

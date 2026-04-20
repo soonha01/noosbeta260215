@@ -3,14 +3,15 @@ import './StateSurveyResultPage.css';
 
 const StateSurveyResultPage = ({
   surveyResult,
+  aiInterpretation,
   resultNextStepMessage,
   isTransitioning,
   onConfirm,
   resultEyebrow = 'Analysis Complete',
-  resultCurrentLabel = '현재 상태',
-  interpretationTitle = 'State Interpretation',
-  resultPanelTitle = 'Result Scores',
-  resultPanelSubtitle = '검증 척도 기반 정량 지표',
+  resultCurrentLabel = 'AI Current State',
+  interpretationTitle = 'AI State Interpretation',
+  resultPanelTitle = 'AI State Vectors',
+  resultPanelSubtitle = '검증 설문 블록 기반 정량 지표',
   confirmLabel = '확인',
 }) => {
   const parsedIndicators = useMemo(
@@ -51,6 +52,18 @@ const StateSurveyResultPage = ({
           <article className="result-conclusion-wall">
             <p className="result-panel-title">{interpretationTitle}</p>
             <p className="result-conclusion">{surveyResult.conclusion}</p>
+
+            {aiInterpretation && (
+              <article className="result-indicator-strip" style={{ marginTop: 16, display: 'grid', gap: 6 }}>
+                <p className="result-indicator-label">NOOS AI Brief</p>
+                <p className="result-conclusion" style={{ margin: 0 }}>
+                  {aiInterpretation.headline}
+                </p>
+                <p className="result-score-detail" style={{ margin: 0 }}>
+                  {aiInterpretation.summary}
+                </p>
+              </article>
+            )}
 
             <div className="result-indicator-strip-grid">
               {parsedIndicators.map((indicator, index) => (
