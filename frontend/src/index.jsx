@@ -4,6 +4,79 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import "./index.css";
 import FixedNavigation from "./components/navigation/FixedNavigation.jsx";
 
+const ensureMatchMediaCompat = () => {
+  if (typeof window === "undefined" || window.__NOOS_MATCH_MEDIA_COMPAT__) return;
+
+  const createFallbackMql = (query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  });
+
+  if (typeof window.matchMedia !== "function") {
+    window.matchMedia = (query) => createFallbackMql(query);
+    return;
+  }
+
+  const originalMatchMedia = window.matchMedia.bind(window);
+  window.matchMedia = (query) => {
+    let result;
+
+    try {
+      result = originalMatchMedia(query) ?? createFallbackMql(query);
+    } catch (error) {
+      result = createFallbackMql(query);
+    }
+
+    if (typeof result.addListener !== "function") {
+      result.addListener = (listener) => {
+        if (typeof result.addEventListener === "function") {
+          result.addEventListener("change", listener);
+        }
+      };
+    }
+
+    if (typeof result.removeListener !== "function") {
+      result.removeListener = (listener) => {
+        if (typeof result.removeEventListener === "function") {
+          result.removeEventListener("change", listener);
+        }
+      };
+    }
+
+    if (typeof result.addEventListener !== "function") {
+      result.addEventListener = () => {};
+    }
+
+    if (typeof result.removeEventListener !== "function") {
+      result.removeEventListener = () => {};
+    }
+
+    if (typeof result.dispatchEvent !== "function") {
+      result.dispatchEvent = () => false;
+    }
+
+    if (typeof result.matches !== "boolean") {
+      result.matches = false;
+    }
+
+    if (typeof result.media !== "string") {
+      result.media = query;
+    }
+
+    return result;
+  };
+
+  window.__NOOS_MATCH_MEDIA_COMPAT__ = true;
+};
+
+ensureMatchMediaCompat();
+
 const App = lazy(() => import("./App.jsx"));
 const AboutUs = lazy(() => import("./components/sections/AboutUs.jsx"));
 const SolarExplorer = lazy(() => import("./components/features/solar/SolarExplorer.jsx"));

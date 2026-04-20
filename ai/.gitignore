@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+*.log
+
+.cache/
+.venv/
+generated/gemma_cache/
+
+# Keep the large upstream checkout local and out of the app repo.
+vendor/ACE-Step-1.5/
+vendor/ACE-Step-1.5/.cache/
+vendor/ACE-Step-1.5/.venv/
+vendor/ACE-Step-1.5/checkpoints/.cache/

@@ -254,14 +254,15 @@ const CombinedWaveChart = ({ seriesCollection, measurementDurationSec }) => {
 const MuseSignalDashboard = ({
   eegData,
   fftAnalysis: providedFftAnalysis,
+  aiInterpretation,
   isTransitioning,
   onConfirm,
   title = 'Muse S Athena 측정 완료',
-  summary = '8초 기준선 측정이 완료되었습니다. raw 파형과 주파수 대역을 확인한 뒤 다음 단계로 이동하세요.',
+  summary = '측정이 완료되었습니다. raw 파형과 주파수 대역을 확인한 뒤 다음 단계로 이동하세요.',
   nextStepMessage = '원하시는 집중이나 감정상태에 맞는 행성을 선택해 다음 단계로 이동하세요.',
-  measurementDurationSec = 8,
+  measurementDurationSec = 300,
 }) => {
-  const waveformPointLimit = Math.max(120, Math.round(DEFAULT_SAMPLE_RATE * measurementDurationSec));
+  const waveformPointLimit = Math.max(240, Math.min(2048, Math.round(DEFAULT_SAMPLE_RATE * measurementDurationSec)));
   const waveformSeries = useMemo(
     () => getRecentChannelSeries(eegData, waveformPointLimit),
     [eegData, waveformPointLimit]
@@ -381,6 +382,48 @@ const MuseSignalDashboard = ({
             )}
           </div>
         </header>
+
+        {aiInterpretation && (
+          <div
+            style={{
+              ...SECTION_STYLE,
+              position: 'relative',
+              marginBottom: 14,
+              padding: 14,
+              alignSelf: 'start',
+              height: 'fit-content',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 12, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.46)' }}>
+              NOOS AI Brief
+            </p>
+            <h3 style={{ margin: '8px 0 4px', fontSize: '1.5rem', lineHeight: 1.08 }}>
+              {aiInterpretation.headline}
+            </h3>
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.72)', lineHeight: 1.58 }}>
+              {aiInterpretation.summary}
+            </p>
+            {!!aiInterpretation.why_now?.length && (
+              <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+                {aiInterpretation.why_now.map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      borderRadius: 14,
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: '10px 12px',
+                      color: 'rgba(255,255,255,0.74)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div
           style={{

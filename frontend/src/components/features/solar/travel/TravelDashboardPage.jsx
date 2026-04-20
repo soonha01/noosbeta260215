@@ -1,4 +1,5 @@
 import React from 'react';
+import TravelLightingPreview from './TravelLightingPreview';
 import {
   DashBody,
   DashCard,
@@ -23,11 +24,15 @@ const TravelDashboardPage = ({
   accentColor,
   feedbackAverage,
   feedbackHistory,
+  dashboardSummary,
+  isDashboardSummaryLoading,
   memoText,
   onMemoChange,
   onSaveMemo,
   onBack,
 }) => {
+  const dashboardOutput = dashboardSummary?.output || null;
+
   return (
     <PanelPage>
       <PanelHeader>
@@ -76,6 +81,26 @@ const TravelDashboardPage = ({
           </FeedbackList>
         </DashCard>
 
+        <DashCard $accent={accentColor}>
+          <DashLabel $accent={accentColor}>NOOS Summary</DashLabel>
+          <DashHeadline $accent={accentColor}>
+            {isDashboardSummaryLoading ? '요약 생성 중' : dashboardOutput?.headline || '세션 요약 준비 전'}
+          </DashHeadline>
+          <DashBody>{dashboardOutput?.summary || '피드백과 메모를 기반으로 다음 세션 조정 방향을 정리합니다.'}</DashBody>
+          {dashboardOutput?.preferred_planets?.length ? (
+            <DashMeta $accent={accentColor}>
+              선호 행성: {dashboardOutput.preferred_planets.join(', ')}
+            </DashMeta>
+          ) : (
+            <DashMeta $accent={accentColor}>피드백 데이터가 쌓이면 자동으로 개인화 경향이 보입니다.</DashMeta>
+          )}
+        </DashCard>
+
+        <DashCard className="dash-wide" $accent={accentColor}>
+          <DashLabel $accent={accentColor}>추천 조명 프리셋</DashLabel>
+          <TravelLightingPreview preview={planetMedia.lightingPreview} accentColor={accentColor} />
+        </DashCard>
+
         <DashCard className="dash-note" $accent={accentColor}>
           <DashLabel $accent={accentColor}>메모장</DashLabel>
           <MemoInput
@@ -88,6 +113,9 @@ const TravelDashboardPage = ({
               메모 저장
             </MemoSaveButton>
           </MemoActions>
+          {dashboardOutput?.memo_tags?.length ? (
+            <DashMeta $accent={accentColor}>태그: {dashboardOutput.memo_tags.join(', ')}</DashMeta>
+          ) : null}
         </DashCard>
       </DashboardGrid>
     </PanelPage>

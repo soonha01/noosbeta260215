@@ -3,11 +3,13 @@ import { AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import SpaceshipSeating from './SpaceshipSeating';
 import SpaceTicket from './SpaceTicket';
+import TravelGenerationPage from './travel/TravelGenerationPage';
 import TravelPlayerPage from './travel/TravelPlayerPage';
 import TravelDashboardPage from './travel/TravelDashboardPage';
 import TravelProfilePage from './travel/TravelProfilePage';
 import { AiObjetDialog, ExitDialog, FeedbackDialog } from './travel/TravelDialogs';
 import {
+  AI_CONTEXT_STORAGE_KEY,
   DEFAULT_PROFILE,
   EXIT_TO_HOME,
   EXIT_TO_PLANETS,
@@ -17,12 +19,19 @@ import {
   PROFILE_STORAGE_KEY,
   STATE_STORAGE_KEY,
   STEP_DASHBOARD,
+  STEP_GENERATING,
   STEP_PLAYER,
   STEP_PROFILE,
   STEP_SEATING,
   STEP_TICKET,
   TRACK_DURATION_SEC,
 } from './travel/constants';
+import {
+  buildLightingPreviewFromIntervention,
+  generateJourneyBundle,
+  parseNaturalLanguageFeedback,
+  requestDashboardSummary,
+} from '../../../lib/noosAiApi';
 import {
   loadStorageJSON,
   readStorageText,
@@ -38,6 +47,22 @@ const ENTRY_PLAYER_FADE_IN_SEC = 1.9;
 const DEFAULT_PLAYER_FADE_IN_SEC = 1.15;
 const ENTRY_SHELL_FADE_SEC = 1.35;
 const DEFAULT_SHELL_FADE_SEC = 0.8;
+const JOURNEY_GENERATION_DURATION_SEC = 90;
+const GENERATION_PROGRESS_STEPS = [8, 16, 28, 41, 55, 68, 80, 89, 95];
+const GENERATION_STATUS_LINES = [
+  '현재 상태 벡터와 목표 행성 프로필을 정렬하는 중',
+  '뇌파/설문 기반 상태 차이를 분석하는 중',
+  'ACE-Step 음악 스펙과 조명 패턴을 동기화하는 중',
+  '후보 트랙을 생성하고 최종 세션을 확정하는 중',
+];
+const NEUTRAL_CANONICAL_STATE = {
+  focus_readiness: 0.5,
+  stress_load: 0.5,
+  fatigue_risk: 0.5,
+  relaxation_level: 0.5,
+  cortical_arousal: 0.5,
+  mental_workload: 0.5,
+};
 
 const SpaceTravel = ({
   planet,
@@ -63,8 +88,16 @@ const SpaceTravel = ({
   const playerFadeInDuration = isStandalonePage ? ENTRY_PLAYER_FADE_IN_SEC : DEFAULT_PLAYER_FADE_IN_SEC;
   const shellFadeDurationSec = entryOnly ? ENTRY_SHELL_FADE_SEC : DEFAULT_SHELL_FADE_SEC;
 
-  const [currentStep, setCurrentStep] = useState(entryOnly ? STEP_SEATING : STEP_PLAYER);
+  const [currentStep, setCurrentStep] = useState(entryOnly ? STEP_SEATING : STEP_GENERATING);
   const [ticketData, setTicketData] = useState(null);
+  const [generatedJourney, setGeneratedJourney] = useState(null);
+  const [generationError, setGenerationError] = useState('');
+  const [generationNotice, setGenerationNotice] = useState('');
+  const [generationAttempt, setGenerationAttempt] = useState(0);
+  const [generationProgressPercent, setGenerationProgressPercent] = useState(
+    entryOnly ? 100 : GENERATION_PROGRESS_STEPS[0]
+  );
+  const [generationStatusIndex, setGenerationStatusIndex] = useState(0);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [playheadSec, setPlayheadSec] = useState(0);
@@ -78,6 +111,9 @@ const SpaceTravel = ({
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
   const [pendingExitType, setPendingExitType] = useState(null);
   const [feedbackScore, setFeedbackScore] = useState(0);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [parsedFeedback, setParsedFeedback] = useState(null);
+  const [isFeedbackParsing, setIsFeedbackParsing] = useState(false);
   const [isRouteFadingOut, setIsRouteFadingOut] = useState(false);
 
   const [stateSnapshot, setStateSnapshot] = useState(() => loadStorageJSON(STATE_STORAGE_KEY, null));
@@ -86,13 +122,31 @@ const SpaceTravel = ({
   const [profileForm, setProfileForm] = useState(() =>
     loadStorageJSON(PROFILE_STORAGE_KEY, DEFAULT_PROFILE)
   );
+  const [assistantContext, setAssistantContext] = useState(() => loadStorageJSON(AI_CONTEXT_STORAGE_KEY, null));
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [isDashboardSummaryLoading, setIsDashboardSummaryLoading] = useState(false);
+  const hasGeneratedJourneyAudio = Boolean(generatedJourney?.audioUrl);
+
+  const effectivePlanetMedia = useMemo(() => {
+    const generatedLightingPreview = generatedJourney
+      ? buildLightingPreviewFromIntervention(generatedJourney)
+      : null;
+
+    return {
+      ...planetMedia,
+      audio: hasGeneratedJourneyAudio ? generatedJourney.audioUrl : planetMedia.audio,
+      trackName: hasGeneratedJourneyAudio ? generatedJourney?.trackName || planetMedia.trackName : planetMedia.trackName,
+      lightingPreview: generatedLightingPreview || planetMedia.lightingPreview,
+    };
+  }, [generatedJourney, hasGeneratedJourneyAudio, planetMedia]);
 
   const aiTimersRef = useRef([]);
   const routeTimersRef = useRef([]);
   const audioRef = useRef(null);
   const audioPlayRetryRef = useRef(null);
   const audioPlayAttemptsRef = useRef(0);
-  const hasRealAudio = Boolean(planetMedia?.audio);
+  const stateSnapshotRef = useRef(stateSnapshot);
+  const hasRealAudio = Boolean(effectivePlanetMedia?.audio);
 
   const clearAiTimers = useCallback(() => {
     aiTimersRef.current.forEach((timerId) => clearTimeout(timerId));
@@ -119,6 +173,133 @@ const SpaceTravel = ({
     }
     navigate('/', { replace: true });
   }, [navigate, onEndJourney]);
+
+  useEffect(() => {
+    stateSnapshotRef.current = stateSnapshot;
+  }, [stateSnapshot]);
+
+  useEffect(() => {
+    clearAiTimers();
+    setAiConnected(false);
+    setAiModalStage('none');
+    setGeneratedJourney(null);
+    setDashboardSummary(null);
+    setGenerationError('');
+    setGenerationNotice('');
+    setGenerationAttempt(0);
+    setGenerationStatusIndex(0);
+    setGenerationProgressPercent(entryOnly ? 100 : GENERATION_PROGRESS_STEPS[0]);
+    setTrackDurationSec(TRACK_DURATION_SEC);
+    setPlayheadSec(0);
+    setIsPlaying(true);
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
+    setAssistantContext(loadStorageJSON(AI_CONTEXT_STORAGE_KEY, null));
+    setCurrentStep(entryOnly ? STEP_SEATING : STEP_GENERATING);
+  }, [clearAiTimers, entryOnly, selectedPlanet]);
+
+  useEffect(() => {
+    if (entryOnly || currentStep !== STEP_GENERATING) return undefined;
+
+    const persistedSnapshot = loadStorageJSON(STATE_STORAGE_KEY, null);
+    const journeySnapshot = persistedSnapshot || stateSnapshotRef.current || null;
+    const normalizedIntentContext = assistantContext
+      ? {
+          intentText: assistantContext?.intentText || '',
+          recommendation: assistantContext?.recommendation?.output || null,
+          coach: assistantContext?.coach?.output || null,
+          intent_tags: assistantContext?.recommendation?.output?.intent_tags || [],
+          recommendedDurationSec:
+            assistantContext?.coach?.output?.recommended_duration_sec ||
+            assistantContext?.recommendation?.output?.recommended_duration_sec ||
+            JOURNEY_GENERATION_DURATION_SEC,
+        }
+      : null;
+    if (persistedSnapshot) {
+      setStateSnapshot(persistedSnapshot);
+    }
+
+    const controller = new AbortController();
+    let isCancelled = false;
+    let progressIndex = 0;
+
+    setGenerationError('');
+    setGenerationNotice('');
+    setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
+    setGenerationStatusIndex(0);
+
+    const progressTimerId = window.setInterval(() => {
+      progressIndex = Math.min(progressIndex + 1, GENERATION_PROGRESS_STEPS.length - 1);
+      setGenerationProgressPercent((prev) => Math.max(prev, GENERATION_PROGRESS_STEPS[progressIndex]));
+    }, 2600);
+
+    const statusTimerId = window.setInterval(() => {
+      setGenerationStatusIndex((prev) => Math.min(prev + 1, GENERATION_STATUS_LINES.length - 1));
+    }, 4300);
+
+    const startTimerId = window.setTimeout(async () => {
+      try {
+        const bundle = await generateJourneyBundle({
+          planet: selectedPlanet,
+          currentState: journeySnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE,
+          recognitionResult: journeySnapshot?.recognitionResult || null,
+          durationSec: normalizedIntentContext?.recommendedDurationSec || JOURNEY_GENERATION_DURATION_SEC,
+          candidateCountOverride: 1,
+          feedbackHistory: feedbackHistory.slice(0, 12),
+          memoText,
+          intentContext: normalizedIntentContext,
+          signal: controller.signal,
+        });
+
+        if (isCancelled) return;
+
+        const nextDuration = Number(bundle?.audioDurationSec);
+        setGeneratedJourney(bundle);
+        setGenerationNotice(
+          bundle?.generationWarning ||
+            (bundle?.aceStepAvailable === false
+              ? `${planetMedia.title} AI 음악 생성 서버가 연결되지 않아 기본 세션 오디오로 전환했습니다.`
+              : '')
+        );
+        setTrackDurationSec(Number.isFinite(nextDuration) && nextDuration > 0 ? Math.round(nextDuration) : TRACK_DURATION_SEC);
+        setPlayheadSec(0);
+        setIsPlaying(true);
+        setGenerationProgressPercent(100);
+        setGenerationStatusIndex(GENERATION_STATUS_LINES.length - 1);
+        setCurrentStep(STEP_PLAYER);
+      } catch (error) {
+        if (controller.signal.aborted || isCancelled) return;
+
+        const errorMessage = error instanceof Error ? error.message : '세션 생성에 실패했습니다.';
+        console.error('Journey generation failed. Falling back to base player.', error);
+        setGeneratedJourney(null);
+        setGenerationError('');
+        setGenerationNotice(
+          `${planetMedia.title} AI 세션 생성이 일시적으로 불안정해 기본 플레이어로 전환했습니다.${
+            errorMessage ? ` (${errorMessage})` : ''
+          }`
+        );
+        setTrackDurationSec(TRACK_DURATION_SEC);
+        setPlayheadSec(0);
+        setIsPlaying(true);
+        setGenerationProgressPercent(100);
+        setGenerationStatusIndex(GENERATION_STATUS_LINES.length - 1);
+        setCurrentStep(STEP_PLAYER);
+      }
+    }, 120);
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+      clearInterval(progressTimerId);
+      clearInterval(statusTimerId);
+      clearTimeout(startTimerId);
+    };
+  }, [assistantContext, currentStep, entryOnly, feedbackHistory, generationAttempt, memoText, planetMedia.title, selectedPlanet]);
 
   useEffect(() => {
     if (hasRealAudio || !isPlaying || currentStep !== STEP_PLAYER) return undefined;
@@ -175,7 +356,7 @@ const SpaceTravel = ({
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
     };
-  }, [hasRealAudio, planetMedia?.audio]);
+  }, [effectivePlanetMedia?.audio, hasRealAudio]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -246,6 +427,36 @@ const SpaceTravel = ({
     setStateSnapshot(loadStorageJSON(STATE_STORAGE_KEY, null));
   }, []);
 
+  useEffect(() => {
+    if (entryOnly || currentStep !== STEP_DASHBOARD) return undefined;
+
+    const controller = new AbortController();
+    setIsDashboardSummaryLoading(true);
+
+    requestDashboardSummary({
+      feedbackHistory,
+      memoText,
+      currentState: stateSnapshot?.canonicalState || generatedJourney?.currentState || NEUTRAL_CANONICAL_STATE,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (controller.signal.aborted) return;
+        setDashboardSummary(response);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.error('Failed to summarize dashboard:', error);
+        setDashboardSummary(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsDashboardSummaryLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [currentStep, entryOnly, feedbackHistory, generatedJourney?.currentState, memoText, stateSnapshot?.canonicalState]);
+
   const handleSeatSelect = useCallback(
     (seat) => {
       setTicketData({
@@ -272,14 +483,20 @@ const SpaceTravel = ({
           });
           return;
         }
-        setCurrentStep(STEP_PLAYER);
+        setCurrentStep(STEP_GENERATING);
         setIsRouteFadingOut(false);
       }, ENTRY_MODAL_FADE_OUT_MS);
       routeTimersRef.current.push(timerId);
       return;
     }
 
-    setCurrentStep(STEP_PLAYER);
+    setCurrentStep(STEP_GENERATING);
+    setGeneratedJourney(null);
+    setGenerationError('');
+    setGenerationNotice('');
+    setGenerationStatusIndex(0);
+    setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
+    setGenerationAttempt((prev) => prev + 1);
     setPlayheadSec(0);
     setIsPlaying(true);
     if (hasRealAudio && audioRef.current) {
@@ -299,6 +516,24 @@ const SpaceTravel = ({
   const handleBackToPlayer = useCallback(() => {
     setCurrentStep(STEP_PLAYER);
   }, []);
+
+  const handleRetryGeneration = useCallback(() => {
+    setGeneratedJourney(null);
+    setGenerationError('');
+    setGenerationNotice('');
+    setGenerationStatusIndex(0);
+    setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
+    setGenerationAttempt((prev) => prev + 1);
+  }, []);
+
+  const handleContinueWithFallback = useCallback(() => {
+    setGenerationError('');
+    setGenerationNotice(`${planetMedia.title} 기본 플레이어로 전환했습니다.`);
+    setTrackDurationSec(TRACK_DURATION_SEC);
+    setPlayheadSec(0);
+    setIsPlaying(true);
+    setCurrentStep(STEP_PLAYER);
+  }, [planetMedia.title]);
 
   const handleSaveMemo = useCallback(() => {
     writeStorageText(MEMO_STORAGE_KEY, memoText);
@@ -399,53 +634,115 @@ const SpaceTravel = ({
     setShowExitDialog(false);
     setPendingExitType(exitType);
     setFeedbackScore(0);
+    setFeedbackText('');
+    setParsedFeedback(null);
     setShowFeedbackDialog(true);
   }, []);
 
-  const persistFeedbackAndNavigate = useCallback(() => {
+  const handlePreviewFeedbackParse = useCallback(async () => {
+    if (!feedbackScore && !feedbackText.trim()) return;
+
+    setIsFeedbackParsing(true);
+    try {
+      const response = await parseNaturalLanguageFeedback({
+        feedbackText,
+        rating: feedbackScore || 3,
+        planet: selectedPlanet,
+        targetState: planetMedia.moodTarget,
+        measuredState: stateSnapshot?.title || '측정 데이터 없음',
+        measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
+        currentState: stateSnapshot?.canonicalState || generatedJourney?.currentState || NEUTRAL_CANONICAL_STATE,
+      });
+      setParsedFeedback(response);
+    } catch (error) {
+      console.error('Failed to preview NOOS feedback parse:', error);
+    } finally {
+      setIsFeedbackParsing(false);
+    }
+  }, [
+    feedbackScore,
+    feedbackText,
+    generatedJourney?.currentState,
+    planetMedia.moodTarget,
+    selectedPlanet,
+    stateSnapshot?.canonicalState,
+    stateSnapshot?.sourceLabel,
+    stateSnapshot?.title,
+  ]);
+
+  const persistFeedbackAndNavigate = useCallback(async () => {
     if (!feedbackScore || !pendingExitType) return;
 
-    const entry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      rating: feedbackScore,
-      planet: selectedPlanet,
-      planetSlug,
-      targetState: planetMedia.moodTarget,
-      measuredState: stateSnapshot?.title || '측정 데이터 없음',
-      measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
-      createdAt: new Date().toISOString(),
-      route: pendingExitType,
-    };
+    setIsFeedbackParsing(true);
+    let feedbackResponse = parsedFeedback;
 
-    const nextHistory = [entry, ...feedbackHistory].slice(0, 40);
-    setFeedbackHistory(nextHistory);
-    saveStorageJSON(FEEDBACK_STORAGE_KEY, nextHistory);
-
-    setShowFeedbackDialog(false);
-    setIsRouteFadingOut(true);
-
-    clearRouteTimers();
-    const timerId = window.setTimeout(() => {
-      if (pendingExitType === EXIT_TO_PLANETS) {
-        goToExplorer();
-        return;
+    try {
+      if (!feedbackResponse) {
+        feedbackResponse = await parseNaturalLanguageFeedback({
+          feedbackText,
+          rating: feedbackScore,
+          planet: selectedPlanet,
+          targetState: planetMedia.moodTarget,
+          measuredState: stateSnapshot?.title || '측정 데이터 없음',
+          measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
+          currentState: stateSnapshot?.canonicalState || generatedJourney?.currentState || NEUTRAL_CANONICAL_STATE,
+        });
       }
 
-      if (pendingExitType === EXIT_TO_HOME) {
-        goToHome();
-      }
-    }, 880);
-    routeTimersRef.current.push(timerId);
+      setParsedFeedback(feedbackResponse);
+
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        rating: feedbackScore,
+        feedbackText,
+        planet: selectedPlanet,
+        planetSlug,
+        targetState: planetMedia.moodTarget,
+        measuredState: stateSnapshot?.title || '측정 데이터 없음',
+        measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
+        createdAt: new Date().toISOString(),
+        route: pendingExitType,
+        llm: feedbackResponse?.output || null,
+      };
+
+      const nextHistory = [entry, ...feedbackHistory].slice(0, 40);
+      setFeedbackHistory(nextHistory);
+      saveStorageJSON(FEEDBACK_STORAGE_KEY, nextHistory);
+
+      setShowFeedbackDialog(false);
+      setIsRouteFadingOut(true);
+
+      clearRouteTimers();
+      const timerId = window.setTimeout(() => {
+        if (pendingExitType === EXIT_TO_PLANETS) {
+          goToExplorer();
+          return;
+        }
+
+        if (pendingExitType === EXIT_TO_HOME) {
+          goToHome();
+        }
+      }, 880);
+      routeTimersRef.current.push(timerId);
+    } catch (error) {
+      console.error('Failed to persist NOOS feedback:', error);
+    } finally {
+      setIsFeedbackParsing(false);
+    }
   }, [
     clearRouteTimers,
     feedbackHistory,
     feedbackScore,
+    feedbackText,
+    generatedJourney?.currentState,
     goToExplorer,
     goToHome,
+    parsedFeedback,
     pendingExitType,
     planetMedia.moodTarget,
     planetSlug,
     selectedPlanet,
+    stateSnapshot?.canonicalState,
     stateSnapshot?.sourceLabel,
     stateSnapshot?.title,
   ]);
@@ -481,17 +778,39 @@ const SpaceTravel = ({
           </StepFrame>
         )}
 
+        {!entryOnly && currentStep === STEP_GENERATING && (
+          <StepFrame
+            key={STEP_GENERATING}
+            initial={{ opacity: 0, y: 18, filter: 'blur(10px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -14, filter: 'blur(10px)' }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <TravelGenerationPage
+              planetMedia={effectivePlanetMedia}
+              accentColor={accentColor}
+              progressPercent={generationProgressPercent}
+              statusLines={GENERATION_STATUS_LINES}
+              activeStatusIndex={generationStatusIndex}
+              stateSnapshot={stateSnapshot}
+              errorMessage={generationError}
+              onRetry={handleRetryGeneration}
+              onContinueFallback={handleContinueWithFallback}
+            />
+          </StepFrame>
+        )}
+
         {!entryOnly && currentStep === STEP_PLAYER && (
           <StepFrame
             key={STEP_PLAYER}
-            style={{ overflowY: 'hidden' }}
+            style={{ overflowY: 'auto' }}
             initial={{ opacity: 0, y: 18, filter: 'blur(10px)' }}
             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
             exit={{ opacity: 0, y: -14, filter: 'blur(10px)' }}
             transition={{ duration: playerFadeInDuration, ease: [0.16, 1, 0.3, 1] }}
           >
             <TravelPlayerPage
-              planetMedia={planetMedia}
+              planetMedia={effectivePlanetMedia}
               accentColor={accentColor}
               playheadSec={playheadSec}
               durationSec={trackDurationSec}
@@ -510,6 +829,10 @@ const SpaceTravel = ({
               onDisconnectAiObjet={handleDisconnectAiObjet}
               onExitIntent={handleExitIntent}
               aiConnected={aiConnected}
+              generatedJourney={generatedJourney}
+              hasGeneratedAudio={hasGeneratedJourneyAudio}
+              generationNotice={generationNotice}
+              stateSnapshot={stateSnapshot}
             />
           </StepFrame>
         )}
@@ -524,10 +847,12 @@ const SpaceTravel = ({
           >
             <TravelDashboardPage
               stateSnapshot={stateSnapshot}
-              planetMedia={planetMedia}
+              planetMedia={effectivePlanetMedia}
               accentColor={accentColor}
               feedbackAverage={feedbackAverage}
               feedbackHistory={feedbackHistory}
+              dashboardSummary={dashboardSummary}
+              isDashboardSummaryLoading={isDashboardSummaryLoading}
               memoText={memoText}
               onMemoChange={setMemoText}
               onSaveMemo={handleSaveMemo}
@@ -557,7 +882,7 @@ const SpaceTravel = ({
 
       {!entryOnly && (
         <>
-          <audio ref={audioRef} src={planetMedia?.audio || undefined} preload="metadata" hidden />
+          <audio ref={audioRef} src={effectivePlanetMedia?.audio || undefined} preload="metadata" hidden />
           <AiObjetDialog
             stage={aiModalStage}
             onChoose={handleAiChoice}
@@ -574,6 +899,11 @@ const SpaceTravel = ({
             open={showFeedbackDialog}
             value={feedbackScore}
             onChange={setFeedbackScore}
+            feedbackText={feedbackText}
+            onFeedbackTextChange={setFeedbackText}
+            parsedFeedback={parsedFeedback?.output || null}
+            isParsing={isFeedbackParsing}
+            onPreviewParse={handlePreviewFeedbackParse}
             onSubmit={persistFeedbackAndNavigate}
             onClose={() => setShowFeedbackDialog(false)}
             accentColor={accentColor}

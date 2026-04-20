@@ -10,6 +10,7 @@ export const EEG_BANDS = [
 
 export const DEFAULT_SAMPLE_RATE = 256;
 export const DEFAULT_FFT_SIZE = 256;
+export const DEFAULT_MAX_WINDOW_COUNT = 48;
 
 const createEmptyBandPowers = () =>
   EEG_BANDS.map((band) => ({
@@ -81,36 +82,63 @@ export const getRecentChannelSeries = (readings, maxPoints = 240) => {
 
 export const analyzeEegBands = (
   readings,
-  { sampleRate = DEFAULT_SAMPLE_RATE, fftSize = DEFAULT_FFT_SIZE } = {}
+  { sampleRate = DEFAULT_SAMPLE_RATE, fftSize = DEFAULT_FFT_SIZE, maxWindowCount = DEFAULT_MAX_WINDOW_COUNT } = {}
 ) => {
-  const recentReadings = readings.slice(-fftSize);
+  const totalReadings = Array.isArray(readings) ? readings : [];
 
-  if (recentReadings.length < 64) {
+  if (totalReadings.length < 64) {
     return {
-      sampleCount: recentReadings.length,
+      sampleCount: totalReadings.length,
       bandPowers: createEmptyBandPowers(),
       dominantBand: null,
       totalPower: 0,
     };
   }
 
+  const windows = [];
+  const availableWindowCount = Math.max(1, Math.floor(totalReadings.length / fftSize));
+  const targetWindowCount = Math.min(Math.max(1, maxWindowCount), availableWindowCount);
+
+  if (availableWindowCount <= 1) {
+    windows.push(totalReadings.slice(-fftSize));
+  } else {
+    const selectedStartIndices = new Set();
+
+    for (let index = 0; index < targetWindowCount; index += 1) {
+      const ratio = targetWindowCount === 1 ? 1 : index / (targetWindowCount - 1);
+      const windowIndex = Math.floor((availableWindowCount - 1) * ratio);
+      const start = windowIndex * fftSize;
+      if (selectedStartIndices.has(start)) continue;
+      selectedStartIndices.add(start);
+      windows.push(totalReadings.slice(start, start + fftSize));
+    }
+  }
+
   const aggregatedTotals = new Map(EEG_BANDS.map((band) => [band.key, 0]));
+  let processedWindowCount = 0;
 
-  CHANNEL_KEYS.forEach((channelKey) => {
-    const channelSamples = recentReadings.map((reading) => reading?.channels?.[channelKey] ?? 0);
-    const bandPowers = computeBandPowersForSamples(channelSamples, sampleRate);
+  windows.forEach((windowReadings) => {
+    if (windowReadings.length < 64) return;
+    processedWindowCount += 1;
 
-    bandPowers.forEach((band) => {
-      aggregatedTotals.set(
-        band.key,
-        aggregatedTotals.get(band.key) + band.power / CHANNEL_KEYS.length
-      );
+    CHANNEL_KEYS.forEach((channelKey) => {
+      const channelSamples = windowReadings.map((reading) => reading?.channels?.[channelKey] ?? 0);
+      const bandPowers = computeBandPowersForSamples(channelSamples, sampleRate);
+
+      bandPowers.forEach((band) => {
+        aggregatedTotals.set(
+          band.key,
+          aggregatedTotals.get(band.key) + band.power / CHANNEL_KEYS.length
+        );
+      });
     });
   });
 
+  const divisor = Math.max(1, processedWindowCount);
+
   const bandPowers = EEG_BANDS.map((band) => ({
     ...band,
-    power: aggregatedTotals.get(band.key) ?? 0,
+    power: (aggregatedTotals.get(band.key) ?? 0) / divisor,
     percent: 0,
   }));
 
@@ -125,7 +153,7 @@ export const analyzeEegBands = (
   );
 
   return {
-    sampleCount: recentReadings.length,
+    sampleCount: totalReadings.length,
     bandPowers: normalizedBandPowers,
     dominantBand: dominantBand?.key ?? null,
     totalPower,

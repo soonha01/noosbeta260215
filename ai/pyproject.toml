@@ -1,0 +1,30 @@
+[project]
+name = "noos-ai"
+version = "0.1.0"
+description = "Transparent recognition-session EEG engine for NOOS."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "pydantic>=2.9.0",
+  "transformers>=4.53.0",
+  "accelerate>=1.8.0",
+  "huggingface-hub>=0.34.0",
+  "sentencepiece>=0.2.0",
+  "safetensors>=0.4.5",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+  "noos_ai",
+  "noos_ai.eeg",
+  "noos_ai.gemma",
+  "noos_ai.intervention",
+  "noos_ai.integrations",
+  "noos_ai.sessions",
+]

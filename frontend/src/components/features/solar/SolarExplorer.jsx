@@ -2,6 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './SolarExplorer.css';
 import SpaceTravel from './SpaceTravel';
+import ExplorerAssistantPanel from './travel/ExplorerAssistantPanel';
+import {
+  AI_CONTEXT_STORAGE_KEY,
+  FEEDBACK_STORAGE_KEY,
+  MEMO_STORAGE_KEY,
+  PLANET_MEDIA,
+  STATE_STORAGE_KEY,
+} from './travel/constants';
+import { requestPlanetRecommendation, requestSessionCoach, warmNoosLocalCopilot } from '../../../lib/noosAiApi';
 
 const ENTRY_BURST_DURATION_MS = 2100;
 const BUTTON_APPEAR_DELAY_MS = 4000;
@@ -16,6 +25,9 @@ const PLANET_NAME_BY_ID = {
   neptune: 'Neptune',
   pluto: 'Pluto'
 };
+const PLANET_TITLE_BY_SLUG = Object.fromEntries(
+  Object.entries(PLANET_NAME_BY_ID).map(([slug, title]) => [slug.toLowerCase(), title])
+);
 const MODAL_BACKDROP_BASE_STYLE = Object.freeze({
   position: 'fixed',
   inset: 0,
@@ -78,6 +90,31 @@ const SolarExplorer = ({ onPlanetSelect }) => {
   const [isPageExiting, setIsPageExiting] = useState(false);
   const [isEntryBurst, setIsEntryBurst] = useState(true);
   const [launchButtonTop, setLaunchButtonTop] = useState(null);
+  const [intentText, setIntentText] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(AI_CONTEXT_STORAGE_KEY);
+      return raw ? JSON.parse(raw)?.intentText || '' : '';
+    } catch {
+      return '';
+    }
+  });
+  const [assistantRecommendation, setAssistantRecommendation] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(AI_CONTEXT_STORAGE_KEY);
+      return raw ? JSON.parse(raw)?.recommendation || null : null;
+    } catch {
+      return null;
+    }
+  });
+  const [assistantCoach, setAssistantCoach] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(AI_CONTEXT_STORAGE_KEY);
+      return raw ? JSON.parse(raw)?.coach || null : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isAssistantLoading, setIsAssistantLoading] = useState(false);
   const rootRef = useRef(null);
   const buttonRevealTimeoutRef = useRef(null);
   const entryBurstTimeoutRef = useRef(null);
@@ -92,6 +129,14 @@ const SolarExplorer = ({ onPlanetSelect }) => {
       setShowButton(true);
       buttonRevealTimeoutRef.current = null;
     }, delayMs);
+  }, []);
+
+  const persistAssistantContext = useCallback((nextValue) => {
+    try {
+      window.localStorage.setItem(AI_CONTEXT_STORAGE_KEY, JSON.stringify(nextValue));
+    } catch (error) {
+      console.error('Failed to persist AI context:', error);
+    }
   }, []);
 
   const startSpaceTravel = useCallback((planet) => {
@@ -116,6 +161,68 @@ const SolarExplorer = ({ onPlanetSelect }) => {
     setIsModalExiting(false);
     setIsPageExiting(false);
   }, []);
+
+  const applyRecommendedPlanet = useCallback((planetSlug) => {
+    const nextPlanet = PLANET_TITLE_BY_SLUG[String(planetSlug || '').toLowerCase()];
+    if (!nextPlanet) return;
+
+    const root = rootRef.current;
+    const input = root?.querySelector(`input[name="planet"]#${String(planetSlug).toLowerCase()}`);
+    if (input) {
+      input.checked = true;
+    }
+    setSelectedPlanet(nextPlanet);
+    scheduleButtonReveal(0);
+  }, [scheduleButtonReveal]);
+
+  const handleAnalyzeIntent = useCallback(async () => {
+    const trimmedIntent = intentText.trim();
+    if (!trimmedIntent) return;
+
+    const readJson = (key, fallback) => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
+    const currentSnapshot = readJson(STATE_STORAGE_KEY, null);
+    const feedbackHistory = readJson(FEEDBACK_STORAGE_KEY, []);
+    const memoText = window.localStorage.getItem(MEMO_STORAGE_KEY) || '';
+
+    setIsAssistantLoading(true);
+    try {
+      const recommendation = await requestPlanetRecommendation({
+        intentText: trimmedIntent,
+        desiredOutcome: PLANET_MEDIA[selectedPlanet.toLowerCase()]?.moodTarget || '',
+        memoText,
+        currentState: currentSnapshot?.canonicalState || null,
+        feedbackHistory,
+        requestedDurationSec: 900,
+      });
+      const coach = await requestSessionCoach({
+        planet: recommendation?.output?.recommended_planet || selectedPlanet.toLowerCase(),
+        intentText: trimmedIntent,
+        recommendation: recommendation?.output || null,
+        recommendedDurationSec: recommendation?.output?.recommended_duration_sec || 900,
+      });
+
+      setAssistantRecommendation(recommendation);
+      setAssistantCoach(coach);
+      persistAssistantContext({
+        intentText: trimmedIntent,
+        recommendation,
+        coach,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Failed to analyze NOOS intent:', error);
+    } finally {
+      setIsAssistantLoading(false);
+    }
+  }, [intentText, persistAssistantContext, selectedPlanet]);
 
   const handleEntryComplete = useCallback(({ planet, seat }) => {
     setShowModal(false);
@@ -175,6 +282,37 @@ const SolarExplorer = ({ onPlanetSelect }) => {
       if (entryBurstTimeoutRef.current) {
         clearTimeout(entryBurstTimeoutRef.current);
         entryBurstTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let timeoutId = 0;
+    let idleHandle = 0;
+    let cancelled = false;
+
+    const startWarmup = () => {
+      if (cancelled) return;
+      warmNoosLocalCopilot().catch((error) => {
+        if (!cancelled) {
+          console.warn('NOOS LiteRT prewarm skipped:', error);
+        }
+      });
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(startWarmup, { timeout: 3500 });
+    } else {
+      timeoutId = window.setTimeout(startWarmup, 1400);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleHandle && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleHandle);
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
     };
   }, []);
@@ -376,26 +514,26 @@ const SolarExplorer = ({ onPlanetSelect }) => {
       <div className='solar'>
         {/* Mercury */}
         <div className='solar_systm'>
-          <div className='planet mercury'>
-            <div className='planet_description mercury'>
-              <h2>Planet</h2>
-              <h1>Mercury</h1>
-              <p>태양과 가장 가까운, 태양을 가장 빠르게 도는 행성. 하루를 점화하는 번개같은 집중을 상징하며, 아이디어와 실행을 한순간에 불꽃처럼 만들 수 있도록 도와줍니다.</p>
+            <div className='planet mercury'>
+              <div className='planet_description mercury'>
+                <h2>Planet</h2>
+                <h1>Mercury</h1>
+                <p>{PLANET_MEDIA.mercury.description}</p>
+              </div>
+              <div className='overlay'></div>
             </div>
-            <div className='overlay'></div>
-          </div>
         </div>
 
         {/* Venus */}
         <div className='solar_systm'>
-          <div className='planet venus'>
-            <div className='planet_description venus'>
-              <h2>Planet</h2>
-              <h1>Venus</h1>
-              <p>구름에 가려진 감각의 행성. 온화한 비과 미묘한 대기가 깃든 곳. 영감이 새벽처럼 깨어나는 창조의 정원. 따뜻한 조명과 부드러운 음악을 당신에게 선사합니다.</p>
+            <div className='planet venus'>
+              <div className='planet_description venus'>
+                <h2>Planet</h2>
+                <h1>Venus</h1>
+                <p>{PLANET_MEDIA.venus.description}</p>
+              </div>
+              <div className='overlay'></div>
             </div>
-            <div className='overlay'></div>
-          </div>
         </div>
 
         {/* Earth */}
@@ -409,7 +547,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description earth'>
               <h2>Planet</h2>
               <h1>Earth</h1>
-              <p>균형과 현실의 중심. 푸른 바다와 초록 숲이 깃든 행성. 일과 학습의 기본 궤도, 차분한 안정속에서 집중을 할 수 있도록 도와줍니다.</p>
+              <p>{PLANET_MEDIA.earth.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -431,7 +569,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description mars'>
               <h2>Planet</h2>
               <h1>Mars</h1>
-              <p>붉은 도전의 행성. 모래 폭풍과 강렬한 바람이 부는 세계. 새로운 시도를 향해 돌파하는 에너지. 결단과 실행이 필요한 순간. 이곳으로 떠나보세요.</p>
+              <p>{PLANET_MEDIA.mars.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -458,7 +596,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description jupiter'>
               <h2>Planet</h2>
               <h1>Jupiter</h1>
-              <p>은하계 중 가장 큰 행성. 태양계의 모든 것을 대표하는 위대하고도 거대한 힘. 큰 결정과 팀을 이끄는 카리스마. 중대한 선택과 협업이 필요한 환경일때, 이 행성은 적합합니다.</p>
+              <p>{PLANET_MEDIA.jupiter.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -485,7 +623,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description saturn'>
               <h2>Planet</h2>
               <h1>Saturn</h1>
-              <p>고리위의 사색가. 영겁의 시간 속에서 고리를 두른 현자의 행성. 깊은 전략과 철학적 통찰, 연구의 아이디어를 제공합니다. 연구·기획·긴 사유의 시간을 위한 공간입니다.</p>
+              <p>{PLANET_MEDIA.saturn.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -512,7 +650,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description uranus'>
               <h2>Planet</h2>
               <h1>Uranus</h1>
-              <p>가장 첫번째로 과학자들에게 발견된 행성이자 기울어진 축을 가진 독특한 행성. 새로운 패러다임과 틀을 깨는 창조적 아이디어를 위한 무대입니다.</p>
+              <p>{PLANET_MEDIA.uranus.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -539,7 +677,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description neptune'>
               <h2>Planet</h2>
               <h1>Neptune</h1>
-              <p>깊은 푸른색의 대기와 강력한 폭풍을 가진 신비로운 행성. 푸른 빛 속으로 모든 소음이 사라지는 곳. 코딩·집중 독서·논문 작업 등 완전한 딥워크를 이끌어 줍니다.</p>
+              <p>{PLANET_MEDIA.neptune.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -551,7 +689,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
             <div className='planet_description pluto'>
               <h2>Dwarf planet</h2>
               <h1>Pluto</h1>
-              <p>우주의 끝, 내면의 쉼. 태양계의 가장 먼 곳, 조용한 침묵의 행성. 하루를 마무리하고 마음을 비우는 공간. 명상과 회복, 수면을 위한 마지막 정거장.</p>
+              <p>{PLANET_MEDIA.pluto.description}</p>
             </div>
             <div className='overlay'></div>
           </div>
@@ -626,6 +764,17 @@ const SolarExplorer = ({ onPlanetSelect }) => {
           </div>
         </>
       )}
+
+      <ExplorerAssistantPanel
+        intentText={intentText}
+        onIntentChange={setIntentText}
+        onAnalyze={handleAnalyzeIntent}
+        isLoading={isAssistantLoading}
+        recommendation={assistantRecommendation}
+        coach={assistantCoach}
+        selectedPlanet={selectedPlanet}
+        onApplyRecommendedPlanet={applyRecommendedPlanet}
+      />
 
     </div>
   );

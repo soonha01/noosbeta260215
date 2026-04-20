@@ -9,6 +9,7 @@ import StateSurveyPage from './StateSurveyPage';
 import StateSurveyResultPage from './StateSurveyResultPage';
 import MuseSignalDashboard from './MuseSignalDashboard';
 import {
+  STATE_SURVEY_METHOD_NOTE,
   STATE_SURVEY_SECTIONS,
   STATE_SURVEY_TOTAL_ITEMS,
   buildStateSurveyAnalysis,
@@ -18,6 +19,11 @@ import {
 import { createMuseClient } from '../../../lib/muse';
 import { DEFAULT_FFT_SIZE, analyzeEegBands } from '../../../lib/muse/signalProcessing';
 import { createEegAnalysisPayload, submitEegAnalysis } from '../../../lib/eegAnalysisApi';
+import {
+  buildFallbackCurrentStateFromBandAnalysis,
+  requestDeviceTroubleshoot,
+  requestStateExplanation,
+} from '../../../lib/noosAiApi';
 
 
 
@@ -30,11 +36,9 @@ const DEVICE_CONNECTION_RESULT = {
   title: 'Muse S Athena 연결 완료',
   summary: '디바이스 연결 및 신호 확인이 완료되었습니다. Solar Explorer 진입 준비가 끝났습니다.',
 };
-const SURVEY_METHOD_NOTE =
-  '본 결과는 K-PANAS/KSS/PSS-4 기반의 비의료적 상태 스크리닝입니다.';
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const MEASUREMENT_DURATION_SEC = 8;
+const MEASUREMENT_DURATION_SEC = 300;
 const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
@@ -44,9 +48,18 @@ const SOLAR_ENTRY_WARP_OVERLAY_DURATION_MS = 2200;
 const WARP_SCENE_FADE_IN_DURATION_SEC = 1.5;
 const WARP_STAR_COUNT = 120;
 const EEG_SAMPLE_RATE = 256;
-const MAX_EEG_BUFFER_SIZE = EEG_SAMPLE_RATE * MEASUREMENT_DURATION_SEC + 256;
+const MAX_EEG_BUFFER_SIZE = EEG_SAMPLE_RATE * MEASUREMENT_DURATION_SEC + 512;
+const EEG_UI_WINDOW_SEC = 12;
+const MAX_EEG_UI_BUFFER_SIZE = EEG_SAMPLE_RATE * EEG_UI_WINDOW_SEC;
 const EEG_UI_FLUSH_INTERVAL_MS = 50;
 const NOOP_PLANET_SELECT = () => {};
+const formatMeasurementClock = (seconds) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+};
+
 const saveCurrentStateSnapshot = (payload) => {
   try {
     window.localStorage.setItem(CURRENT_STATE_STORAGE_KEY, JSON.stringify(payload));
@@ -54,6 +67,44 @@ const saveCurrentStateSnapshot = (payload) => {
     console.error('Failed to save current state snapshot:', error);
   }
 };
+
+const DeviceHelpLayer = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 12, 0.74);
+  display: grid;
+  place-items: center;
+  z-index: 12000;
+  padding: 1rem;
+`;
+
+const DeviceHelpCard = styled.div`
+  width: min(680px, 100%);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  border-radius: 28px;
+  padding: 1.2rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 245, 244, 0.92));
+  color: rgba(0, 0, 0, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.22);
+  display: grid;
+  gap: 0.9rem;
+`;
+
+const DeviceHelpTextarea = styled.textarea`
+  width: 100%;
+  min-height: 128px;
+  box-sizing: border-box;
+  resize: vertical;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  padding: 0.9rem 0.95rem;
+  font: inherit;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.92);
+`;
 const SURVEY_ITEMS = STATE_SURVEY_SECTIONS.flatMap((section) =>
   section.questions.map((question) => ({
     ...question,
@@ -232,6 +283,10 @@ const Login = ({ onBack }) => {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showSolarExplorer, setShowSolarExplorer] = useState(false);
   const [showSolarEntryWarp, setShowSolarEntryWarp] = useState(false);
+  const isLocalTestMode = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  }, []);
   
   //주소창을 확인해서 로그인 성공이면 바로 기기 체크 화면으로 이동
   const [authStage, setAuthStage] = useState(() => {
@@ -244,6 +299,14 @@ const Login = ({ onBack }) => {
   const [measuredEegData, setMeasuredEegData] = useState([]);
   const [measurementProgressPercent, setMeasurementProgressPercent] = useState(0);
   const [measurementCompletedAt, setMeasurementCompletedAt] = useState(null);
+  const [museRecognitionResult, setMuseRecognitionResult] = useState(null);
+  const [museCurrentState, setMuseCurrentState] = useState(null);
+  const [surveyAiExplanation, setSurveyAiExplanation] = useState(null);
+  const [museAiExplanation, setMuseAiExplanation] = useState(null);
+  const [showDeviceHelp, setShowDeviceHelp] = useState(false);
+  const [deviceHelpText, setDeviceHelpText] = useState('');
+  const [deviceHelpResponse, setDeviceHelpResponse] = useState(null);
+  const [isDeviceHelpLoading, setIsDeviceHelpLoading] = useState(false);
 
   const warpExitTimerRef = useRef(null);
   const museClientRef = useRef(null);
@@ -280,6 +343,10 @@ const Login = ({ onBack }) => {
   const latestEegReading = eegData.length ? eegData[eegData.length - 1] : null;
   const latestEegValue = latestEegReading?.samples?.[0] ?? null;
   const resultEegData = measuredEegData.length ? measuredEegData : eegData;
+  const measuredDurationLabel = formatMeasurementClock(
+    Math.round((measurementProgressPercent / 100) * MEASUREMENT_DURATION_SEC)
+  );
+  const totalMeasurementDurationLabel = formatMeasurementClock(MEASUREMENT_DURATION_SEC);
 
   const surveyResult = useMemo(
     () => buildStateSurveyAnalysis(surveyAnswers),
@@ -430,17 +497,112 @@ const Login = ({ onBack }) => {
 
     const controller = new AbortController();
 
-    submitEegAnalysis(payload, { signal: controller.signal }).catch((error) => {
-      if (controller.signal.aborted) {
-        return;
-      }
+    submitEegAnalysis(payload, { signal: controller.signal })
+      .then((response) => {
+        if (controller.signal.aborted) {
+          return;
+        }
 
-      eegAnalysisRequestKeyRef.current = null;
-      console.error('Failed to submit EEG analysis:', error);
-    });
+        setMuseRecognitionResult(response?.recognitionResult || null);
+        setMuseCurrentState(
+          response?.currentState ||
+            buildFallbackCurrentStateFromBandAnalysis(museFftAnalysis)
+        );
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        eegAnalysisRequestKeyRef.current = null;
+        setMuseCurrentState(buildFallbackCurrentStateFromBandAnalysis(museFftAnalysis));
+        console.error('Failed to submit EEG analysis:', error);
+      });
 
     return () => controller.abort();
   }, [authStage, measurementCompletedAt, museFftAnalysis]);
+
+  useEffect(() => {
+    if (authStage !== 'analysis-result' || !surveyResult?.canonicalState) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    requestStateExplanation({
+      title: surveyResult?.title || '설문 기반 상태',
+      stateLabel: surveyResult?.title || '설문 기반 상태',
+      summary: surveyResult?.summary || '',
+      currentState: surveyResult?.canonicalState || null,
+      targetPlanet: null,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!controller.signal.aborted) {
+          setSurveyAiExplanation(response?.output || null);
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          console.error('Failed to explain survey state:', error);
+        }
+      });
+
+    return () => controller.abort();
+  }, [authStage, surveyResult?.canonicalState, surveyResult?.summary, surveyResult?.title]);
+
+  useEffect(() => {
+    if (authStage !== 'device-success' || !museCurrentState) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    requestStateExplanation({
+      title: museRecognitionResult?.state_profile?.label || DEVICE_CONNECTION_RESULT.title,
+      stateLabel: museRecognitionResult?.state_profile?.label || DEVICE_CONNECTION_RESULT.title,
+      summary:
+        museRecognitionResult?.state_profile?.summary?.join(' · ') ||
+        `${totalMeasurementDurationLabel} 측정 기반 상태 요약이 준비되었습니다.`,
+      currentState: museCurrentState,
+      targetPlanet: null,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!controller.signal.aborted) {
+          setMuseAiExplanation(response?.output || null);
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          console.error('Failed to explain muse state:', error);
+        }
+      });
+
+    return () => controller.abort();
+  }, [authStage, museCurrentState, museRecognitionResult?.state_profile?.label, museRecognitionResult?.state_profile?.summary, totalMeasurementDurationLabel]);
+
+  const handleOpenDeviceHelp = () => {
+    setShowDeviceHelp(true);
+    setDeviceHelpResponse(null);
+  };
+
+  const handleRequestDeviceHelp = async () => {
+    if (!deviceHelpText.trim()) return;
+
+    setIsDeviceHelpLoading(true);
+    try {
+      const response = await requestDeviceTroubleshoot({
+        issueText: deviceHelpText,
+        stage: authStage,
+        browser: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+        deviceType: 'Muse S Athena',
+      });
+      setDeviceHelpResponse(response?.output || null);
+    } catch (error) {
+      console.error('Failed to request device help:', error);
+    } finally {
+      setIsDeviceHelpLoading(false);
+    }
+  };
 
   const handleSignUpClick = () => {
     setShowStepper(true);
@@ -476,7 +638,7 @@ const Login = ({ onBack }) => {
   window.location.href = 'http://localhost:8080/oauth2/authorization/github'; };
   
   //로그인 클릭 시 백엔드 요청 POST
-  const handleLoginClick = async (e) => {
+const handleLoginClick = async (e) => {
   e.preventDefault(); // 폼 제출 시 페이지 새로고침 방지
   
   // 백엔드 <-> 프론트 구조 일치
@@ -521,13 +683,23 @@ const Login = ({ onBack }) => {
   }
 };
 
+const handleSkipLoginForTesting = () => {
+  if (!isLocalTestMode || isTransitioning) return;
+
+  setIsTransitioning(true);
+  window.setTimeout(() => {
+    setAuthStage('device-question');
+    setIsTransitioning(false);
+  }, 420);
+};
+
 //Muse기기 유무 확인
   const scheduleEegFlush = () => {
     if (eegFlushTimerRef.current) return;
 
     eegFlushTimerRef.current = window.setTimeout(() => {
       eegFlushTimerRef.current = null;
-      setEegData([...eegBufferRef.current]);
+      setEegData([...eegBufferRef.current.slice(-MAX_EEG_UI_BUFFER_SIZE)]);
     }, EEG_UI_FLUSH_INTERVAL_MS);
   };
 
@@ -542,6 +714,9 @@ const Login = ({ onBack }) => {
     setMeasuredEegData([]);
     setMeasurementProgressPercent(0);
     setMeasurementCompletedAt(null);
+    setMuseRecognitionResult(null);
+    setMuseCurrentState(null);
+    setMuseAiExplanation(null);
 
     if (eegFlushTimerRef.current) {
       clearTimeout(eegFlushTimerRef.current);
@@ -596,6 +771,7 @@ const Login = ({ onBack }) => {
 
 
     setIsTransitioning(true);
+    setSurveyAiExplanation(null);
     window.setTimeout(() => {
       setSurveyAnswers(createInitialStateSurveyAnswers());
       setSurveyStepIndex(0);
@@ -647,14 +823,27 @@ const Login = ({ onBack }) => {
         conclusion: surveyResult?.conclusion || '',
         dimensions: surveyResult?.dimensions || [],
         keyIndicators: surveyResult?.keyIndicators || [],
+        canonicalState: surveyResult?.canonicalState || null,
         measuredAt: now,
       });
       } else if (authStage === 'device-success') {
+        const fallbackCurrentState = buildFallbackCurrentStateFromBandAnalysis(museFftAnalysis);
+        const resolvedCurrentState = museCurrentState || fallbackCurrentState;
+        const resolvedRecognitionResult = museRecognitionResult || null;
+        const museStateLabel = resolvedRecognitionResult?.state_profile?.label || DEVICE_CONNECTION_RESULT.title;
+        const dominantState = resolvedRecognitionResult?.state_profile?.dominant_state || 'band-summary';
+
         saveCurrentStateSnapshot({
           source: 'muse',
           sourceLabel: 'Muse S Athena 측정',
-          title: DEVICE_CONNECTION_RESULT.title,
-          summary: DEVICE_CONNECTION_RESULT.summary,
+          title: museStateLabel,
+          summary:
+            resolvedRecognitionResult?.state_profile?.summary?.join(' · ') ||
+            `${totalMeasurementDurationLabel} 측정 기반 상태 요약이 준비되었습니다.`,
+          recognitionResult: resolvedRecognitionResult,
+          canonicalState: resolvedCurrentState,
+          dominantState,
+          bands: museFftAnalysis?.bandPowers || [],
           measuredAt: now,
         });
       }
@@ -711,7 +900,7 @@ const Login = ({ onBack }) => {
             currentSurveyAnswer={currentSurveyAnswer}
             isLastSurveyStep={isLastSurveyStep}
             isSurveyComplete={isSurveyComplete}
-            surveyMethodNote={SURVEY_METHOD_NOTE}
+            surveyMethodNote={STATE_SURVEY_METHOD_NOTE}
             onSurveyOptionSelect={handleSurveyOptionSelect}
             onPrev={() => handleSurveyStepMove('prev')}
             onNext={() => handleSurveyStepMove('next')}
@@ -733,6 +922,7 @@ const Login = ({ onBack }) => {
         >
           <StateSurveyResultPage
             surveyResult={surveyResult}
+            aiInterpretation={surveyAiExplanation}
             resultNextStepMessage={RESULT_NEXT_STEP_MESSAGE}
             isTransitioning={isTransitioning}
             onConfirm={handleContinueToSolarExplorer}
@@ -754,8 +944,9 @@ const Login = ({ onBack }) => {
           <MuseSignalDashboard
             eegData={resultEegData}
             fftAnalysis={museFftAnalysis}
+            aiInterpretation={museAiExplanation}
             title="Muse S Athena 측정 완료"
-            summary={`${MEASUREMENT_DURATION_SEC}초 기준선 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
+            summary={`${totalMeasurementDurationLabel} 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
             nextStepMessage={RESULT_NEXT_STEP_MESSAGE}
             measurementDurationSec={MEASUREMENT_DURATION_SEC}
             resultCurrentLabel="연결 상태"
@@ -953,7 +1144,22 @@ const Login = ({ onBack }) => {
                       <button type="submit" className="button-confirm auth-submit">
                         Let's go!
                       </button>
+                      {isLocalTestMode && (
+                        <button
+                          type="button"
+                          className="button-ghost auth-skip"
+                          onClick={handleSkipLoginForTesting}
+                        >
+                          테스트로 건너뛰기
+                        </button>
+                      )}
                     </div>
+
+                    {isLocalTestMode && (
+                      <p className="test-mode-note">
+                        Local test mode: 백엔드 로그인 없이 기기 선택 단계로 바로 이동합니다.
+                      </p>
+                    )}
 
                     <p className="signup-link">
                       Don&apos;t have an account? <button type="button" className="signup-text" onClick={handleSignUpClick}>Sign Up</button>
@@ -984,6 +1190,9 @@ const Login = ({ onBack }) => {
                         No, 보유하지 않았어요
                       </button>
                     </div>
+                    <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
+                      Muse 연결 도움받기
+                    </button>
                   </div>
                 )}
 
@@ -1012,15 +1221,18 @@ const Login = ({ onBack }) => {
                       <span>Signal</span>
                       <span>Sync</span>
                     </div>
+                    <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
+                      연결 문제가 있나요?
+                    </button>
                   </div>
                 )}
 
                 {authStage === 'device-complete' && (
                   <div className="flow-card flow-card-analysis flow-card-device-complete">
                     <p className="flow-kicker">측정 모드</p>
-                    <h2 className="flow-title">연결완료!</h2>
+                    <h2 className="flow-title">측정을 진행 중입니다.</h2>
                     <p className="flow-description">
-                      Muse S Athena 연결 및 초기 동기화가 끝났습니다. 연결 상태를 불러오고 있습니다.
+                      Muse S Athena 연결 및 초기 동기화가 끝났습니다. 5분 동안 뇌파를 안정적으로 수집하고 있습니다.
                     </p>
                     <div style={{ width: 'min(100%, 520px)', marginTop: 22 }}>
                       <div
@@ -1057,10 +1269,18 @@ const Login = ({ onBack }) => {
                           }}
                         />
                       </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.58)' }}>
+                          측정 중 문제가 있으면 도움을 요청할 수 있습니다.
+                        </span>
+                        <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
+                          도움 요청
+                        </button>
+                      </div>
                     </div>
                     <div className="connection-complete-badge" aria-hidden="true">
                       <span className="connection-complete-dot" />
-                      <span className="connection-complete-label">{`${Math.round((measurementProgressPercent / 100) * MEASUREMENT_DURATION_SEC)}초 / ${MEASUREMENT_DURATION_SEC}초`}</span>
+                      <span className="connection-complete-label">{`${measuredDurationLabel} / ${totalMeasurementDurationLabel}`}</span>
                     </div>
                   </div>
                 )}
@@ -1090,6 +1310,79 @@ const Login = ({ onBack }) => {
 
               </StyledWrapper>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showDeviceHelp && (
+            <DeviceHelpLayer
+              as={motion.div}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <DeviceHelpCard
+                as={motion.div}
+                initial={{ opacity: 0, y: 12, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.985 }}
+              >
+                <div>
+                  <p style={{ margin: 0, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#615d59', fontWeight: 600 }}>
+                    Muse Troubleshooting
+                  </p>
+                  <h3 style={{ margin: '0.2rem 0 0', fontSize: 28, lineHeight: 1, letterSpacing: '-0.05em' }}>
+                    어떤 문제가 있는지 자연어로 적어주세요.
+                  </h3>
+                </div>
+
+                <p style={{ margin: 0, color: '#615d59', fontSize: 14, lineHeight: 1.65 }}>
+                  Gemma가 현재 단계와 문제 설명을 보고 가능한 원인과 안전한 조치 순서를 정리합니다.
+                </p>
+
+                <DeviceHelpTextarea
+                  value={deviceHelpText}
+                  onChange={(event) => setDeviceHelpText(event.target.value)}
+                  placeholder="예: 블루투스 창은 뜨는데 Muse가 안 보여. 혹은 연결은 됐는데 Streaming 값이 거의 안 올라와."
+                />
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.55rem' }}>
+                  <button type="button" className="button-confirm auth-submit" onClick={handleRequestDeviceHelp} disabled={isDeviceHelpLoading}>
+                    {isDeviceHelpLoading ? '분석 중...' : '도움 받기'}
+                  </button>
+                  <button type="button" className="button-ghost auth-skip" onClick={() => setShowDeviceHelp(false)}>
+                    닫기
+                  </button>
+                </div>
+
+                {deviceHelpResponse && (
+                  <div style={{ display: 'grid', gap: '0.75rem', borderRadius: 18, border: '1px solid rgba(0,0,0,0.08)', background: '#ffffff', padding: '0.95rem' }}>
+                    <h4 style={{ margin: 0, fontSize: 18, letterSpacing: '-0.03em' }}>{deviceHelpResponse.issue_label}</h4>
+                    <p style={{ margin: 0, color: '#615d59', lineHeight: 1.6 }}>{deviceHelpResponse.summary}</p>
+                    {!!deviceHelpResponse.probable_causes?.length && (
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 600 }}>가능성 높은 원인</p>
+                        <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1rem', color: '#615d59', lineHeight: 1.55 }}>
+                          {deviceHelpResponse.probable_causes.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {!!deviceHelpResponse.steps?.length && (
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 600 }}>권장 순서</p>
+                        <ol style={{ margin: '0.4rem 0 0', paddingLeft: '1rem', color: '#615d59', lineHeight: 1.55 }}>
+                          {deviceHelpResponse.steps.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </DeviceHelpCard>
+            </DeviceHelpLayer>
           )}
         </AnimatePresence>
       </LoginContainer>
@@ -1531,8 +1824,41 @@ const StyledWrapper = styled.div`
     transform: translateY(-1px);
   }
 
+  .button-ghost.auth-skip {
+    min-width: 162px;
+    height: 46px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    font-family: 'Cardinal Fruit', 'Freesentation Bold', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+  }
+
+  .button-ghost.auth-skip:hover {
+    border-color: rgba(255, 255, 255, 0.46);
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+  }
+
   .button-confirm:active {
     transform: scale(0.98);
+  }
+
+  .test-mode-note {
+    margin: 2px 0 0;
+    color: rgba(255, 255, 255, 0.56);
+    font-size: 12px;
+    line-height: 1.55;
+    text-align: left;
+    font-family: 'Freesentation', 'SF Pro', sans-serif;
   }
 
   .signup-link {
