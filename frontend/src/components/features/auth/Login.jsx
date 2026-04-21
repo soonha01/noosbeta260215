@@ -38,7 +38,7 @@ const DEVICE_CONNECTION_RESULT = {
 };
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const MEASUREMENT_DURATION_SEC = 300;
+const MEASUREMENT_DURATION_SEC = 5;
 const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
@@ -58,6 +58,22 @@ const formatMeasurementClock = (seconds) => {
   const minutes = Math.floor(safeSeconds / 60);
   const remainder = safeSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+};
+
+const formatMeasurementDurationText = (seconds) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+
+  if (minutes > 0 && remainder > 0) {
+    return `${minutes}분 ${remainder}초`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}분`;
+  }
+
+  return `${remainder}초`;
 };
 
 const saveCurrentStateSnapshot = (payload) => {
@@ -347,6 +363,7 @@ const Login = ({ onBack }) => {
     Math.round((measurementProgressPercent / 100) * MEASUREMENT_DURATION_SEC)
   );
   const totalMeasurementDurationLabel = formatMeasurementClock(MEASUREMENT_DURATION_SEC);
+  const totalMeasurementDurationText = formatMeasurementDurationText(MEASUREMENT_DURATION_SEC);
 
   const surveyResult = useMemo(
     () => buildStateSurveyAnalysis(surveyAnswers),
@@ -520,7 +537,7 @@ const Login = ({ onBack }) => {
       });
 
     return () => controller.abort();
-  }, [authStage, measurementCompletedAt, museFftAnalysis]);
+  }, [authStage, email, measurementCompletedAt, museFftAnalysis]);
 
   useEffect(() => {
     if (authStage !== 'analysis-result' || !surveyResult?.canonicalState) {
@@ -561,7 +578,7 @@ const Login = ({ onBack }) => {
       stateLabel: museRecognitionResult?.state_profile?.label || DEVICE_CONNECTION_RESULT.title,
       summary:
         museRecognitionResult?.state_profile?.summary?.join(' · ') ||
-        `${totalMeasurementDurationLabel} 측정 기반 상태 요약이 준비되었습니다.`,
+        `${totalMeasurementDurationText} 측정 기반 상태 요약이 준비되었습니다.`,
       currentState: museCurrentState,
       targetPlanet: null,
       signal: controller.signal,
@@ -578,7 +595,7 @@ const Login = ({ onBack }) => {
       });
 
     return () => controller.abort();
-  }, [authStage, museCurrentState, museRecognitionResult?.state_profile?.label, museRecognitionResult?.state_profile?.summary, totalMeasurementDurationLabel]);
+  }, [authStage, museCurrentState, museRecognitionResult?.state_profile?.label, museRecognitionResult?.state_profile?.summary, totalMeasurementDurationText]);
 
   const handleOpenDeviceHelp = () => {
     setShowDeviceHelp(true);
@@ -615,6 +632,7 @@ const Login = ({ onBack }) => {
     headers: {
       "Content-Type": "application/json"
     },
+    credentials: "include",
     body: JSON.stringify({
       loginId: email,
       password: password,
@@ -656,14 +674,15 @@ const handleLoginClick = async (e) => {
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include",
       body: JSON.stringify(loginPayload),
     });
 
     //응답 결과 처리
     if (response.ok) {
-      const result = await response.text();
+      const result = await response.json();
       
-      if (result === "ok") {
+      if (result?.authenticated) {
         setTimeout(() => {
           setAuthStage('device-question');
           setIsTransitioning(false);
@@ -839,7 +858,7 @@ const handleSkipLoginForTesting = () => {
           title: museStateLabel,
           summary:
             resolvedRecognitionResult?.state_profile?.summary?.join(' · ') ||
-            `${totalMeasurementDurationLabel} 측정 기반 상태 요약이 준비되었습니다.`,
+            `${totalMeasurementDurationText} 측정 기반 상태 요약이 준비되었습니다.`,
           recognitionResult: resolvedRecognitionResult,
           canonicalState: resolvedCurrentState,
           dominantState,
@@ -946,7 +965,7 @@ const handleSkipLoginForTesting = () => {
             fftAnalysis={museFftAnalysis}
             aiInterpretation={museAiExplanation}
             title="Muse S Athena 측정 완료"
-            summary={`${totalMeasurementDurationLabel} 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
+            summary={`${totalMeasurementDurationText} 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
             nextStepMessage={RESULT_NEXT_STEP_MESSAGE}
             measurementDurationSec={MEASUREMENT_DURATION_SEC}
             resultCurrentLabel="연결 상태"
@@ -1232,7 +1251,8 @@ const handleSkipLoginForTesting = () => {
                     <p className="flow-kicker">측정 모드</p>
                     <h2 className="flow-title">측정을 진행 중입니다.</h2>
                     <p className="flow-description">
-                      Muse S Athena 연결 및 초기 동기화가 끝났습니다. 5분 동안 뇌파를 안정적으로 수집하고 있습니다.
+                      Muse S Athena 연결 및 초기 동기화가 끝났습니다. 테스트를 위해 {totalMeasurementDurationText} 동안
+                      뇌파를 안정적으로 수집하고 있습니다.
                     </p>
                     <div style={{ width: 'min(100%, 520px)', marginTop: 22 }}>
                       <div

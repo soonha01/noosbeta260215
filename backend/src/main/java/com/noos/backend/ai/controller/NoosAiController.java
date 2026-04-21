@@ -9,6 +9,11 @@ import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
 import com.noos.backend.ai.dto.StateExplanationRequest;
 import com.noos.backend.ai.service.NoosAiService;
+import com.noos.backend.eeg.service.EegAnalysisService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,19 +25,45 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
+
 @RestController
 @RequestMapping("/api")
 public class NoosAiController {
 
-    private final NoosAiService noosAiService;
+    private static final Logger logger = LoggerFactory.getLogger(NoosAiController.class);
 
-    public NoosAiController(NoosAiService noosAiService) {
+    private final NoosAiService noosAiService;
+    private final EegAnalysisService eegAnalysisService;
+
+    public NoosAiController(NoosAiService noosAiService, EegAnalysisService eegAnalysisService) {
         this.noosAiService = noosAiService;
+        this.eegAnalysisService = eegAnalysisService;
     }
 
     @PostMapping("/eeg/results")
-    public Map<String, Object> analyzeEeg(@RequestBody EegRecognitionRequest request) {
-        return noosAiService.recognizeFromSummary(request);
+    public Map<String, Object> analyzeEeg(
+            @RequestBody EegRecognitionRequest request,
+            HttpServletRequest httpServletRequest
+    ) {
+        HttpSession session = httpServletRequest.getSession(false);
+        Long sessionUserId = null;
+        if (session != null) {
+            Object userId = session.getAttribute(LOGIN_USER_ID);
+            if (userId instanceof Number number) {
+                sessionUserId = number.longValue();
+            }
+        }
+
+        logger.info(
+                "Received EEG summary from frontend: sessionUserId={}, measuredAt={}, durationSec={}, sampleCount={}, dominantBand={}",
+                sessionUserId,
+                request.measuredAt(),
+                request.measurementDurationSec(),
+                request.sampleCount(),
+                request.dominantBand()
+        );
+        return eegAnalysisService.analyzeAndPersist(request, sessionUserId);
     }
 
     @PostMapping("/ai/intervention/music")

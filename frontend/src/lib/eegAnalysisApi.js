@@ -69,6 +69,7 @@ export const submitEegAnalysis = async (payload, { signal } = {}) => {
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify(payload),
     signal,
   });
