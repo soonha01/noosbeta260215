@@ -26,11 +26,58 @@
         </trim>
     </insert>
 
+    <select id="selectEegSessionById" resultType="com.noos.backend.eeg.dto.EegSession">
+        SELECT
+            eeg_session_id AS eegSessionId,
+            user_id AS userId,
+            device_type AS deviceType,
+            status,
+            measured_at AS measuredAt,
+            created_at AS createdAt
+        FROM eeg_sessions
+        WHERE eeg_session_id = #{eegSessionId}
+    </select>
+
     <update id="updateEegSessionStatus">
         UPDATE eeg_sessions
         SET status = #{status}
         WHERE eeg_session_id = #{eegSessionId}
     </update>
+
+    <insert id="insertEegRawChunk" useGeneratedKeys="true" keyProperty="eegRawChunkId">
+        INSERT INTO eeg_raw_chunks (
+            eeg_session_id,
+            chunk_index,
+            sample_rate_hz,
+            start_offset_ms,
+            chunk_sample_count,
+            samples_json,
+            created_at
+        ) VALUES (
+            #{eegSessionId},
+            #{chunkIndex},
+            #{sampleRateHz},
+            #{startOffsetMs},
+            #{chunkSampleCount},
+            #{samplesJson},
+            NOW()
+        )
+    </insert>
+
+    <select id="selectEegRawChunksBySessionId" resultType="com.noos.backend.eeg.dto.EegRawChunk">
+        SELECT
+            eeg_raw_chunk_id AS eegRawChunkId,
+            eeg_session_id AS eegSessionId,
+            chunk_index AS chunkIndex,
+            sample_rate_hz AS sampleRateHz,
+            start_offset_ms AS startOffsetMs,
+            chunk_sample_count AS chunkSampleCount,
+            samples_json AS samplesJson,
+            created_at AS createdAt
+        FROM eeg_raw_chunks
+        WHERE eeg_session_id = #{eegSessionId}
+        ORDER BY chunk_index ASC
+    </select>
 
     <insert id="insertEegResult" useGeneratedKeys="true" keyProperty="eegResultId">
         INSERT INTO eeg_results (
@@ -41,11 +88,19 @@
             beta,
             gamma,
             dominant_band,
+            state_key,
             state_label,
             confidence,
+            quality_score,
+            feature_source,
             focus_score,
             relax_score,
             stress_score,
+            mental_workload_score,
+            fatigue_risk_score,
+            cortical_arousal_score,
+            analysis_version,
+            raw_ai_response_json,
             created_at
         ) VALUES (
             #{eegSessionId},
@@ -55,11 +110,19 @@
             #{beta},
             #{gamma},
             #{dominantBand},
+            #{stateKey},
             #{stateLabel},
             #{confidence},
+            #{qualityScore},
+            #{featureSource},
             #{focusScore},
             #{relaxScore},
             #{stressScore},
+            #{mentalWorkloadScore},
+            #{fatigueRiskScore},
+            #{corticalArousalScore},
+            #{analysisVersion},
+            #{rawAiResponseJson},
             NOW()
         )
     </insert>

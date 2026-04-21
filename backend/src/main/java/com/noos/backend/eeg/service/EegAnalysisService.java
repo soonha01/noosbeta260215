@@ -1,9 +1,15 @@
 package com.noos.backend.eeg.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.service.NoosAiService;
+import com.noos.backend.eeg.dto.EegRawChunk;
 import com.noos.backend.eeg.dto.EegResult;
 import com.noos.backend.eeg.dto.EegSession;
+import com.noos.backend.eeg.dto.EegSessionStartRequest;
+import com.noos.backend.eeg.dto.EegSessionStartResponse;
 import com.noos.backend.eeg.mapper.EegMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +21,8 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +31,7 @@ import java.util.Map;
 public class EegAnalysisService {
 
     private static final Logger logger = LoggerFactory.getLogger(EegAnalysisService.class);
+    private static final String ANALYSIS_VERSION = "recognition-v1";
     private static final List<String> CONFIDENCE_AXES = List.of(
             "focus_readiness",
             "stress_load",
@@ -31,10 +40,19 @@ public class EegAnalysisService {
 
     private final NoosAiService noosAiService;
     private final EegMapper eegMapper;
+    private final ObjectMapper objectMapper;
+    private final EegRawChunkService eegRawChunkService;
 
-    public EegAnalysisService(NoosAiService noosAiService, EegMapper eegMapper) {
+    public EegAnalysisService(
+            NoosAiService noosAiService,
+            EegMapper eegMapper,
+            ObjectMapper objectMapper,
+            EegRawChunkService eegRawChunkService
+    ) {
         this.noosAiService = noosAiService;
         this.eegMapper = eegMapper;
+        this.objectMapper = objectMapper;
+        this.eegRawChunkService = eegRawChunkService;
     }
 
     public Map<String, Object> analyzeAndPersist(EegRecognitionRequest request, Long sessionUserId) {
@@ -42,11 +60,12 @@ public class EegAnalysisService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login session is required for EEG save.");
         }
 
-        EegSession eegSession = createEegSession(request, sessionUserId);
-        eegMapper.insertEegSession(eegSession);
+        EegSession eegSession = resolveAnalysisSession(request, sessionUserId);
 
         try {
-            Map<String, Object> response = noosAiService.recognizeFromSummary(request);
+            eegMapper.updateEegSessionStatus(eegSession.getEegSessionId(), "PROCESSING");
+            List<Map<String, Object>> rawReadings = loadRawReadings(eegSession.getEegSessionId());
+            Map<String, Object> response = noosAiService.recognize(request, rawReadings);
             EegResult eegResult = createEegResult(eegSession.getEegSessionId(), request, response);
 
             eegMapper.insertEegResult(eegResult);
@@ -63,6 +82,38 @@ public class EegAnalysisService {
         }
     }
 
+    public EegSessionStartResponse startSession(EegSessionStartRequest request, Long sessionUserId) {
+        if (sessionUserId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login session is required for EEG session start.");
+        }
+
+        EegSession eegSession = new EegSession();
+        eegSession.setUserId(sessionUserId);
+        eegSession.setDeviceType(hasText(request.deviceType()) ? request.deviceType().trim() : "Muse S Athena");
+        eegSession.setStatus("COLLECTING");
+        eegSession.setMeasuredAt(parseMeasuredAt(request.measuredAt()));
+        eegMapper.insertEegSession(eegSession);
+
+        return new EegSessionStartResponse(eegSession.getEegSessionId(), eegSession.getStatus(), true);
+    }
+
+    private EegSession resolveAnalysisSession(EegRecognitionRequest request, Long sessionUserId) {
+        if (request.eegSessionId() != null) {
+            EegSession existing = eegMapper.selectEegSessionById(request.eegSessionId());
+            if (existing == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "EEG session was not found.");
+            }
+            if (existing.getUserId() == null || !existing.getUserId().equals(sessionUserId)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "EEG session does not belong to the current user.");
+            }
+            return existing;
+        }
+
+        EegSession eegSession = createEegSession(request, sessionUserId);
+        eegMapper.insertEegSession(eegSession);
+        return eegSession;
+    }
+
     private EegSession createEegSession(EegRecognitionRequest request, Long sessionUserId) {
         EegSession eegSession = new EegSession();
         eegSession.setUserId(sessionUserId);
@@ -75,6 +126,9 @@ public class EegAnalysisService {
     private EegResult createEegResult(Long eegSessionId, EegRecognitionRequest request, Map<String, Object> response) {
         Map<String, Object> recognitionResult = mapValue(response.get("recognitionResult"));
         Map<String, Object> currentState = mapValue(response.get("currentState"));
+        Map<String, Object> stateProfile = mapValue(recognitionResult.get("state_profile"));
+        Map<String, Object> quality = mapValue(recognitionResult.get("quality"));
+        Map<String, Object> inputSummary = mapValue(recognitionResult.get("input_summary"));
 
         EegResult eegResult = new EegResult();
         eegResult.setEegSessionId(eegSessionId);
@@ -84,11 +138,19 @@ public class EegAnalysisService {
         eegResult.setBeta(safeNumber(request.beta()));
         eegResult.setGamma(safeNumber(request.gamma()));
         eegResult.setDominantBand(hasText(request.dominantBand()) ? request.dominantBand().trim() : null);
+        eegResult.setStateKey(stringValue(stateProfile.get("dominant_state")));
         eegResult.setStateLabel(firstText(response.get("stateLabel"), nestedText(recognitionResult, "state_profile", "label")));
         eegResult.setConfidence(resolveOverallConfidence(recognitionResult));
+        eegResult.setQualityScore(roundToThree(clamp01(readNumber(quality.get("score"), 0.0))));
+        eegResult.setFeatureSource(stringValue(inputSummary.get("feature_source")));
         eegResult.setFocusScore(resolveAxisScore("focus_readiness", currentState, recognitionResult));
         eegResult.setRelaxScore(resolveAxisScore("relaxation_level", currentState, recognitionResult));
         eegResult.setStressScore(resolveAxisScore("stress_load", currentState, recognitionResult));
+        eegResult.setMentalWorkloadScore(resolveAxisScore("mental_workload", currentState, recognitionResult));
+        eegResult.setFatigueRiskScore(resolveAxisScore("fatigue_risk", currentState, recognitionResult));
+        eegResult.setCorticalArousalScore(resolveAxisScore("cortical_arousal", currentState, recognitionResult));
+        eegResult.setAnalysisVersion(ANALYSIS_VERSION);
+        eegResult.setRawAiResponseJson(toJson(response));
         return eegResult;
     }
 
@@ -110,6 +172,66 @@ public class EegAnalysisService {
         }
 
         return LocalDateTime.now();
+    }
+
+    private List<Map<String, Object>> loadRawReadings(Long eegSessionId) {
+        if (eegSessionId == null || eegSessionId <= 0) {
+            return List.of();
+        }
+
+        List<EegRawChunk> chunks = new ArrayList<>(eegRawChunkService.findChunks(eegSessionId));
+        if (chunks.isEmpty()) {
+            return List.of();
+        }
+
+        chunks.sort(Comparator.comparing(EegRawChunk::getChunkIndex, Comparator.nullsLast(Integer::compareTo)));
+
+        List<Map<String, Object>> readings = new ArrayList<>();
+        for (EegRawChunk chunk : chunks) {
+            readings.addAll(decodeChunkSamples(chunk));
+        }
+        return readings;
+    }
+
+    private List<Map<String, Object>> decodeChunkSamples(EegRawChunk chunk) {
+        try {
+            List<List<Double>> samples = objectMapper.readValue(
+                    chunk.getSamplesJson(),
+                    new TypeReference<List<List<Double>>>() {}
+            );
+
+            List<Map<String, Object>> readings = new ArrayList<>();
+            long startOffsetMs = chunk.getStartOffsetMs() != null ? chunk.getStartOffsetMs() : 0L;
+            for (List<Double> sample : samples) {
+                if (sample == null || sample.size() < 5) {
+                    continue;
+                }
+
+                Double localOffsetMs = sample.get(0);
+                Double tp9 = sample.get(1);
+                Double af7 = sample.get(2);
+                Double af8 = sample.get(3);
+                Double tp10 = sample.get(4);
+
+                if (localOffsetMs == null || tp9 == null || af7 == null || af8 == null || tp10 == null) {
+                    continue;
+                }
+
+                Map<String, Object> reading = new LinkedHashMap<>();
+                reading.put("timestamp", startOffsetMs + localOffsetMs);
+                reading.put("source", "backend-eeg-raw-chunk");
+                reading.put("channels", Map.of(
+                        "TP9", tp9,
+                        "AF7", af7,
+                        "AF8", af8,
+                        "TP10", tp10
+                ));
+                readings.add(reading);
+            }
+            return readings;
+        } catch (JsonProcessingException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to decode EEG raw chunks.", error);
+        }
     }
 
     private Double resolveOverallConfidence(Map<String, Object> recognitionResult) {
@@ -154,6 +276,15 @@ public class EegAnalysisService {
         }
 
         logger.error("Failed to analyze or persist EEG session {}", eegSessionId, error);
+    }
+
+    private String toJson(Map<String, Object> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException error) {
+            logger.warn("Failed to serialize EEG AI response for persistence", error);
+            return null;
+        }
     }
 
     private Map<String, Object> mapValue(Object value) {

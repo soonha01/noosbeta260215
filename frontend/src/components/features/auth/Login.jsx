@@ -18,7 +18,12 @@ import {
 } from '../../../lib/stateSurvey';
 import { createMuseClient } from '../../../lib/muse';
 import { DEFAULT_FFT_SIZE, analyzeEegBands } from '../../../lib/muse/signalProcessing';
-import { createEegAnalysisPayload, submitEegAnalysis } from '../../../lib/eegAnalysisApi';
+import {
+  createEegAnalysisPayload,
+  startEegSession,
+  submitEegAnalysis,
+  uploadEegRawChunks,
+} from '../../../lib/eegAnalysisApi';
 import {
   buildFallbackCurrentStateFromBandAnalysis,
   requestDeviceTroubleshoot,
@@ -38,7 +43,7 @@ const DEVICE_CONNECTION_RESULT = {
 };
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const MEASUREMENT_DURATION_SEC = 5;
+const MEASUREMENT_DURATION_SEC = 10;
 const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
@@ -500,13 +505,14 @@ const Login = ({ onBack }) => {
       return undefined;
     }
 
-    const payload = createEegAnalysisPayload({
+    const basePayload = createEegAnalysisPayload({
       analysis: museFftAnalysis,
       measuredAt: measurementCompletedAt,
       measurementDurationSec: MEASUREMENT_DURATION_SEC,
+      sampleRateHz: EEG_SAMPLE_RATE,
     });
 
-    if (!payload) {
+    if (!basePayload) {
       return undefined;
     }
 
@@ -514,7 +520,49 @@ const Login = ({ onBack }) => {
 
     const controller = new AbortController();
 
-    submitEegAnalysis(payload, { signal: controller.signal })
+    (async () => {
+      let eegSessionId = null;
+
+      try {
+        const startedSession = await startEegSession(
+          {
+            deviceType: 'Muse S Athena',
+            measuredAt: measurementCompletedAt,
+          },
+          { signal: controller.signal }
+        );
+        eegSessionId = startedSession?.eegSessionId ?? null;
+
+        if (!eegSessionId) {
+          throw new Error('EEG session start did not return eegSessionId.');
+        }
+
+        const rawUpload = await uploadEegRawChunks(
+          {
+            eegSessionId,
+            rawReadings: measuredEegData,
+            sampleRateHz: EEG_SAMPLE_RATE,
+          },
+          { signal: controller.signal }
+        );
+        eegSessionId = rawUpload?.eegSessionId ?? eegSessionId;
+      } catch (uploadError) {
+        if (!controller.signal.aborted) {
+          console.warn(
+            'Failed to start EEG session or upload raw EEG chunks. Falling back to summary-only analysis:',
+            uploadError
+          );
+        }
+      }
+
+      return submitEegAnalysis(
+        {
+          ...basePayload,
+          eegSessionId,
+        },
+        { signal: controller.signal }
+      );
+    })()
       .then((response) => {
         if (controller.signal.aborted) {
           return;
@@ -537,7 +585,7 @@ const Login = ({ onBack }) => {
       });
 
     return () => controller.abort();
-  }, [authStage, email, measurementCompletedAt, museFftAnalysis]);
+  }, [authStage, email, measuredEegData, measurementCompletedAt, museFftAnalysis]);
 
   useEffect(() => {
     if (authStage !== 'analysis-result' || !surveyResult?.canonicalState) {
