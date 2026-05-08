@@ -1,0 +1,20 @@
+flowchart TD
+  A["frontend/src/components/features/auth/MuseSignalDashboard.jsx<br/>Muse 측정 결과를 사용자가 이해하기 쉽게 표시"]
+  B["frontend/src/components/features/solar/SpaceTravel.jsx<br/>세션 생성, 플레이어, 조명 복구 흐름 제어"]
+  C["frontend/src/lib/noosAiApi.js<br/>백엔드 API 호출 helper"]
+  D["backend/.../NoosAiController.java<br/>/api/ai 엔드포인트"]
+  E["backend/.../NoosAiService.java<br/>Python, ACE-Step, mp3 저장 orchestration"]
+  F["backend/.../WizLightingService.java<br/>WiZ 조명 제어와 원상복구"]
+  G["ai/noos_ai/sessions/recognition.py<br/>현재 상태 분석"]
+  H["ai/noos_ai/sessions/intervention.py<br/>세션 전체 설계 묶음 생성"]
+  I["ai/noos_ai/intervention/music.py<br/>ACE-Step 음악 요청 생성"]
+  J["ai/noos_ai/intervention/lighting.py<br/>조명 스펙 생성"]
+  K["ai/noos_ai/integrations/ace_step.py<br/>ACE-Step API 통신"]
+
+  A --> B --> C --> D --> E
+  E --> G
+  E --> H
+  H --> I
+  H --> J
+  E --> K
+  E --> F

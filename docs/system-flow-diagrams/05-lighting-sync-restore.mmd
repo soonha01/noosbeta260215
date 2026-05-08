@@ -1,0 +1,11 @@
+sequenceDiagram
+  participant B as Backend
+  participant W as WiZ bulbs
+  participant F as Frontend page
+
+  B->>W: 세션 시작 전 getPilot 상태 저장
+  B->>W: primary 조명 적용, 색온도 CCT
+  B->>W: secondary 조명 적용, RGB 색상
+  B->>W: 10초 간격 반복
+  F->>B: 사용자가 페이지 이탈, POST /api/lighting/wiz/stop
+  B->>W: 저장해둔 원래 상태 복구

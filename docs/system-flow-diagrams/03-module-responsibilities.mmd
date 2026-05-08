@@ -1,0 +1,17 @@
+flowchart TB
+  FE["Frontend"] --> FE1["Muse 연결<br/>브라우저 Web Bluetooth"]
+  FE --> FE2["상태 화면<br/>사용자가 지금 어떤 상태인지 설명"]
+  FE --> FE3["행성 선택과 여행 화면"]
+  FE --> FE4["음악 플레이어와 조명 미리보기"]
+  FE --> FE5["페이지 이탈 시 조명 복구 요청"]
+
+  BE["Backend"] --> BE1["프론트 요청 접수"]
+  BE --> BE2["Python AI CLI 실행"]
+  BE --> BE3["ACE-Step 생성 결과 mp3 다운로드"]
+  BE --> BE4["생성 mp3를 프론트에 제공"]
+  BE --> BE5["WiZ 전구에 UDP 명령 전송"]
+
+  AI["Python AI"] --> AI1["뇌파/설문 상태를 정규화"]
+  AI --> AI2["행성 목표 상태와 현재 상태 비교"]
+  AI --> AI3["음악 프롬프트와 ACE-Step 요청 생성"]
+  AI --> AI4["논문 기반 조명 CCT/RGB 계획 생성"]

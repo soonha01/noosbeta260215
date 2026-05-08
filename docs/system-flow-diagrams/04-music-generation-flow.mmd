@@ -1,0 +1,15 @@
+sequenceDiagram
+  participant F as Frontend
+  participant B as Backend
+  participant P as Python AI
+  participant A as ACE-Step 4080 PC
+  participant G as generated folder
+
+  F->>B: POST /api/ai/intervention/music
+  B->>P: 현재 상태, 행성, duration 전달
+  P-->>B: interventionResult, music_spec, lighting_spec, ace_step_request
+  B->>A: ACE-Step 생성 요청
+  A-->>B: 생성된 audio 결과
+  B->>G: mp3 저장
+  B-->>F: audioUrl, interventionResult, wizLighting 상태
+  F->>F: 플레이어에서 생성 음악 재생

@@ -1,0 +1,8 @@
+flowchart LR
+  U["사용자"] --> F["Frontend React<br/>화면, Muse 연결, 행성 선택, 플레이어"]
+  F --> B["Backend Spring Boot<br/>API 관문, 생성 orchestration, 파일 제공"]
+  B --> AI["Python AI Engine<br/>상태 분석, 음악/조명 계획 생성"]
+  AI --> ACE["Windows 4080 ACE-Step<br/>실제 음악 mp3 생성"]
+  B --> WIZ["WiZ 전구 4개<br/>로컬 UDP 조명 제어"]
+  B --> G["generated 폴더<br/>생성된 mp3 저장"]
+  G --> F
