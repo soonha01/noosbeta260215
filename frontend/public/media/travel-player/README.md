@@ -1,7 +1,9 @@
-Travel Player audio assets
+# 여행 플레이어 오디오 자산
 
-Place planet-specific tracks in:
-- public/media/travel-player/audio/<planet>/
+행성별 트랙은 아래 위치에 둡니다.
 
-Example:
-- public/media/travel-player/audio/mars/mars-focus-v1.mp3
+- `public/media/travel-player/audio/<planet>/`
+
+예시:
+
+- `public/media/travel-player/audio/mars/mars-focus-v1.mp3`
