@@ -39,6 +39,19 @@ class LightingProgram:
     phase_overrides: dict[str, dict[str, Any]]
 
 
+PLANET_TONE_PROFILES: dict[str, dict[str, Any]] = {
+    "mercury": {"primary_hex": "#fff3dc", "secondary_hex": "#ffb34d", "primary_mode": "cct"},
+    "venus": {"primary_hex": "#ffb67c", "secondary_hex": "#ffb8c8", "primary_mode": "cct"},
+    "earth": {"primary_hex": "#8fe3c2", "secondary_hex": "#8db5ff", "primary_mode": "cct"},
+    "mars": {"primary_hex": "#f4f8ff", "secondary_hex": "#ff8a24", "primary_mode": "cct"},
+    "jupiter": {"primary_hex": "#fbe0c6", "secondary_hex": "#f0c46a", "primary_mode": "cct"},
+    "saturn": {"primary_hex": "#fbb475", "secondary_hex": "#c9d0ff", "primary_mode": "cct"},
+    "uranus": {"primary_hex": "#f2be88", "secondary_hex": "#7ddff2", "primary_mode": "cct"},
+    "neptune": {"primary_hex": "#f2e1d3", "secondary_hex": "#6ecbff", "primary_mode": "cct"},
+    "pluto": {"primary_hex": "#f7ad69", "secondary_hex": "#c9d1f2", "primary_mode": "cct"},
+}
+
+
 def _clamp_channel(value: float) -> int:
     return max(0, min(255, int(round(value))))
 
@@ -544,6 +557,13 @@ def get_lighting_program(planet_slug: str) -> LightingProgram:
     if slug not in LIGHTING_PROGRAMS:
         raise ValueError(f"unsupported lighting program: {planet_slug}")
     return LIGHTING_PROGRAMS[slug]
+
+
+def get_planet_tone_profile(planet_slug: str) -> dict[str, Any]:
+    slug = str(planet_slug or "").strip().lower()
+    if slug not in PLANET_TONE_PROFILES:
+        raise ValueError(f"unsupported planet tone palette: {planet_slug}")
+    return PLANET_TONE_PROFILES[slug]
 
 
 def get_lighting_pattern(pattern_slug: str) -> LightingPattern:

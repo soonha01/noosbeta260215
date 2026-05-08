@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#334155"/>
+    </marker>
+    <linearGradient id="header" x1="0" x2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 800 38px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #f8fafc; }
+      .subtitle { font: 500 17px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #cbd5e1; }
+      .section { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 18; }
+      .card { fill: #ffffff; stroke: #d7dee8; stroke-width: 2; rx: 14; }
+      .frontend { fill: #eff6ff; stroke: #60a5fa; }
+      .backend { fill: #ecfdf5; stroke: #34d399; }
+      .python { fill: #fff7ed; stroke: #fb923c; }
+      .ace { fill: #fef2f2; stroke: #f87171; }
+      .gemma { fill: #f5f3ff; stroke: #a78bfa; }
+      .storage { fill: #f1f5f9; stroke: #94a3b8; }
+      .label { font: 800 24px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .small { font: 500 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .tiny { font: 500 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .code { font: 600 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0f172a; }
+      .pill { fill: #e2e8f0; rx: 13; }
+      .arrow { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 3; fill: none; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+      .note { fill: #fffbeb; stroke: #f59e0b; stroke-width: 2; rx: 12; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="980"/>
+  <rect x="0" y="0" width="1600" height="108" fill="url(#header)"/>
+  <text class="title" x="56" y="52">NOOS 현재 전체 실행 구조</text>
+  <text class="subtitle" x="58" y="84">Frontend -> Spring Backend -> Python NOOS AI -> ACE-Step / Gemma 보조 서비스</text>
+
+  <rect class="section" x="48" y="142" width="320" height="640"/>
+  <text class="label" x="78" y="184">1. Frontend</text>
+  <rect class="card frontend" x="76" y="214" width="264" height="120"/>
+  <text class="label" x="100" y="252">React UI</text>
+  <text class="small" x="100" y="282">SpaceTravel / Player</text>
+  <text class="code" x="100" y="308">frontend/src</text>
+  <rect class="card frontend" x="76" y="366" width="264" height="150"/>
+  <text class="label" x="100" y="404">NOOS API Client</text>
+  <text class="code" x="100" y="434">noosAiApi.js</text>
+  <text class="small" x="100" y="464">Journey 생성 요청</text>
+  <text class="small" x="100" y="492">Copilot 태스크 fallback</text>
+  <rect class="card gemma" x="76" y="548" width="264" height="152"/>
+  <text class="label" x="100" y="586">Browser Gemma</text>
+  <text class="code" x="100" y="616">noosLiteRtGemma.js</text>
+  <text class="small" x="100" y="646">WebGPU LiteRT 우선 실행</text>
+  <text class="small" x="100" y="674">실패 시 Backend Gemma 호출</text>
+
+  <rect class="section" x="428" y="142" width="350" height="640"/>
+  <text class="label" x="458" y="184">2. Spring Backend</text>
+  <rect class="card backend" x="458" y="214" width="290" height="128"/>
+  <text class="label" x="482" y="252">API Controller</text>
+  <text class="code" x="482" y="282">NoosAiController.java</text>
+  <text class="small" x="482" y="310">/api/ai/intervention/music</text>
+  <rect class="card backend" x="458" y="374" width="290" height="190"/>
+  <text class="label" x="482" y="412">Orchestrator</text>
+  <text class="code" x="482" y="442">NoosAiService.java</text>
+  <text class="small" x="482" y="472">Python CLI 실행</text>
+  <text class="small" x="482" y="500">ACE-Step health / init / retry</text>
+  <text class="small" x="482" y="528">Gemma task proxy</text>
+  <rect class="card storage" x="458" y="596" width="290" height="104"/>
+  <text class="label" x="482" y="634">Audio Proxy</text>
+  <text class="small" x="482" y="664">로컬 mp3 파일을 /api/ai/audio로 제공</text>
+
+  <rect class="section" x="838" y="142" width="330" height="640"/>
+  <text class="label" x="868" y="184">3. Python NOOS AI</text>
+  <rect class="card python" x="868" y="214" width="270" height="112"/>
+  <text class="label" x="892" y="252">CLI Entry</text>
+  <text class="code" x="892" y="282">noos_ai.cli</text>
+  <rect class="card python" x="868" y="358" width="270" height="166"/>
+  <text class="label" x="892" y="396">Session Logic</text>
+  <text class="code" x="892" y="426">sessions/intervention.py</text>
+  <text class="small" x="892" y="456">transition / lighting / music spec</text>
+  <text class="small" x="892" y="484">ACE-Step request payload 생성</text>
+  <rect class="card python" x="868" y="556" width="270" height="144"/>
+  <text class="label" x="892" y="594">ACE Client</text>
+  <text class="code" x="892" y="624">integrations/ace_step.py</text>
+  <text class="small" x="892" y="654">/release_task</text>
+  <text class="small" x="892" y="682">/query_result polling</text>
+
+  <rect class="section" x="1228" y="142" width="324" height="640"/>
+  <text class="label" x="1258" y="184">4. Local AI Runtimes</text>
+  <rect class="card ace" x="1258" y="214" width="264" height="178"/>
+  <text class="label" x="1282" y="252">ACE-Step API</text>
+  <text class="code" x="1282" y="282">127.0.0.1:8011</text>
+  <text class="small" x="1282" y="312">acestep-v15-turbo</text>
+  <text class="small" x="1282" y="340">DiT-only 기본 생성</text>
+  <text class="small" x="1282" y="368">mp3 생성 후 path 반환</text>
+  <rect class="card gemma" x="1258" y="428" width="264" height="150"/>
+  <text class="label" x="1282" y="466">Gemma Service</text>
+  <text class="code" x="1282" y="496">127.0.0.1:8091</text>
+  <text class="small" x="1282" y="526">google/gemma-4-E4B-it</text>
+  <text class="small" x="1282" y="554">보조 텍스트 태스크</text>
+  <rect class="card storage" x="1258" y="614" width="264" height="86"/>
+  <text class="label" x="1282" y="652">Generated Files</text>
+  <text class="small" x="1282" y="682">ACE cache / generated cache</text>
+
+  <path class="arrow" d="M340 442 C390 442 410 442 458 442"/>
+  <text class="tiny" x="356" y="424">POST /api/ai/...</text>
+
+  <path class="arrow" d="M748 464 C804 464 820 438 868 438"/>
+  <text class="tiny" x="762" y="430">python -m noos_ai.cli</text>
+
+  <path class="arrow" d="M1138 632 C1192 632 1206 316 1258 316"/>
+  <text class="tiny" x="1152" y="488">ACE request</text>
+
+  <path class="arrow" d="M1258 672 C1192 672 808 674 748 660"/>
+  <text class="tiny" x="948" y="704">mp3 path -> backend audio proxy</text>
+
+  <path class="dash" d="M340 624 C430 624 530 760 1258 504"/>
+  <text class="tiny" x="520" y="760">LiteRT 실패 시 backend Gemma fallback</text>
+
+  <path class="dash" d="M748 528 C886 530 1126 502 1258 502"/>
+  <text class="tiny" x="830" y="548">state explanation / coach 등</text>
+
+  <rect class="note" x="48" y="824" width="1504" height="96"/>
+  <text class="label" x="76" y="862">현재 병목</text>
+  <text class="small" x="76" y="894">음악 생성은 ACE-Step DiT diffusion이 대부분의 시간을 사용합니다. Gemma는 보조 텍스트 작업이며 브라우저 LiteRT와 서버 fallback이 이미 있습니다.</text>
+</svg>

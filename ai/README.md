@@ -8,12 +8,19 @@
 여기서 중요한 점은, 이 폴더가 직접 “치료 판단”을 하거나 “음악 파일을 무조건 생성”하는 엔진은 아니라는 점입니다.  
 핵심은 상태를 구조화하고, 그 상태를 바탕으로 설명 가능한 개입 계획을 만드는 것입니다.
 
+전체 프로젝트 구조와 실행 방법은 루트 문서도 함께 보세요.
+
+- [../README.md](../README.md)
+- [../docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)
+- [../docs/RUNTIME_AND_OPERATIONS.md](../docs/RUNTIME_AND_OPERATIONS.md)
+
 ## 한눈에 보기
 
 - 입력은 `readings` 원시 EEG 배열 또는 `band_summary` 요약값이다.
 - 핵심 세션은 `recognition`과 `intervention` 두 가지다.
 - `recognition`은 현재 상태를 점수와 근거로 정리한다.
 - `intervention`은 현재 상태에서 목표 상태까지 가는 조명/음악 spec을 만든다.
+- 조명 spec은 현재 `cct-plus-rgb` 구조다. Primary는 연구 기반 CCT, secondary는 행성 RGB 톤이다.
 - 실제 음악 생성은 선택 기능이며, 필요할 때만 ACE-Step을 붙인다.
 - 설명, 추천, 요약 같은 보조 텍스트 작업은 선택 기능이며, 필요할 때만 Gemma 서비스를 붙인다.
 

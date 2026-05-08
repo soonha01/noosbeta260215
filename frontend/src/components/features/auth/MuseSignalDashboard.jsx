@@ -22,6 +22,66 @@ const BAND_GUIDE = [
   { key: 'gamma', title: 'Gamma', body: '아주 빠른 성분으로 근전도나 노이즈 영향도 커서 단독 해석은 주의가 필요합니다.' },
 ];
 
+const STATE_AXIS_GUIDE = [
+  {
+    key: 'focus_readiness',
+    title: '집중 준비도',
+    body: '지금 바로 몰입을 시작할 수 있는 정도',
+    goodWhenHigh: true,
+  },
+  {
+    key: 'stress_load',
+    title: '긴장 부하',
+    body: '먼저 낮춰야 할 압박감이나 과각성 정도',
+    goodWhenHigh: false,
+  },
+  {
+    key: 'fatigue_risk',
+    title: '피로 위험',
+    body: '졸림, 회복 필요성, 지속 가능성 저하 신호',
+    goodWhenHigh: false,
+  },
+];
+
+const STATE_COPY_BY_KEY = {
+  engaged_focus: {
+    headline: '지금은 집중을 시작하기 좋은 상태입니다.',
+    body: '긴장과 피로가 크게 튀지 않고 과제에 들어갈 준비 신호가 비교적 안정적입니다.',
+    recommendation: '추천: Neptune 또는 Earth로 바로 몰입 세션을 시작하세요.',
+    accent: '#7ee787',
+  },
+  stress_loaded: {
+    headline: '지금은 긴장 부하를 먼저 낮추는 편이 좋습니다.',
+    body: '각성 신호가 높게 잡혀 강한 자극보다 안정화가 먼저 필요한 상태로 보입니다.',
+    recommendation: '추천: Venus 또는 Pluto처럼 부드러운 세션으로 진입하세요.',
+    accent: '#ffb86b',
+  },
+  fatigue_loaded: {
+    headline: '지금은 피로 또는 졸림 신호가 두드러집니다.',
+    body: '집중을 밀어붙이기보다 짧게 회복한 뒤 다시 진입하는 흐름이 적합합니다.',
+    recommendation: '추천: Pluto로 회복하고, 이후 Earth로 천천히 전환하세요.',
+    accent: '#9f86ff',
+  },
+  recovery_biased: {
+    headline: '지금은 회복 쪽으로 기울어진 상태입니다.',
+    body: '몸과 마음이 내려앉는 신호가 있어 깊은 몰입보다 안정적인 리셋이 먼저입니다.',
+    recommendation: '추천: Pluto 또는 Venus로 긴장을 낮추세요.',
+    accent: '#9f86ff',
+  },
+  relaxed: {
+    headline: '지금은 비교적 안정되고 편안한 상태입니다.',
+    body: '긴장 부하는 낮고 이완 기반이 있어 차분한 집중이나 창의 작업에 잘 맞습니다.',
+    recommendation: '추천: Earth, Venus, Saturn 중 작업 성격에 맞춰 선택하세요.',
+    accent: '#7fe3ff',
+  },
+  mixed_state: {
+    headline: '지금은 여러 신호가 섞인 혼합 상태입니다.',
+    body: '집중, 긴장, 피로 중 하나가 압도적으로 높지는 않아 무리한 전환보다 부드러운 정렬이 좋습니다.',
+    recommendation: '추천: Earth로 균형을 잡고 상태 변화를 관찰하세요.',
+    accent: '#ffd166',
+  },
+};
+
 const SECTION_STYLE = {
   border: '1px solid rgba(255,255,255,0.1)',
   borderRadius: 20,
@@ -38,6 +98,58 @@ const CHART_FRAME = {
     bottom: 42,
     left: 82,
   },
+};
+
+const clampUnit = (value, fallback = 0.5) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(1, Math.max(0, numeric));
+};
+
+const toPercent = (value) => Math.round(clampUnit(value) * 100);
+
+const getAxisLevel = (axis, value) => {
+  const score = clampUnit(value);
+
+  if (axis.goodWhenHigh) {
+    if (score >= 0.68) return { label: '좋음', color: '#7ee787' };
+    if (score >= 0.42) return { label: '보통', color: '#ffd166' };
+    return { label: '낮음', color: '#ff7b72' };
+  }
+
+  if (score >= 0.68) return { label: '높음', color: '#ff7b72' };
+  if (score >= 0.42) return { label: '보통', color: '#ffd166' };
+  return { label: '낮음', color: '#7ee787' };
+};
+
+const inferStateCopy = (currentState, fallbackLabel) => {
+  const focus = clampUnit(currentState?.focus_readiness);
+  const stress = clampUnit(currentState?.stress_load);
+  const fatigue = clampUnit(currentState?.fatigue_risk);
+
+  if (stress >= 0.68) return STATE_COPY_BY_KEY.stress_loaded;
+  if (fatigue >= 0.68) return STATE_COPY_BY_KEY.fatigue_loaded;
+  if (focus >= 0.68 && stress < 0.58 && fatigue < 0.58) return STATE_COPY_BY_KEY.engaged_focus;
+  if (stress < 0.42 && fatigue < 0.5) return STATE_COPY_BY_KEY.relaxed;
+
+  return {
+    ...STATE_COPY_BY_KEY.mixed_state,
+    headline: fallbackLabel || STATE_COPY_BY_KEY.mixed_state.headline,
+  };
+};
+
+const buildReadableStateSummary = ({ recognitionResult, currentState }) => {
+  const stateProfile = recognitionResult?.state_profile || {};
+  const dominantState = stateProfile.dominant_state;
+  const stateCopy = STATE_COPY_BY_KEY[dominantState] || inferStateCopy(currentState, stateProfile.label);
+
+  return {
+    label: stateProfile.label || stateCopy.headline,
+    headline: stateCopy.headline,
+    body: stateCopy.body,
+    recommendation: stateCopy.recommendation,
+    accent: stateCopy.accent,
+  };
 };
 
 const getChartAmplitude = (seriesCollection) =>
@@ -254,13 +366,15 @@ const CombinedWaveChart = ({ seriesCollection, measurementDurationSec }) => {
 const MuseSignalDashboard = ({
   eegData,
   fftAnalysis: providedFftAnalysis,
+  recognitionResult,
+  currentState,
   aiInterpretation,
   isTransitioning,
   onConfirm,
   title = 'Muse S Athena 측정 완료',
   summary = '측정이 완료되었습니다. raw 파형과 주파수 대역을 확인한 뒤 다음 단계로 이동하세요.',
   nextStepMessage = '원하시는 집중이나 감정상태에 맞는 행성을 선택해 다음 단계로 이동하세요.',
-  measurementDurationSec = 300,
+  measurementDurationSec = 60,
 }) => {
   const waveformPointLimit = Math.max(240, Math.min(2048, Math.round(DEFAULT_SAMPLE_RATE * measurementDurationSec)));
   const waveformSeries = useMemo(
@@ -282,6 +396,24 @@ const MuseSignalDashboard = ({
     []
   );
   const dominantGuide = fftAnalysis.dominantBand ? guideByKey[fftAnalysis.dominantBand] : null;
+  const readableState = useMemo(
+    () => buildReadableStateSummary({ recognitionResult, currentState }),
+    [recognitionResult, currentState]
+  );
+  const stateAxisCards = useMemo(
+    () =>
+      STATE_AXIS_GUIDE.map((axis) => {
+        const value = clampUnit(currentState?.[axis.key]);
+        const level = getAxisLevel(axis, value);
+        return {
+          ...axis,
+          value,
+          percent: toPercent(value),
+          level,
+        };
+      }),
+    [currentState]
+  );
 
   return (
     <div
@@ -382,6 +514,140 @@ const MuseSignalDashboard = ({
             )}
           </div>
         </header>
+
+        <section
+          style={{
+            ...SECTION_STYLE,
+            position: 'relative',
+            marginBottom: 14,
+            padding: 16,
+            borderColor: `${readableState.accent}30`,
+            background:
+              `radial-gradient(circle at top left, ${readableState.accent}18, transparent 34%), rgba(255,255,255,0.022)`,
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: 14,
+              alignItems: 'stretch',
+            }}
+          >
+            <div
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                border: `1px solid ${readableState.accent}3d`,
+                background: 'rgba(0,0,0,0.24)',
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 12, letterSpacing: '0.16em', color: 'rgba(255,255,255,0.52)' }}>
+                지금 상태
+              </p>
+              <h3
+                style={{
+                  margin: '10px 0 8px',
+                  fontSize: 'clamp(1.9rem, 3vw, 2.7rem)',
+                  lineHeight: 1.04,
+                  color: readableState.accent,
+                }}
+              >
+                {readableState.label}
+              </h3>
+              <p style={{ margin: 0, color: 'rgba(255,255,255,0.82)', lineHeight: 1.55, fontSize: 15 }}>
+                {readableState.body}
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                alignContent: 'space-between',
+                gap: 10,
+                padding: 18,
+                borderRadius: 18,
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.025)',
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontSize: 12, letterSpacing: '0.16em', color: 'rgba(255,255,255,0.52)' }}>
+                  해석
+                </p>
+                <h4 style={{ margin: '9px 0 0', fontSize: '1.24rem', lineHeight: 1.22 }}>
+                  {readableState.headline}
+                </h4>
+              </div>
+              <p
+                style={{
+                  margin: 0,
+                  padding: '12px 14px',
+                  borderRadius: 14,
+                  border: `1px solid ${readableState.accent}30`,
+                  color: 'rgba(255,255,255,0.86)',
+                  background: `${readableState.accent}10`,
+                  lineHeight: 1.48,
+                }}
+              >
+                {readableState.recommendation}
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: 10,
+              marginTop: 12,
+            }}
+          >
+            {stateAxisCards.map((axis) => (
+              <article
+                key={axis.key}
+                style={{
+                  padding: 14,
+                  borderRadius: 16,
+                  border: `1px solid ${axis.level.color}30`,
+                  background: 'rgba(255,255,255,0.022)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <strong style={{ fontSize: 15 }}>{axis.title}</strong>
+                  <span style={{ color: axis.level.color, fontSize: 13 }}>{axis.level.label}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
+                  <span style={{ fontSize: '2rem', lineHeight: 1, fontWeight: 700 }}>{axis.percent}</span>
+                  <span style={{ color: 'rgba(255,255,255,0.58)' }}>%</span>
+                </div>
+                <div
+                  aria-hidden="true"
+                  style={{
+                    height: 9,
+                    borderRadius: 999,
+                    background: 'rgba(255,255,255,0.08)',
+                    overflow: 'hidden',
+                    marginTop: 10,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      width: `${axis.percent}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      background: `linear-gradient(90deg, ${axis.level.color}, rgba(255,255,255,0.88))`,
+                    }}
+                  />
+                </div>
+                <p style={{ margin: '10px 0 0', color: 'rgba(255,255,255,0.62)', lineHeight: 1.38, fontSize: 13 }}>
+                  {axis.body}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
 
         {aiInterpretation && (
           <div

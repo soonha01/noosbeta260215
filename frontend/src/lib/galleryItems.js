@@ -1,3 +1,5 @@
+import { PUBLIC_BASE_URL } from './env';
+
 const GALLERY_FILENAMES = [
   '197937fa-fb9c-46ec-9501-78795206aa58_650.jpg',
   '20f5711b-b61e-411c-acf0-99c0921ec9a9_650.jpg',
@@ -24,5 +26,4 @@ export const createGalleryItems = (basePath = '') => {
 };
 
 export const DEFAULT_GALLERY_ITEMS = createGalleryItems();
-export const DEFAULT_PUBLIC_GALLERY_ITEMS = createGalleryItems(process.env.PUBLIC_URL || '');
-
+export const DEFAULT_PUBLIC_GALLERY_ITEMS = createGalleryItems(PUBLIC_BASE_URL);

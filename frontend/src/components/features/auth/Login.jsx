@@ -24,6 +24,7 @@ import {
   requestDeviceTroubleshoot,
   requestStateExplanation,
 } from '../../../lib/noosAiApi';
+import { API_BASE_URL } from '../../../lib/env';
 
 
 
@@ -38,11 +39,12 @@ const DEVICE_CONNECTION_RESULT = {
 };
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const MEASUREMENT_DURATION_SEC = 300;
+const MEASUREMENT_DURATION_SEC = 60;
 const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
 const WARP_EXIT_FADE_DURATION_MS = 2300;
+const backendUrl = (path) => `${API_BASE_URL}${path}`;
 const SOLAR_ENTRY_FADE_IN_DURATION_SEC = 2.8;
 const SOLAR_ENTRY_WARP_OVERLAY_DURATION_MS = 2200;
 const WARP_SCENE_FADE_IN_DURATION_SEC = 1.5;
@@ -58,6 +60,22 @@ const formatMeasurementClock = (seconds) => {
   const minutes = Math.floor(safeSeconds / 60);
   const remainder = safeSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+};
+
+const formatMeasurementDurationText = (seconds) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+
+  if (minutes && remainder) {
+    return `${minutes}분 ${remainder}초`;
+  }
+
+  if (minutes) {
+    return `${minutes}분`;
+  }
+
+  return `${remainder}초`;
 };
 
 const saveCurrentStateSnapshot = (payload) => {
@@ -347,6 +365,7 @@ const Login = ({ onBack }) => {
     Math.round((measurementProgressPercent / 100) * MEASUREMENT_DURATION_SEC)
   );
   const totalMeasurementDurationLabel = formatMeasurementClock(MEASUREMENT_DURATION_SEC);
+  const totalMeasurementDurationText = formatMeasurementDurationText(MEASUREMENT_DURATION_SEC);
 
   const surveyResult = useMemo(
     () => buildStateSurveyAnalysis(surveyAnswers),
@@ -608,19 +627,18 @@ const Login = ({ onBack }) => {
     setShowStepper(true);
   };
 
-  const handleStepperComplete = async() => {
-    
-    await fetch("http://localhost:8080/api/auth/signup", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      loginId: email,
-      password: password,
-      displayName: name
-    })
-  });
+  const handleStepperComplete = async () => {
+    await fetch(backendUrl('/api/auth/signup'), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        loginId: email,
+        password: password,
+        displayName: name
+      })
+    });
 
     setIsTransitioning(true);
     setTimeout(() => {
@@ -631,57 +649,59 @@ const Login = ({ onBack }) => {
 
   // 백엔드의 구글 OAuth2 기본 진입점으로 리다이렉트
   const handleGoogleLogin = () => {
-  window.location.href = 'http://localhost:8080/oauth2/authorization/google'; };
+    window.location.href = backendUrl('/oauth2/authorization/google');
+  };
   
   //깃허브
   const handleGithubLogin = () => {
-  window.location.href = 'http://localhost:8080/oauth2/authorization/github'; };
+    window.location.href = backendUrl('/oauth2/authorization/github');
+  };
   
   //로그인 클릭 시 백엔드 요청 POST
-const handleLoginClick = async (e) => {
-  e.preventDefault(); // 폼 제출 시 페이지 새로고침 방지
+  const handleLoginClick = async (e) => {
+    e.preventDefault(); // 폼 제출 시 페이지 새로고침 방지
   
-  // 백엔드 <-> 프론트 구조 일치
-  const loginPayload = {
-    loginId: email,    // 사용자가 입력한 email 상태값
-    password: password // 사용자가 입력한 password 상태값
-  };
+    // 백엔드 <-> 프론트 구조 일치
+    const loginPayload = {
+      loginId: email,    // 사용자가 입력한 email 상태값
+      password: password // 사용자가 입력한 password 상태값
+    };
 
-  try {
-    setIsTransitioning(true);
+    try {
+      setIsTransitioning(true);
 
-    //백엔드로 로그인 요청 전송
-    const response = await fetch("http://localhost:8080/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(loginPayload),
-    });
+      //백엔드로 로그인 요청 전송
+      const response = await fetch(backendUrl('/api/auth/login'), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(loginPayload),
+      });
 
-    //응답 결과 처리
-    if (response.ok) {
-      const result = await response.text();
-      
-      if (result === "ok") {
-        setTimeout(() => {
-          setAuthStage('device-question');
+      //응답 결과 처리
+      if (response.ok) {
+        const result = await response.text();
+
+        if (result === "ok") {
+          setTimeout(() => {
+            setAuthStage('device-question');
+            setIsTransitioning(false);
+          }, 500);
+        } else {
           setIsTransitioning(false);
-        }, 500);
+          alert("아이디 또는 비밀번호가 올바르지 않습니다.");
+        }
       } else {
         setIsTransitioning(false);
-        alert("아이디 또는 비밀번호가 올바르지 않습니다.");
+        alert("로그인 요청 중 서버 에러가 발생했습니다.");
       }
-    } else {
+    } catch (error) {
       setIsTransitioning(false);
-      alert("로그인 요청 중 서버 에러가 발생했습니다.");
+      console.error("통신 에러:", error);
+      alert("서버와 연결할 수 없습니다.");
     }
-  } catch (error) {
-    setIsTransitioning(false);
-    console.error("통신 에러:", error);
-    alert("서버와 연결할 수 없습니다.");
-  }
-};
+  };
 
 const handleSkipLoginForTesting = () => {
   if (!isLocalTestMode || isTransitioning) return;
@@ -753,11 +773,12 @@ const handleSkipLoginForTesting = () => {
           }
 
           scheduleEegFlush();
-          console.log("EEG Stream (Muse):", reading.samples);
         });
         
 
-        console.log("Muse S Athena 활성화 완료");
+        if (import.meta.env.DEV) {
+          console.debug("Muse S Athena 활성화 완료");
+        }
         setMeasurementProgressPercent(0);
         setAuthStage('device-complete');
 
@@ -944,9 +965,11 @@ const handleSkipLoginForTesting = () => {
           <MuseSignalDashboard
             eegData={resultEegData}
             fftAnalysis={museFftAnalysis}
+            recognitionResult={museRecognitionResult}
+            currentState={museCurrentState || buildFallbackCurrentStateFromBandAnalysis(museFftAnalysis)}
             aiInterpretation={museAiExplanation}
             title="Muse S Athena 측정 완료"
-            summary={`${totalMeasurementDurationLabel} 측정이 완료되었습니다. raw 파형과 주파수 대역 의미를 확인한 뒤 다음 단계로 이동하세요.`}
+            summary={`${totalMeasurementDurationLabel} 측정 결과를 기준으로 지금 상태를 요약했습니다. 집중·긴장·피로 지표를 먼저 확인하세요.`}
             nextStepMessage={RESULT_NEXT_STEP_MESSAGE}
             measurementDurationSec={MEASUREMENT_DURATION_SEC}
             resultCurrentLabel="연결 상태"
@@ -1232,7 +1255,7 @@ const handleSkipLoginForTesting = () => {
                     <p className="flow-kicker">측정 모드</p>
                     <h2 className="flow-title">측정을 진행 중입니다.</h2>
                     <p className="flow-description">
-                      Muse S Athena 연결 및 초기 동기화가 끝났습니다. 5분 동안 뇌파를 안정적으로 수집하고 있습니다.
+                      Muse S Athena 연결 및 초기 동기화가 끝났습니다. {totalMeasurementDurationText} 동안 뇌파를 안정적으로 수집하고 있습니다.
                     </p>
                     <div style={{ width: 'min(100%, 520px)', marginTop: 22 }}>
                       <div

@@ -5,12 +5,10 @@ from typing import Any
 from ..common import clamp, round_float
 from .lighting_hardware import build_hardware_handoff
 from .lighting_research import (
-    blend_hex,
     get_lighting_citation,
     get_lighting_pattern,
     get_lighting_program,
-    rgb_tuple_to_hex,
-    kelvin_to_rgb_tuple,
+    get_planet_tone_profile,
 )
 from .planet_profiles import PlanetProfile
 
@@ -23,16 +21,6 @@ def _phase_adjustment(name: str) -> tuple[int, int, float]:
     if name in {"ignite", "activate", "focus_ramp"}:
         return 4, 180, 1.08
     return 0, 0, 1.0
-
-
-def _scene_primary_hex(scene: dict[str, Any], cct_kelvin: int) -> str:
-    base_hex = rgb_tuple_to_hex(kelvin_to_rgb_tuple(cct_kelvin))
-    theme_mix_hex = scene.get("theme_mix_hex")
-    theme_mix_ratio = float(scene.get("theme_mix_ratio") or 0.0)
-    if theme_mix_hex:
-        return blend_hex(base_hex, str(theme_mix_hex), theme_mix_ratio)
-    return base_hex
-
 
 def _phase_scene(
     planet: PlanetProfile,
@@ -100,13 +88,18 @@ def _phase_scene(
     pattern_citations = tuple(pattern.evidence_keys)
     evidence_keys = tuple(dict.fromkeys(tuple(scene.get("evidence_keys") or ()) + pattern_citations + program.direct_evidence_keys))
     citation_list = [get_lighting_citation(key) for key in evidence_keys]
+    planet_tones = get_planet_tone_profile(planet.slug)
+    primary_mode = str(planet_tones.get("primary_mode") or "cct")
+    primary_cct_kelvin = int(planet_tones.get("primary_cct_kelvin") or cct_kelvin)
 
     return {
         "name": phase["name"],
         "label": scene.get("label") or phase["name"].replace("_", " ").title(),
         "duration_sec": phase["duration_sec"],
-        "primary_hex": _scene_primary_hex(scene, cct_kelvin),
-        "secondary_hex": scene["secondary_hex"],
+        "primary_hex": planet_tones["primary_hex"],
+        "primary_mode": primary_mode,
+        "primary_cct_kelvin": primary_cct_kelvin,
+        "secondary_hex": planet_tones["secondary_hex"],
         "accent_hex": scene["accent_hex"],
         "brightness_percent": brightness,
         "cct_kelvin": cct_kelvin,
@@ -154,7 +147,7 @@ def build_lighting_spec(
             "research_anchor": program.research_anchor,
         },
         "global_intent": plan["intervention_direction"],
-        "device_profile": "generic-rgb",
+        "device_profile": "cct-plus-rgb",
         "phases": phases,
         "final_scene": final_scene,
         "research_basis": {
@@ -213,6 +206,7 @@ def build_lighting_spec(
             f"planet={planet.slug}",
             f"lighting_program={program.label}",
             f"primary_delta_axis={plan['change_priority'][0]}",
+            "tone_lock=planet_primary_secondary",
             "hardware transport intentionally deferred; schema is ready for device integration.",
             f"intent_tags={','.join(intent_context.get('intent_tags', [])) if isinstance(intent_context.get('intent_tags'), list) else ''}",
         ],

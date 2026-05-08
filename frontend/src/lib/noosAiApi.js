@@ -1,6 +1,5 @@
 import { buildNoosLiteRtFallbackResponse, runNoosLiteRtTask, warmNoosLiteRtGemma } from './noosLiteRtGemma';
-
-const DEFAULT_API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+import { API_BASE_URL } from './env';
 
 const parseResponseBody = async (response) => {
   const contentType = response.headers.get('content-type') || '';
@@ -51,8 +50,8 @@ const normalizeApiUrl = (value) => {
   const url = String(value || '').trim();
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return `${DEFAULT_API_BASE_URL}${url}`;
-  return `${DEFAULT_API_BASE_URL}/${url.replace(/^\.?\//, '')}`;
+  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  return `${API_BASE_URL}/${url.replace(/^\.?\//, '')}`;
 };
 
 export const buildFallbackCurrentStateFromBandAnalysis = (analysis) => {
@@ -76,7 +75,7 @@ export const buildFallbackCurrentStateFromBandAnalysis = (analysis) => {
 const isAbortError = (error) => error?.name === 'AbortError' || /aborted/i.test(String(error?.message || ''));
 
 const postJson = async (path, body, signal, fallbackMessage) => {
-  const response = await fetch(`${DEFAULT_API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -91,6 +90,25 @@ const postJson = async (path, body, signal, fallbackMessage) => {
       typeof responseBody === 'string'
         ? responseBody
         : responseBody?.message || `${fallbackMessage} with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  return responseBody;
+};
+
+export const stopWizLighting = async ({ signal, keepalive = false } = {}) => {
+  const response = await fetch(`${API_BASE_URL}/api/lighting/wiz/stop`, {
+    method: 'POST',
+    signal,
+    keepalive,
+  });
+
+  const responseBody = await parseResponseBody(response);
+  if (!response.ok) {
+    const message =
+      typeof responseBody === 'string'
+        ? responseBody
+        : responseBody?.message || `WiZ lighting restore failed with status ${response.status}`;
     throw new Error(message);
   }
 
@@ -220,6 +238,14 @@ export const generateJourneyBundle = async ({
     signal,
   });
 };
+
+export const prewarmJourneyGeneration = async ({ signal } = {}) =>
+  postJson(
+    '/api/ai/intervention/prewarm',
+    {},
+    signal,
+    'Journey generation prewarm failed'
+  );
 
 export const parseNaturalLanguageFeedback = async ({
   feedbackText,
@@ -371,10 +397,12 @@ export const buildLightingPreviewFromIntervention = (bundle) => {
     summary: program?.intent || '현재 상태에서 목표 상태로 이동하기 위한 조명 프리셋입니다.',
     researchAnchor: program?.research_anchor || `${finalScene?.cct_kelvin || 0} K`,
     evidenceLabel: inferredEvidence.length ? '직접 논문값 + 패턴 추론' : '직접 논문값',
-    deviceProfile: lightingSpec?.device_profile || 'generic-rgb',
+    deviceProfile: lightingSpec?.device_profile || 'cct-plus-rgb',
     cctKelvin: finalScene?.cct_kelvin || 0,
     luxAnchor: finalScene?.illuminance_lux_target || 0,
     brightnessPercent: finalScene?.brightness_percent || 0,
+    primaryMode: finalScene?.primary_mode || 'cct',
+    primaryCctKelvin: finalScene?.primary_cct_kelvin || finalScene?.cct_kelvin || 0,
     primaryHex: finalScene?.primary_hex || '#ffffff',
     secondaryHex: finalScene?.secondary_hex || '#ffffff',
     accentHex: finalScene?.accent_hex || '#ffffff',
@@ -388,6 +416,8 @@ export const buildLightingPreviewFromIntervention = (bundle) => {
       luxAnchor: phase?.illuminance_lux_target || 0,
       brightnessPercent: phase?.brightness_percent || 0,
       patternLabel: phase?.pattern_details?.label || phase?.animation_pattern || 'Static Hold',
+      primaryMode: phase?.primary_mode || 'cct',
+      primaryCctKelvin: phase?.primary_cct_kelvin || phase?.cct_kelvin || 0,
       primaryHex: phase?.primary_hex || '#ffffff',
       secondaryHex: phase?.secondary_hex || '#ffffff',
       accentHex: phase?.accent_hex || '#ffffff',

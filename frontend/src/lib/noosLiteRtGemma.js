@@ -4,14 +4,11 @@ import {
   parseNoosLiteRtOutput,
   SUPPORTED_TASKS,
 } from './noosLiteRtTasks';
-
-const DEFAULT_MODEL_URL =
-  process.env.REACT_APP_NOOS_LITERT_MODEL_URL ||
-  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task';
-
-const DEFAULT_WASM_BASE_URL =
-  process.env.REACT_APP_NOOS_LITERT_WASM_BASE_URL ||
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.27/wasm';
+import {
+  NOOS_LITERT_DISABLED,
+  NOOS_LITERT_MODEL_URL,
+  NOOS_LITERT_WASM_BASE_URL,
+} from './env';
 
 const LOCAL_ENGINE = 'gemma-4-e2b-it-web-litert';
 
@@ -40,7 +37,7 @@ const isLocalhost = () => {
 };
 
 export const isNoosLiteRtSupported = () => {
-  if (process.env.REACT_APP_NOOS_LITERT_DISABLED === 'true') return false;
+  if (NOOS_LITERT_DISABLED) return false;
   if (!isBrowser()) return false;
   if (!navigator.gpu) return false;
   return window.isSecureContext || isLocalhost();
@@ -66,10 +63,10 @@ const loadInference = async () => {
   if (!inferencePromise) {
     inferencePromise = (async () => {
       const { FilesetResolver, LlmInference } = await import('@mediapipe/tasks-genai');
-      const fileset = await FilesetResolver.forGenAiTasks(DEFAULT_WASM_BASE_URL);
+      const fileset = await FilesetResolver.forGenAiTasks(NOOS_LITERT_WASM_BASE_URL);
       const inference = await LlmInference.createFromOptions(fileset, {
         baseOptions: {
-          modelAssetPath: DEFAULT_MODEL_URL,
+          modelAssetPath: NOOS_LITERT_MODEL_URL,
           delegate: 'GPU',
         },
         maxTokens: 1024,

@@ -41,7 +41,10 @@ def build_local_server_command(
     if init_llm is not None:
         env["ACESTEP_INIT_LLM"] = "true" if init_llm else "false"
     if os.uname().sysname == "Darwin" and os.uname().machine == "arm64":
-        env["ACESTEP_LM_BACKEND"] = "mlx"
+        env.setdefault("ACESTEP_LM_BACKEND", "mlx")
+        env.setdefault("ACESTEP_OFFLOAD_TO_CPU", "false")
+        env.setdefault("ACESTEP_OFFLOAD_DIT_TO_CPU", "false")
+        env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     command = ["uv", "run", "acestep-api", "--host", host, "--port", str(port)]
     if download_source:
         command.extend(["--download-source", download_source])

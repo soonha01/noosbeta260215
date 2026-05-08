@@ -40,6 +40,11 @@ public class NoosAiController {
         return noosAiService.generateIntervention(request);
     }
 
+    @PostMapping("/ai/intervention/prewarm")
+    public Map<String, Object> prewarmIntervention() {
+        return noosAiService.prewarmIntervention();
+    }
+
     @PostMapping("/ai/feedback/parse")
     public Map<String, Object> parseFeedback(@RequestBody AiFeedbackParseRequest request) {
         return noosAiService.parseFeedback(request);

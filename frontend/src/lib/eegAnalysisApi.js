@@ -1,10 +1,4 @@
-const DEFAULT_API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080').replace(
-  /\/$/,
-  ''
-);
-
-const DEFAULT_EEG_ANALYSIS_ENDPOINT =
-  process.env.REACT_APP_EEG_ANALYSIS_ENDPOINT || '/api/eeg/results';
+import { API_BASE_URL, EEG_ANALYSIS_ENDPOINT } from './env';
 
 const roundTo = (value, digits = 6) => {
   if (!Number.isFinite(value)) {
@@ -64,7 +58,7 @@ export const createEegAnalysisPayload = ({
 };
 
 export const submitEegAnalysis = async (payload, { signal } = {}) => {
-  const response = await fetch(`${DEFAULT_API_BASE_URL}${DEFAULT_EEG_ANALYSIS_ENDPOINT}`, {
+  const response = await fetch(`${API_BASE_URL}${EEG_ANALYSIS_ENDPOINT}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

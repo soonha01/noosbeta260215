@@ -29,8 +29,10 @@ import {
 import {
   buildLightingPreviewFromIntervention,
   generateJourneyBundle,
+  prewarmJourneyGeneration,
   parseNaturalLanguageFeedback,
   requestDashboardSummary,
+  stopWizLighting,
 } from '../../../lib/noosAiApi';
 import {
   loadStorageJSON,
@@ -93,6 +95,7 @@ const SpaceTravel = ({
   const [generatedJourney, setGeneratedJourney] = useState(null);
   const [generationError, setGenerationError] = useState('');
   const [generationNotice, setGenerationNotice] = useState('');
+  const [playbackNotice, setPlaybackNotice] = useState('');
   const [generationAttempt, setGenerationAttempt] = useState(0);
   const [generationProgressPercent, setGenerationProgressPercent] = useState(
     entryOnly ? 100 : GENERATION_PROGRESS_STEPS[0]
@@ -145,6 +148,8 @@ const SpaceTravel = ({
   const audioRef = useRef(null);
   const audioPlayRetryRef = useRef(null);
   const audioPlayAttemptsRef = useRef(0);
+  const journeyLightingJobRef = useRef(null);
+  const lightingRestoreRequestedRef = useRef(false);
   const stateSnapshotRef = useRef(stateSnapshot);
   const hasRealAudio = Boolean(effectivePlanetMedia?.audio);
 
@@ -158,21 +163,34 @@ const SpaceTravel = ({
     routeTimersRef.current = [];
   }, []);
 
+  const restoreJourneyLighting = useCallback((reason = 'route-leave') => {
+    if (!journeyLightingJobRef.current || lightingRestoreRequestedRef.current) return;
+
+    lightingRestoreRequestedRef.current = true;
+    journeyLightingJobRef.current = null;
+
+    stopWizLighting({ keepalive: true }).catch((error) => {
+      console.warn(`Failed to restore WiZ lighting after ${reason}:`, error);
+    });
+  }, []);
+
   const goToExplorer = useCallback(() => {
+    restoreJourneyLighting('solar-explorer');
     if (typeof onBack === 'function') {
       onBack();
       return;
     }
     navigate('/solar-explorer', { replace: true });
-  }, [navigate, onBack]);
+  }, [navigate, onBack, restoreJourneyLighting]);
 
   const goToHome = useCallback(() => {
+    restoreJourneyLighting('home');
     if (typeof onEndJourney === 'function') {
       onEndJourney();
       return;
     }
     navigate('/', { replace: true });
-  }, [navigate, onEndJourney]);
+  }, [navigate, onEndJourney, restoreJourneyLighting]);
 
   useEffect(() => {
     stateSnapshotRef.current = stateSnapshot;
@@ -186,6 +204,7 @@ const SpaceTravel = ({
     setDashboardSummary(null);
     setGenerationError('');
     setGenerationNotice('');
+    setPlaybackNotice('');
     setGenerationAttempt(0);
     setGenerationStatusIndex(0);
     setGenerationProgressPercent(entryOnly ? 100 : GENERATION_PROGRESS_STEPS[0]);
@@ -201,6 +220,20 @@ const SpaceTravel = ({
     setAssistantContext(loadStorageJSON(AI_CONTEXT_STORAGE_KEY, null));
     setCurrentStep(entryOnly ? STEP_SEATING : STEP_GENERATING);
   }, [clearAiTimers, entryOnly, selectedPlanet]);
+
+  useEffect(() => {
+    if (entryOnly) return undefined;
+
+    const controller = new AbortController();
+
+    prewarmJourneyGeneration({ signal: controller.signal }).catch((error) => {
+      if (!controller.signal.aborted) {
+        console.warn('Journey generation prewarm failed:', error);
+      }
+    });
+
+    return () => controller.abort();
+  }, [entryOnly, selectedPlanet]);
 
   useEffect(() => {
     if (entryOnly || currentStep !== STEP_GENERATING) return undefined;
@@ -229,6 +262,7 @@ const SpaceTravel = ({
 
     setGenerationError('');
     setGenerationNotice('');
+    setPlaybackNotice('');
     setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
     setGenerationStatusIndex(0);
 
@@ -258,6 +292,11 @@ const SpaceTravel = ({
         if (isCancelled) return;
 
         const nextDuration = Number(bundle?.audioDurationSec);
+        const lightingJobId = bundle?.wizLighting?.jobId || (bundle?.wizLighting?.active ? 'active' : '');
+        if (lightingJobId) {
+          journeyLightingJobRef.current = lightingJobId;
+          lightingRestoreRequestedRef.current = false;
+        }
         setGeneratedJourney(bundle);
         setGenerationNotice(
           bundle?.generationWarning ||
@@ -302,6 +341,28 @@ const SpaceTravel = ({
   }, [assistantContext, currentStep, entryOnly, feedbackHistory, generationAttempt, memoText, planetMedia.title, selectedPlanet]);
 
   useEffect(() => {
+    if (entryOnly) return;
+    const lightingJobId = generatedJourney?.wizLighting?.jobId || (generatedJourney?.wizLighting?.active ? 'active' : '');
+    if (!lightingJobId) return;
+
+    journeyLightingJobRef.current = lightingJobId;
+    lightingRestoreRequestedRef.current = false;
+  }, [entryOnly, generatedJourney?.wizLighting?.active, generatedJourney?.wizLighting?.jobId]);
+
+  useEffect(() => {
+    if (entryOnly) return undefined;
+
+    const handlePageHide = () => {
+      restoreJourneyLighting('pagehide');
+    };
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [entryOnly, restoreJourneyLighting]);
+
+  useEffect(() => {
     if (hasRealAudio || !isPlaying || currentStep !== STEP_PLAYER) return undefined;
 
     const intervalId = window.setInterval(() => {
@@ -327,6 +388,10 @@ const SpaceTravel = ({
     const handleLoadedMetadata = () => {
       const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration) : TRACK_DURATION_SEC;
       setTrackDurationSec(duration);
+      setPlaybackNotice('');
+    };
+    const handleCanPlay = () => {
+      setPlaybackNotice('');
     };
     const handleTimeUpdate = () => {
       setPlayheadSec(audio.currentTime || 0);
@@ -341,22 +406,33 @@ const SpaceTravel = ({
     const handlePause = () => {
       setIsPlaying(false);
     };
+    const handleError = () => {
+      const message = hasGeneratedJourneyAudio
+        ? '생성된 오디오를 불러오지 못했습니다. 잠시 후 다시 시도하거나 PLAY를 눌러 재시도하세요.'
+        : '오디오를 불러오지 못했습니다. 잠시 후 다시 시도하세요.';
+      setPlaybackNotice(message);
+      setIsPlaying(false);
+    };
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('canplay', handleCanPlay);
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
+    audio.addEventListener('error', handleError);
     audio.load();
 
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('error', handleError);
     };
-  }, [effectivePlanetMedia?.audio, hasRealAudio]);
+  }, [effectivePlanetMedia?.audio, hasGeneratedJourneyAudio, hasRealAudio]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -386,9 +462,22 @@ const SpaceTravel = ({
       playPromise
         .then(() => {
           audioPlayAttemptsRef.current = 0;
+          setPlaybackNotice('');
         })
-        .catch(() => {
+        .catch((error) => {
+          const errorName = String(error?.name || '');
+          const isAutoplayBlocked =
+            errorName === 'NotAllowedError' || /notallowed/i.test(String(error?.message || ''));
+
+          if (isAutoplayBlocked) {
+            setPlaybackNotice('브라우저 자동재생 제한으로 시작되지 않았습니다. PLAY를 눌러 재생을 시작하세요.');
+            setIsPlaying(false);
+            audioPlayAttemptsRef.current = 0;
+            return;
+          }
+
           if (audioPlayAttemptsRef.current >= 8) {
+            setPlaybackNotice('오디오 재생을 시작하지 못했습니다. 잠시 후 PLAY를 다시 눌러 주세요.');
             setIsPlaying(false);
             audioPlayAttemptsRef.current = 0;
             return;
@@ -413,9 +502,10 @@ const SpaceTravel = ({
         clearTimeout(audioPlayRetryRef.current);
         audioPlayRetryRef.current = null;
       }
+      restoreJourneyLighting('unmount');
       audio?.pause();
     };
-  }, [clearAiTimers, clearRouteTimers]);
+  }, [clearAiTimers, clearRouteTimers, restoreJourneyLighting]);
 
   const feedbackAverage = useMemo(() => {
     if (!feedbackHistory.length) return null;
@@ -521,6 +611,7 @@ const SpaceTravel = ({
     setGeneratedJourney(null);
     setGenerationError('');
     setGenerationNotice('');
+    setPlaybackNotice('');
     setGenerationStatusIndex(0);
     setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
     setGenerationAttempt((prev) => prev + 1);
@@ -529,6 +620,7 @@ const SpaceTravel = ({
   const handleContinueWithFallback = useCallback(() => {
     setGenerationError('');
     setGenerationNotice(`${planetMedia.title} 기본 플레이어로 전환했습니다.`);
+    setPlaybackNotice('');
     setTrackDurationSec(TRACK_DURATION_SEC);
     setPlayheadSec(0);
     setIsPlaying(true);
@@ -576,6 +668,7 @@ const SpaceTravel = ({
   }, [hasRealAudio, trackDurationSec]);
 
   const handleTogglePlay = useCallback(() => {
+    setPlaybackNotice('');
     setIsPlaying((prev) => !prev);
   }, []);
 
@@ -831,7 +924,7 @@ const SpaceTravel = ({
               aiConnected={aiConnected}
               generatedJourney={generatedJourney}
               hasGeneratedAudio={hasGeneratedJourneyAudio}
-              generationNotice={generationNotice}
+              generationNotice={[generationNotice, playbackNotice].filter(Boolean).join(' ')}
               stateSnapshot={stateSnapshot}
             />
           </StepFrame>
