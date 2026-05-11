@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
+import { publicAsset } from '../../../lib/env';
 import './ChromaGrid.css';
 
 export const ChromaGrid = ({
@@ -20,7 +21,7 @@ export const ChromaGrid = ({
 
   const demo = [
     {
-      image: 'https://i.pravatar.cc/300?img=8',
+      image: publicAsset('media/gallery/75b087fd-df9b-47b1-827e-7cb36d5703ec_650.jpg'),
       title: 'Alex Rivera',
       subtitle: 'Full Stack Developer',
       handle: '@alexrivera',
@@ -29,7 +30,7 @@ export const ChromaGrid = ({
       url: 'https://github.com/'
     },
     {
-      image: 'https://i.pravatar.cc/300?img=11',
+      image: publicAsset('media/gallery/c3eaa544-8727-4891-8580-272968b749b8_650.jpg'),
       title: 'Jordan Chen',
       subtitle: 'DevOps Engineer',
       handle: '@jordanchen',
@@ -38,7 +39,7 @@ export const ChromaGrid = ({
       url: 'https://linkedin.com/in/'
     },
     {
-      image: 'https://i.pravatar.cc/300?img=3',
+      image: publicAsset('media/gallery/f841a441-4988-4fbc-bd4d-0cdf601a67cb_650.jpg'),
       title: 'Morgan Blake',
       subtitle: 'UI/UX Designer',
       handle: '@morganblake',
@@ -47,7 +48,7 @@ export const ChromaGrid = ({
       url: 'https://dribbble.com/'
     },
     {
-      image: 'https://i.pravatar.cc/300?img=16',
+      image: publicAsset('media/gallery/20f5711b-b61e-411c-acf0-99c0921ec9a9_650.jpg'),
       title: 'Casey Park',
       subtitle: 'Data Scientist',
       handle: '@caseypark',
@@ -56,7 +57,7 @@ export const ChromaGrid = ({
       url: 'https://kaggle.com/'
     },
     {
-      image: 'https://i.pravatar.cc/300?img=25',
+      image: publicAsset('media/gallery/ca2c99f3-e49c-47ee-8791-8f3e21775fdc_650.jpg'),
       title: 'Sam Kim',
       subtitle: 'Mobile Developer',
       handle: '@thesamkim',
@@ -65,7 +66,7 @@ export const ChromaGrid = ({
       url: 'https://github.com/'
     },
     {
-      image: 'https://i.pravatar.cc/300?img=60',
+      image: publicAsset('media/gallery/dff013db-1785-4cd2-8347-3cd7da910618_650.jpg'),
       title: 'Tyler Rodriguez',
       subtitle: 'Cloud Architect',
       handle: '@tylerrod',

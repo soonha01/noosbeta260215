@@ -9,12 +9,13 @@ import FaultyTerminal from "../ui/effects/FaultyTerminal";
 import ShineButton from "../ui/buttons/ShineButton";
 import ArrowButton from "../ui/buttons/ArrowButton";
 import { ChromaGrid } from "../ui/showcase/ChromaGrid";
+import { publicAsset } from "../../lib/env";
 
 gsap.registerPlugin(ScrollTrigger);
 
 const TEAM_MEMBERS = [
   {
-    image: "/media/team/suhwan.jpg",
+    image: publicAsset("media/team/suhwan.jpg"),
     title: "전수환",
     subtitle: "Teamleader, AI Engineer, FrontEND",
     handle: "@suhw__an",
@@ -23,7 +24,7 @@ const TEAM_MEMBERS = [
     url: "https://github.com/",
   },
   {
-    image: "/media/team/김성은.JPG",
+    image: publicAsset("media/gallery/75b087fd-df9b-47b1-827e-7cb36d5703ec_650.jpg"),
     title: "김성은",
     subtitle: "App developer(IOS,Android)",
     handle: "@s_ungeun318",
@@ -32,7 +33,7 @@ const TEAM_MEMBERS = [
     url: "https://github.com/",
   },
   {
-    image: "/media/team/권순하.JPG",
+    image: publicAsset("media/gallery/c3eaa544-8727-4891-8580-272968b749b8_650.jpg"),
     title: "권순하",
     subtitle: "BackEND Developer, Dataset",
     handle: "@sunha",
@@ -41,7 +42,7 @@ const TEAM_MEMBERS = [
     url: "https://github.com/",
   },
   {
-    image: "/media/team/박지호.JPG",
+    image: publicAsset("media/gallery/f841a441-4988-4fbc-bd4d-0cdf601a67cb_650.jpg"),
     title: "박지호",
     subtitle: "BackEND Developer, Dataset",
     handle: "@mmoo_0301",
@@ -150,7 +151,7 @@ const AboutUs = () => {
         {/* Static Background */}
         <div className="absolute inset-0">
           <img
-            src="/media/home/about%20us.png"
+            src={publicAsset("media/home/2section.webp")}
             alt=""
             aria-hidden="true"
             className="w-full h-full object-cover"

@@ -29,6 +29,15 @@ const orbFloat = keyframes`
   }
 `;
 
+const planetTextureRoll = keyframes`
+  from {
+    background-position-x: 0px;
+  }
+  to {
+    background-position-x: -1200px;
+  }
+`;
+
 const MetaGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -150,12 +159,19 @@ const PlanetOrb = styled.div`
   background-image: url(${({ $image }) => $image});
   background-repeat: repeat-x;
   background-size: auto 100%;
-  background-position: center;
+  background-position: 0 50%;
   border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}72`};
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 24px 58px rgba(0, 0, 0, 0.6);
-  animation: ${orbFloat} 7.2s ease-in-out infinite;
+  will-change: transform, background-position;
+  animation:
+    ${orbFloat} 7.2s ease-in-out infinite,
+    ${planetTextureRoll} 24s linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
 const VisualLabel = styled.p`
