@@ -1,668 +1,171 @@
 import React, { useEffect, useState } from "react";
 
-const AdminPage = () => {
-  // 현재 활성 탭: "users" | "board"
-  const [activeTab, setActiveTab] = useState("users");
+const BOARD_API = "http://localhost:8080/api/auth/board";
+const ADMIN_API = "http://localhost:8080/api/admin";
 
-  // 초기값을 빈 배열로 설정하여 .map() 에러 방지
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [editUser, setEditUser] = useState(null); // 수정할 유저
+const boardCategoryLabels = {
+  ALL: "전체",
+  NOTICE: "공지",
+  FREE: "자유",
+  QNA: "질문",
+  INFO: "정보",
+};
+
+const AdminBoardManager = () => {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [category, setCategory] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [editingPost, setEditingPost] = useState(null);
   const [editForm, setEditForm] = useState({
-    displayName: "",
-    password: "",
-    role: "",
+    category: "FREE",
+    title: "",
+    content: "",
+    pinned: false,
   });
 
-  const [searchType, setSearchType] = useState("loginId");
-  const [keyword, setKeyword] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-
-  // 검색 함수
-  const handleSearch = () => {
-    const params = new URLSearchParams();
-    if (keyword) {
-      params.append("type", searchType);
-      params.append("keyword", keyword);
-    }
-    if (startDate) params.append("startDate", startDate);
-    if (endDate) params.append("endDate", endDate);
-
-    fetch(`http://localhost:8080/api/admin/search/users?${params}`, {
-      credentials: "include",
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setUsers(data);
-      })
-      .catch((err) => alert(err.message));
-  };
-
-  // 초기화 함수
-  const handleReset = () => {
-    setSearchType("loginId");
-    setKeyword("");
-    setStartDate("");
-    setEndDate("");
-    // 전체 목록 다시 불러오기
-    fetch("http://localhost:8080/api/admin/users", { credentials: "include" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setUsers(data);
-      });
-  };
-
-  // 삭제 기능
-  const handleDelete = (userId, displayName) => {
-    if (window.confirm(`정말 "${displayName}" 회원을 삭제하시겠습니까?`)) {
-      fetch(`http://localhost:8080/api/admin/users/${userId}`, {
-        method: "DELETE",
-        credentials: "include",
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error("삭제 실패");
-          // 삭제 후 목록에서 제거
-          setUsers((prev) => prev.filter((u) => u.userId !== userId));
-          alert("삭제되었습니다.");
-        })
-        .catch((err) => alert(err.message));
-    }
-  };
-
-  // 수정 폼 열기
-  const handleEditOpen = (user) => {
-    setEditUser(user);
-    setEditForm({
-      displayName: user.displayName,
-      password: "",
-      role: user.role,
+  const loadPosts = async (nextPage = page) => {
+    setLoading(true);
+    const params = new URLSearchParams({
+      page: String(nextPage),
+      size: "10",
+      sort: "latest",
     });
-  };
+    if (category !== "ALL") params.set("category", category);
+    if (appliedSearch.trim()) params.set("search", appliedSearch.trim());
 
-  // 수정 저장 기능
-  const handleEditSave = () => {
-    fetch(`http://localhost:8080/api/admin/users/${editUser.userId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(editForm),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("수정 실패");
-        // 화면 즉시 반영
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.userId === editUser.userId
-              ? { ...u, displayName: editForm.displayName, role: editForm.role }
-              : u,
-          ),
-        );
-        setEditUser(null);
-        alert("수정되었습니다.");
-      })
-      .catch((err) => alert(err.message));
+    try {
+      const response = await fetch(`${BOARD_API}?${params}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("게시글 목록을 불러오지 못했습니다.");
+      }
+      const data = await response.json();
+      setPosts(Array.isArray(data.posts) ? data.posts : []);
+      setTotal(data.total ?? 0);
+      setTotalPages(Math.max(1, data.totalPages ?? 1));
+      setPage(nextPage);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    // 먼저 로그인 상태 확인
-    fetch("http://localhost:8080/api/admin/me", {
-      credentials: "include",
-    })
-      .then((res) => res.text())
-      .then((text) => {
-        return fetch("http://localhost:8080/api/admin/users", {
-          credentials: "include",
-        });
-      })
-      .then((res) => {
-        if (!res) return;
-        if (res.status === 403) throw new Error("관리자 권한이 없습니다.");
-        return res.json();
-      })
-      .then((data) => {
-        if (Array.isArray(data)) setUsers(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setLoading(false);
-      });
-  }, []);
+    loadPosts(1);
+  }, [category, appliedSearch]);
 
-  // 공통 스타일 정의
-  const tableStyle = {
-    padding: "12px",
-    textAlign: "center",
-    borderBottom: "1px solid #444",
-  };
-  const headerStyle = {
-    ...tableStyle,
-    backgroundColor: "#333",
-    color: "#fff",
-    fontWeight: "bold",
-  };
-
-  if (loading)
-    return <div style={{ color: "white", padding: "20px" }}>로딩 중...</div>;
-  if (error)
-    return <div style={{ color: "red", padding: "20px" }}>에러: {error}</div>;
-
-  return (
-    <div
-      style={{
-        padding: "40px",
-        backgroundColor: "#1a1a1a",
-        minHeight: "100vh",
-        color: "#fff",
-      }}
-    >
-      <h2
-        style={{
-          marginBottom: "20px",
-          borderBottom: "2px solid #444",
-          paddingBottom: "10px",
-        }}
-      >
-        🛡️ 관리자 페이지
-      </h2>
-
-      {/* ── 탭 전환 버튼 ── */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "24px" }}>
-        <button
-          onClick={() => setActiveTab("users")}
-          style={{
-            padding: "8px 20px", borderRadius: "6px", cursor: "pointer",
-            fontSize: "14px", fontWeight: "600", border: "none",
-            background: activeTab === "users" ? "#1976d2" : "#333",
-            color: "#fff",
-          }}
-        >
-          👥 회원 관리
-        </button>
-        <button
-          onClick={() => setActiveTab("board")}
-          style={{
-            padding: "8px 20px", borderRadius: "6px", cursor: "pointer",
-            fontSize: "14px", fontWeight: "600", border: "none",
-            background: activeTab === "board" ? "#1976d2" : "#333",
-            color: "#fff",
-          }}
-        >
-          📋 게시판 관리
-        </button>
-        <button
-          onClick={() => setActiveTab("chat")}
-          style={{
-            padding: "8px 20px", borderRadius: "6px", cursor: "pointer",
-            fontSize: "14px", fontWeight: "600", border: "none",
-            background: activeTab === "chat" ? "#1976d2" : "#333",
-            color: "#fff",
-          }}
-        >
-          💬 실시간 채팅
-        </button>
-      </div>
-
-      {/* ── 게시판 관리 탭 ── */}
-      {activeTab === "board" && <AdminBoardTab />}
-
-      {/* ── 실시간 채팅 탭 ── */}
-      {activeTab === "chat" && <AdminChatTab />}
-
-      {/* ── 회원 관리 탭 ── */}
-      {activeTab === "users" && (
-      <div>
-      <div
-        style={{
-          display: "flex",
-          gap: "10px",
-          marginBottom: "20px",
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        {/* 검색 조건 드롭다운 */}
-        <select
-          value={searchType}
-          onChange={(e) => setSearchType(e.target.value)}
-          style={{
-            padding: "8px 12px",
-            backgroundColor: "#333",
-            border: "1px solid #555",
-            borderRadius: "4px",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
-          <option value="loginId">아이디</option>
-          <option value="displayName">이름</option>
-          <option value="role">권한</option>
-        </select>
-
-        {/* 검색어 입력 */}
-        <input
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          placeholder="검색어 입력 후 Enter"
-          style={{
-            padding: "8px 12px",
-            backgroundColor: "#333",
-            border: "1px solid #555",
-            borderRadius: "4px",
-            color: "#fff",
-            width: "200px",
-          }}
-        />
-
-        {/* 날짜 범위 */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ color: "#aaa", fontSize: "13px" }}>생성일</span>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            style={{
-              padding: "7px",
-              backgroundColor: "#333",
-              border: "1px solid #555",
-              borderRadius: "4px",
-              color: "#fff",
-              colorScheme: "dark",
-            }}
-          />
-          <span style={{ color: "#aaa" }}>~</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            style={{
-              padding: "7px",
-              backgroundColor: "#333",
-              border: "1px solid #555",
-              borderRadius: "4px",
-              color: "#fff",
-              colorScheme: "dark",
-            }}
-          />
-        </div>
-
-        {/* 검색 버튼 */}
-        <button
-          onClick={handleSearch}
-          style={{
-            padding: "8px 18px",
-            backgroundColor: "#1976d2",
-            color: "#fff",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          검색
-        </button>
-
-        {/* 초기화 버튼 */}
-        <button
-          onClick={handleReset}
-          style={{
-            padding: "8px 18px",
-            backgroundColor: "#555",
-            color: "#fff",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          초기화
-        </button>
-      </div>
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          backgroundColor: "#2d2d2d",
-        }}
-      >
-        <thead>
-          <tr>
-            <th style={headerStyle}>번호</th>
-            <th style={headerStyle}>아이디</th>
-            <th style={headerStyle}>패스워드(Hash)</th>
-            <th style={headerStyle}>이름</th>
-            <th style={headerStyle}>권한</th>
-            <th style={headerStyle}>생성일</th>
-            <th style={headerStyle}>관리</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.length > 0 ? (
-            users.map((user) => (
-              <tr key={user.userId}>
-                <td style={tableStyle}>{user.userId}</td>
-                <td style={tableStyle}>{user.loginId}</td>
-                <td style={tableStyle}>
-                  <span
-                    title={user.passwordHash}
-                    style={{ cursor: "help", color: "#888" }}
-                  >
-                    {user.passwordHash?.substring(0, 10)}...
-                  </span>
-                </td>
-                <td style={tableStyle}>{user.displayName}</td>
-                <td style={tableStyle}>
-                  <span
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                      backgroundColor:
-                        user.role === "ADMIN" ? "#d32f2f" : "#388e3c",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {user.role}
-                  </span>
-                </td>
-                <td style={tableStyle}>
-                  {user.createdAt
-                    ? new Date(user.createdAt).toLocaleDateString()
-                    : "-"}
-                </td>
-                <td style={tableStyle}>
-                  <button style={btnStyle} onClick={() => handleEditOpen(user)}>
-                    수정
-                  </button>
-                  <button
-                    style={{ ...btnStyle, backgroundColor: "#c62828" }}
-                    onClick={() => handleDelete(user.userId, user.displayName)}
-                  >
-                    삭제
-                  </button>
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td
-                colSpan="7"
-                style={{ padding: "30px", textAlign: "center", color: "#999" }}
-              >
-                표시할 회원 데이터가 없습니다.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      {/* 수정 모달 */}
-      {editUser && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#2d2d2d",
-              padding: "30px",
-              borderRadius: "8px",
-              width: "400px",
-              color: "#fff",
-            }}
-          >
-            <h3
-              style={{
-                marginBottom: "20px",
-                borderBottom: "1px solid #444",
-                paddingBottom: "10px",
-              }}
-            >
-              회원 수정 - {editUser.displayName}
-            </h3>
-
-            <div style={{ marginBottom: "15px" }}>
-              <label
-                style={{ display: "block", marginBottom: "5px", color: "#aaa" }}
-              >
-                이름
-              </label>
-              <input
-                value={editForm.displayName}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, displayName: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  backgroundColor: "#444",
-                  border: "1px solid #666",
-                  borderRadius: "4px",
-                  color: "#fff",
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "15px" }}>
-              <label
-                style={{ display: "block", marginBottom: "5px", color: "#aaa" }}
-              >
-                새 비밀번호 (변경 안 하면 빈칸)
-              </label>
-              <input
-                type="password"
-                value={editForm.password}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, password: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  backgroundColor: "#444",
-                  border: "1px solid #666",
-                  borderRadius: "4px",
-                  color: "#fff",
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "25px" }}>
-              <label
-                style={{ display: "block", marginBottom: "5px", color: "#aaa" }}
-              >
-                권한
-              </label>
-              <select
-                value={editForm.role}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, role: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  backgroundColor: "#444",
-                  border: "1px solid #666",
-                  borderRadius: "4px",
-                  color: "#fff",
-                }}
-              >
-                <option value="USER">USER</option>
-                <option value="ADMIN">ADMIN</option>
-              </select>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "10px",
-              }}
-            >
-              <button
-                onClick={() => setEditUser(null)}
-                style={{
-                  padding: "8px 20px",
-                  backgroundColor: "#666",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                취소
-              </button>
-              <button
-                onClick={handleEditSave}
-                style={{
-                  padding: "8px 20px",
-                  backgroundColor: "#1976d2",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-    )}
-    </div>
-  );
-};
-
-
-// ── 관리자용 게시판 탭 컴포넌트 ──────────────────────────────────────────────
-// 카테고리 필터 + 작성자/작성일 검색 + 페이지네이션 지원
-const AdminBoardTab = () => {
-  const [posts,    setPosts]    = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [page,     setPage]     = useState(1);
-  const [total,    setTotal]    = useState(0);
-  const [pages,    setPages]    = useState(1);
-
-  // ── 필터/검색 상태 ───────────────────────────────────────────────────────
-  const [category,     setCategory]     = useState("ALL"); // 카테고리 필터
-  const [searchInput,  setSearchInput]  = useState("");    // 작성자 검색 입력값
-  const [appliedSearch,setAppliedSearch]= useState("");    // 실제 적용된 검색어
-  const [startDate,    setStartDate]    = useState("");    // 작성일 시작
-  const [endDate,      setEndDate]      = useState("");    // 작성일 종료
-  const [appliedStart, setAppliedStart] = useState("");    // 적용된 시작일
-  const [appliedEnd,   setAppliedEnd]   = useState("");    // 적용된 종료일
-
-  const CATEGORY_LABELS = { ALL: "전체", NOTICE: "공지", FREE: "자유", QNA: "질문", INFO: "정보" };
-  const CATEGORY_COLORS = { NOTICE: "#ff9f43", FREE: "#54a0ff", QNA: "#a29bfe", INFO: "#00d2d3" };
-
-  // ── 게시글 목록 조회 (카테고리 + 검색 파라미터 포함) ─────────────────────
-  const fetchPosts = (p = 1, cat = category, search = appliedSearch) => {
-    setLoading(true);
-    const params = new URLSearchParams({
-      page: p, size: 10, sort: "latest",
-      category: cat,
-      search: search, // 작성자 검색어
-    });
-    fetch(`http://localhost:8080/api/auth/board?${params}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        let result = Array.isArray(data.posts) ? data.posts : [];
-        // 작성일 범위 필터링 (프론트에서 처리)
-        if (appliedStart) {
-          result = result.filter((p) => p.createdAt && p.createdAt >= appliedStart);
-        }
-        if (appliedEnd) {
-          result = result.filter((p) => p.createdAt && p.createdAt <= appliedEnd + "T23:59:59");
-        }
-        setPosts(result);
-        setTotal(data.total   ?? 0);
-        setPages(data.totalPages ?? 1);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
-
-  // 카테고리/검색/날짜 변경 시 1페이지로 초기화
-  useEffect(() => { fetchPosts(1, category, appliedSearch); }, [category, appliedSearch, appliedStart, appliedEnd]);
-  useEffect(() => { fetchPosts(page, category, appliedSearch); }, [page]);
-
-  // 검색 실행
   const handleSearch = () => {
-    setPage(1);
-    setAppliedSearch(searchInput.trim());
-    setAppliedStart(startDate);
-    setAppliedEnd(endDate);
+    setAppliedSearch(search);
   };
 
-  // 검색 초기화
   const handleReset = () => {
-    setSearchInput("");
-    setAppliedSearch("");
-    setStartDate("");
-    setEndDate("");
-    setAppliedStart("");
-    setAppliedEnd("");
     setCategory("ALL");
+    setSearch("");
+    setAppliedSearch("");
     setPage(1);
   };
 
-  // 게시글 삭제 (관리자 권한)
-  const handleDelete = (postId, title) => {
-    if (!window.confirm(`"${title}" 게시글을 삭제하시겠습니까?`)) return;
-    fetch(`http://localhost:8080/api/auth/board/${postId}`, {
-      method: "DELETE", credentials: "include",
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error("삭제 실패");
-        setPosts((prev) => prev.filter((p) => p.id !== postId));
-        setTotal((prev) => prev - 1);
-        alert("삭제되었습니다.");
-      })
-      .catch((e) => alert(e.message));
+  const openEdit = (post) => {
+    setEditingPost(post);
+    setEditForm({
+      category: post.category || "FREE",
+      title: post.title || "",
+      content: post.content || "",
+      pinned: Boolean(post.pinned),
+    });
   };
 
-  if (loading) return <div style={{ color: "#aaa", padding: "20px" }}>로딩 중...</div>;
+  const handleSave = async () => {
+    if (!editingPost) return;
+    if (!editForm.title.trim() || !editForm.content.trim()) {
+      alert("제목과 내용을 입력해주세요.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${BOARD_API}/${editingPost.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          category: editForm.category,
+          title: editForm.title.trim(),
+          content: editForm.content.trim(),
+          pinned: editForm.pinned,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error("게시글 수정에 실패했습니다.");
+      }
+      const updatedPost = await response.json();
+      setPosts((prev) =>
+        prev.map((post) => (post.id === updatedPost.id ? updatedPost : post)),
+      );
+      setEditingPost(null);
+      alert("게시글이 수정되었습니다.");
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleDelete = async (post) => {
+    if (!window.confirm(`"${post.title}" 게시글을 삭제할까요?`)) return;
+
+    try {
+      const response = await fetch(`${BOARD_API}/${post.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("게시글 삭제에 실패했습니다.");
+      }
+      setPosts((prev) => prev.filter((item) => item.id !== post.id));
+      setTotal((prev) => Math.max(0, prev - 1));
+      alert("게시글이 삭제되었습니다.");
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const tableCell = {
+    padding: "10px 12px",
+    borderBottom: "1px solid #333",
+    textAlign: "center",
+  };
 
   return (
     <div>
-      {/* ── 헤더: 제목 + 게시판 바로가기 버튼 ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-        <h3 style={{ color: "#fff", fontSize: "16px", margin: 0 }}>
-          📋 게시글 목록 <span style={{ color: "#aaa", fontWeight: "normal" }}>({total}개)</span>
-        </h3>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0, fontSize: 18 }}>게시물 관리 ({total}개)</h3>
         <button
+          type="button"
           onClick={() => window.open("/api.auth/board", "_blank")}
-          style={{ display: "flex", alignItems: "center", gap: "6px",
-            padding: "8px 16px", borderRadius: "8px", cursor: "pointer",
-            background: "linear-gradient(135deg, #a3ceff, #5f8fff)",
-            border: "none", color: "#0a0a1a", fontSize: "13px", fontWeight: "700" }}
+          style={{ padding: "8px 14px", border: "none", borderRadius: 6, background: "#1976d2", color: "#fff", cursor: "pointer" }}
         >
-          🔗 게시판 바로가기
+          게시판 바로가기
         </button>
       </div>
 
-      {/* ── 카테고리 필터 탭 ── */}
-      <div style={{ display: "flex", gap: "8px", marginBottom: "14px", flexWrap: "wrap" }}>
-        {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
-          <button key={id} onClick={() => { setCategory(id); setPage(1); }}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {Object.entries(boardCategoryLabels).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setCategory(value)}
             style={{
-              padding: "5px 14px", borderRadius: "20px", cursor: "pointer",
-              fontSize: "12px", fontWeight: "600", border: "none",
-              background: category === id
-                ? (id === "ALL" ? "#1976d2" : `${CATEGORY_COLORS[id] ?? "#1976d2"}`)
-                : "#2a2a2a",
-              color: category === id ? "#fff" : "#888",
-              transition: "all 0.2s",
+              padding: "7px 14px",
+              border: "none",
+              borderRadius: 999,
+              background: category === value ? "#1976d2" : "#333",
+              color: "#fff",
+              cursor: "pointer",
             }}
           >
             {label}
@@ -670,145 +173,437 @@ const AdminBoardTab = () => {
         ))}
       </div>
 
-      {/* ── 검색 바: 회원관리와 동일한 스타일 ── */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px",
-        alignItems: "center", flexWrap: "wrap" }}>
-
-        {/* 작성자 드롭다운 (고정 레이블) */}
-        <select
-          disabled
-          style={{ padding: "8px 12px", backgroundColor: "#333",
-            border: "1px solid #555", borderRadius: "4px",
-            color: "#fff", cursor: "default" }}
-        >
-          <option>작성자</option>
-        </select>
-
-        {/* 작성자 검색 입력 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
         <input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          placeholder="작성자 닉네임 입력..."
-          style={{ padding: "8px 12px", backgroundColor: "#333",
-            border: "1px solid #555", borderRadius: "4px",
-            color: "#fff", width: "200px" }}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          onKeyDown={(event) => event.key === "Enter" && handleSearch()}
+          placeholder="제목 또는 작성자 검색"
+          style={{ width: 240, padding: "9px 12px", borderRadius: 6, border: "1px solid #555", background: "#222", color: "#fff" }}
         />
-
-        {/* 작성일 범위 */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ color: "#aaa", fontSize: "13px" }}>생성일</span>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            style={{ padding: "7px", backgroundColor: "#333",
-              border: "1px solid #555", borderRadius: "4px",
-              color: "#fff", colorScheme: "dark" }}
-          />
-          <span style={{ color: "#aaa" }}>~</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            style={{ padding: "7px", backgroundColor: "#333",
-              border: "1px solid #555", borderRadius: "4px",
-              color: "#fff", colorScheme: "dark" }}
-          />
-        </div>
-
-        {/* 검색 버튼 */}
-        <button onClick={handleSearch}
-          style={{ padding: "8px 18px", backgroundColor: "#1976d2",
-            color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={handleSearch}
+          style={{ padding: "9px 16px", border: "none", borderRadius: 6, background: "#1976d2", color: "#fff", cursor: "pointer" }}
+        >
           검색
         </button>
-
-        {/* 초기화 버튼 */}
-        <button onClick={handleReset}
-          style={{ padding: "8px 18px", backgroundColor: "#555",
-            color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}>
+        <button
+          type="button"
+          onClick={handleReset}
+          style={{ padding: "9px 16px", border: "none", borderRadius: 6, background: "#555", color: "#fff", cursor: "pointer" }}
+        >
           초기화
         </button>
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ backgroundColor: "#333" }}>
-            {["ID", "카테고리", "제목", "작성자", "조회", "추천", "댓글", "작성일", "관리"].map((h) => (
-              <th key={h} style={{ padding: "10px 12px", textAlign: "center", color: "#fff", fontWeight: "bold", borderBottom: "1px solid #444" }}>
-                {h}
+          <tr style={{ background: "#333" }}>
+            {["ID", "카테고리", "제목", "작성자", "조회", "좋아요", "댓글", "작성일", "관리"].map((header) => (
+              <th key={header} style={{ ...tableCell, color: "#fff", fontWeight: 700 }}>
+                {header}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {posts.length === 0 ? (
-            <tr><td colSpan={9} style={{ textAlign: "center", padding: "30px", color: "#666" }}>게시글이 없습니다.</td></tr>
-          ) : posts.map((post) => (
-            <tr key={post.id} style={{ borderBottom: "1px solid #333" }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = "#222"}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-              <td style={{ padding: "10px 12px", textAlign: "center", color: "#aaa" }}>{post.id}</td>
-              <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "10px",
-                  background: "#1976d230", border: "1px solid #1976d2", color: "#64b5f6" }}>
-                  {CATEGORY_LABELS[post.category] ?? post.category}
-                  {post.pinned && " 📌"}
-                </span>
-              </td>
-              <td style={{ padding: "10px 12px", color: "#eee", maxWidth: "250px",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {post.title}
-              </td>
-              <td style={{ padding: "10px 12px", textAlign: "center", color: "#aaa" }}>{post.author}</td>
-              <td style={{ padding: "10px 12px", textAlign: "center", color: "#aaa" }}>{post.views}</td>
-              <td style={{ padding: "10px 12px", textAlign: "center", color: "#aaa" }}>{post.likes}</td>
-              <td style={{ padding: "10px 12px", textAlign: "center", color: "#aaa" }}>{post.commentCount}</td>
-              <td style={{ padding: "10px 12px", textAlign: "center", color: "#aaa", fontSize: "12px" }}>
-                {post.createdAt ? new Date(post.createdAt).toLocaleDateString("ko-KR") : "-"}
-              </td>
-              <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                <button onClick={() => handleDelete(post.id, post.title)}
-                  style={{ padding: "4px 10px", background: "#c62828", color: "#fff",
-                    border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "12px" }}>
-                  삭제
-                </button>
-              </td>
+          {loading ? (
+            <tr>
+              <td colSpan={9} style={{ padding: 28, textAlign: "center", color: "#aaa" }}>불러오는 중...</td>
             </tr>
-          ))}
+          ) : posts.length === 0 ? (
+            <tr>
+              <td colSpan={9} style={{ padding: 28, textAlign: "center", color: "#777" }}>게시글이 없습니다.</td>
+            </tr>
+          ) : (
+            posts.map((post) => (
+              <tr key={post.id}>
+                <td style={tableCell}>{post.id}</td>
+                <td style={tableCell}>
+                  {boardCategoryLabels[post.category] ?? post.category}
+                  {post.pinned ? " / 고정" : ""}
+                </td>
+                <td style={{ ...tableCell, textAlign: "left", maxWidth: 320, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {post.title}
+                </td>
+                <td style={tableCell}>{post.author || "-"}</td>
+                <td style={tableCell}>{post.views ?? 0}</td>
+                <td style={tableCell}>{post.likes ?? 0}</td>
+                <td style={tableCell}>{post.commentCount ?? 0}</td>
+                <td style={tableCell}>{post.createdAt ? new Date(post.createdAt).toLocaleDateString("ko-KR") : "-"}</td>
+                <td style={{ ...tableCell, whiteSpace: "nowrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(post)}
+                    style={{ marginRight: 6, padding: "6px 10px", border: "none", borderRadius: 4, background: "#455a64", color: "#fff", cursor: "pointer" }}
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(post)}
+                    style={{ padding: "6px 10px", border: "none", borderRadius: 4, background: "#c62828", color: "#fff", cursor: "pointer" }}
+                  >
+                    삭제
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
 
-      {/* 페이지네이션 */}
-      {pages > 1 && (
-        <div style={{ display: "flex", justifyContent: "center", gap: "6px", marginTop: "20px" }}>
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-            style={{ padding: "6px 12px", background: "#333", border: "none", color: page === 1 ? "#555" : "#fff",
-              borderRadius: "4px", cursor: page === 1 ? "not-allowed" : "pointer" }}>
-            ◀
+      {totalPages > 1 && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 18 }}>
+          <button type="button" disabled={page === 1} onClick={() => loadPosts(page - 1)} style={{ padding: "7px 12px", border: "none", borderRadius: 4, background: "#333", color: "#fff", cursor: page === 1 ? "not-allowed" : "pointer" }}>
+            이전
           </button>
-          {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
-            <button key={p} onClick={() => setPage(p)}
-              style={{ padding: "6px 12px", background: page === p ? "#1976d2" : "#333",
-                border: "none", color: "#fff", borderRadius: "4px", cursor: "pointer" }}>
-              {p}
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+            <button
+              key={pageNumber}
+              type="button"
+              onClick={() => loadPosts(pageNumber)}
+              style={{ padding: "7px 12px", border: "none", borderRadius: 4, background: page === pageNumber ? "#1976d2" : "#333", color: "#fff", cursor: "pointer" }}
+            >
+              {pageNumber}
             </button>
           ))}
-          <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}
-            style={{ padding: "6px 12px", background: "#333", border: "none", color: page === pages ? "#555" : "#fff",
-              borderRadius: "4px", cursor: page === pages ? "not-allowed" : "pointer" }}>
-            ▶
+          <button type="button" disabled={page === totalPages} onClick={() => loadPosts(page + 1)} style={{ padding: "7px 12px", border: "none", borderRadius: 4, background: "#333", color: "#fff", cursor: page === totalPages ? "not-allowed" : "pointer" }}>
+            다음
           </button>
+        </div>
+      )}
+
+      {editingPost && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.68)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ width: "min(720px, 92vw)", background: "#202020", border: "1px solid #444", borderRadius: 8, padding: 22 }}>
+            <h3 style={{ margin: "0 0 16px" }}>게시글 수정</h3>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span style={{ display: "block", marginBottom: 6, color: "#bbb" }}>카테고리</span>
+              <select
+                value={editForm.category}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, category: event.target.value }))}
+                style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #555", background: "#111", color: "#fff" }}
+              >
+                {Object.entries(boardCategoryLabels).filter(([value]) => value !== "ALL").map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span style={{ display: "block", marginBottom: 6, color: "#bbb" }}>제목</span>
+              <input
+                value={editForm.title}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, title: event.target.value }))}
+                style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #555", background: "#111", color: "#fff", boxSizing: "border-box" }}
+              />
+            </label>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span style={{ display: "block", marginBottom: 6, color: "#bbb" }}>내용</span>
+              <textarea
+                value={editForm.content}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, content: event.target.value }))}
+                rows={8}
+                style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #555", background: "#111", color: "#fff", resize: "vertical", boxSizing: "border-box" }}
+              />
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+              <input
+                type="checkbox"
+                checked={editForm.pinned}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, pinned: event.target.checked }))}
+              />
+              상단 고정
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setEditingPost(null)} style={{ padding: "9px 16px", border: "none", borderRadius: 6, background: "#555", color: "#fff", cursor: "pointer" }}>
+                취소
+              </button>
+              <button type="button" onClick={handleSave} style={{ padding: "9px 16px", border: "none", borderRadius: 6, background: "#1976d2", color: "#fff", cursor: "pointer" }}>
+                저장
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 };
 
+const AdminPage = () => {
+  const [activeTab, setActiveTab] = useState("users");
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState({
+    displayName: "",
+    password: "",
+    role: "USER",
+  });
+  const [searchType, setSearchType] = useState("loginId");
+  const [keyword, setKeyword] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
-// ── 관리자 실시간 채팅 탭 컴포넌트 ─────────────────────────────────────────
-// SockJS + STOMP로 WebSocket에 연결하여 유저와 실시간 채팅
-// 왼쪽: 채팅방 목록, 오른쪽: 채팅창
+  const checkAdmin = async () => {
+    const response = await fetch(`${ADMIN_API}/me`, { credentials: "include" });
+    if (response.status === 403) throw new Error("관리자 권한이 없습니다.");
+    if (!response.ok) throw new Error("로그인이 필요합니다.");
+  };
+
+  const loadUsers = async (url = `${ADMIN_API}/users`) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await checkAdmin();
+      const response = await fetch(url, { credentials: "include" });
+      if (response.status === 403) throw new Error("관리자 권한이 없습니다.");
+      if (!response.ok) throw new Error("회원 목록을 불러오지 못했습니다.");
+      const data = await response.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const handleSearch = () => {
+    const params = new URLSearchParams();
+    if (keyword.trim()) {
+      params.set("type", searchType);
+      params.set("keyword", keyword.trim());
+    }
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    loadUsers(`${ADMIN_API}/search/users?${params}`);
+  };
+
+  const handleReset = () => {
+    setSearchType("loginId");
+    setKeyword("");
+    setStartDate("");
+    setEndDate("");
+    loadUsers();
+  };
+
+  const handleDelete = async (userId, displayName) => {
+    if (!window.confirm(`"${displayName}" 회원을 삭제할까요?`)) return;
+    try {
+      const response = await fetch(`${ADMIN_API}/users/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("회원 삭제에 실패했습니다.");
+      setUsers((prev) => prev.filter((user) => user.userId !== userId));
+      alert("회원이 삭제되었습니다.");
+    } catch (deleteError) {
+      alert(deleteError.message);
+    }
+  };
+
+  const handleEditOpen = (user) => {
+    setEditUser(user);
+    setEditForm({
+      displayName: user.displayName || "",
+      password: "",
+      role: user.role || "USER",
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editUser) return;
+    try {
+      const response = await fetch(`${ADMIN_API}/users/${editUser.userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(editForm),
+      });
+      if (!response.ok) throw new Error("회원 수정에 실패했습니다.");
+      setUsers((prev) =>
+        prev.map((user) =>
+          user.userId === editUser.userId
+            ? { ...user, displayName: editForm.displayName, role: editForm.role }
+            : user,
+        ),
+      );
+      setEditUser(null);
+      alert("회원 정보가 수정되었습니다.");
+    } catch (saveError) {
+      alert(saveError.message);
+    }
+  };
+
+  const tabButtonStyle = (tab) => ({
+    padding: "9px 18px",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 700,
+    border: "none",
+    background: activeTab === tab ? "#1976d2" : "#333",
+    color: "#fff",
+  });
+
+  const tableCell = {
+    padding: "12px",
+    textAlign: "center",
+    borderBottom: "1px solid #444",
+  };
+
+  if (loading) {
+    return <div style={{ color: "white", padding: 24 }}>로딩 중...</div>;
+  }
+
+  if (error) {
+    return <div style={{ color: "#ff6b6b", padding: 24 }}>오류: {error}</div>;
+  }
+
+  return (
+    <div style={{ padding: 40, backgroundColor: "#1a1a1a", minHeight: "100vh", color: "#fff" }}>
+      <h2 style={{ marginBottom: 20, borderBottom: "2px solid #444", paddingBottom: 10 }}>
+        관리자 페이지
+      </h2>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
+        <button type="button" onClick={() => setActiveTab("users")} style={tabButtonStyle("users")}>
+          회원 관리
+        </button>
+        <button type="button" onClick={() => setActiveTab("board")} style={tabButtonStyle("board")}>
+          게시판 관리
+        </button>
+        <button type="button" onClick={() => setActiveTab("chat")} style={tabButtonStyle("chat")}>
+          실시간 채팅
+        </button>
+      </div>
+
+      {activeTab === "board" && <AdminBoardManager />}
+      {activeTab === "chat" && <AdminChatTab />}
+
+      {activeTab === "users" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={searchType}
+              onChange={(event) => setSearchType(event.target.value)}
+              style={{ padding: "8px 12px", backgroundColor: "#333", border: "1px solid #555", borderRadius: 4, color: "#fff" }}
+            >
+              <option value="loginId">아이디</option>
+              <option value="displayName">이름</option>
+              <option value="role">권한</option>
+            </select>
+            <input
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && handleSearch()}
+              placeholder="검색어 입력"
+              style={{ padding: "8px 12px", backgroundColor: "#333", border: "1px solid #555", borderRadius: 4, color: "#fff" }}
+            />
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              style={{ padding: 7, backgroundColor: "#333", border: "1px solid #555", borderRadius: 4, color: "#fff", colorScheme: "dark" }}
+            />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              style={{ padding: 7, backgroundColor: "#333", border: "1px solid #555", borderRadius: 4, color: "#fff", colorScheme: "dark" }}
+            />
+            <button type="button" onClick={handleSearch} style={{ padding: "8px 18px", backgroundColor: "#1976d2", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
+              검색
+            </button>
+            <button type="button" onClick={handleReset} style={{ padding: "8px 18px", backgroundColor: "#555", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
+              초기화
+            </button>
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", background: "#222" }}>
+            <thead>
+              <tr style={{ backgroundColor: "#333" }}>
+                {["ID", "로그인 ID", "이름", "권한", "가입일", "관리"].map((header) => (
+                  <th key={header} style={{ ...tableCell, color: "#fff", fontWeight: 700 }}>
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.userId}>
+                  <td style={tableCell}>{user.userId}</td>
+                  <td style={tableCell}>{user.loginId}</td>
+                  <td style={tableCell}>{user.displayName}</td>
+                  <td style={tableCell}>{user.role || "USER"}</td>
+                  <td style={tableCell}>{user.createdAt ? new Date(user.createdAt).toLocaleDateString("ko-KR") : "-"}</td>
+                  <td style={tableCell}>
+                    <button type="button" onClick={() => handleEditOpen(user)} style={btnStyle}>수정</button>
+                    <button type="button" onClick={() => handleDelete(user.userId, user.displayName)} style={{ ...btnStyle, backgroundColor: "#c62828" }}>삭제</button>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ padding: 28, textAlign: "center", color: "#aaa" }}>회원이 없습니다.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editUser && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ width: 360, background: "#222", border: "1px solid #444", borderRadius: 8, padding: 22 }}>
+            <h3 style={{ marginTop: 0 }}>회원 수정</h3>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span style={{ display: "block", marginBottom: 6 }}>이름</span>
+              <input
+                value={editForm.displayName}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, displayName: event.target.value }))}
+                style={{ width: "100%", boxSizing: "border-box", padding: 9, background: "#111", color: "#fff", border: "1px solid #555", borderRadius: 4 }}
+              />
+            </label>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span style={{ display: "block", marginBottom: 6 }}>비밀번호 변경</span>
+              <input
+                type="password"
+                value={editForm.password}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, password: event.target.value }))}
+                placeholder="변경할 때만 입력"
+                style={{ width: "100%", boxSizing: "border-box", padding: 9, background: "#111", color: "#fff", border: "1px solid #555", borderRadius: 4 }}
+              />
+            </label>
+            <label style={{ display: "block", marginBottom: 18 }}>
+              <span style={{ display: "block", marginBottom: 6 }}>권한</span>
+              <select
+                value={editForm.role}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, role: event.target.value }))}
+                style={{ width: "100%", padding: 9, background: "#111", color: "#fff", border: "1px solid #555", borderRadius: 4 }}
+              >
+                <option value="USER">USER</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setEditUser(null)} style={{ ...btnStyle, backgroundColor: "#555" }}>취소</button>
+              <button type="button" onClick={handleEditSave} style={btnStyle}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AdminChatTab = () => {
   const [rooms,       setRooms]       = React.useState([]);     // 활성 채팅방 목록
   const [selectedRoom,setSelectedRoom]= React.useState(null);   // 선택된 채팅방
@@ -820,6 +615,18 @@ const AdminChatTab = () => {
   const stompClientRef  = React.useRef(null);
   const subscriptionRef = React.useRef(null); // 현재 구독 참조 (방 전환 시 해제용)
   const messagesEndRef  = React.useRef(null);
+  const [currentAdmin, setCurrentAdmin] = React.useState(null);
+
+  React.useEffect(() => {
+    fetch("http://localhost:8080/api/auth/me", { credentials: "include" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data?.authenticated) {
+          setCurrentAdmin(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // SockJS + STOMP 동적 로드
   // 이미 로드된 스크립트라도 window.SockJS 존재 여부로 확인하여 중복 로드 방지
@@ -914,10 +721,15 @@ const AdminChatTab = () => {
   // 메시지 전송 (관리자 역할로)
   const sendMessage = () => {
     if (!inputText.trim() || !connected || !selectedRoom) return;
+    if (!currentAdmin?.userId) {
+      alert("관리자 세션 정보를 찾을 수 없습니다. 다시 로그인해주세요.");
+      return;
+    }
     stompClientRef.current.send("/app/chat.send", {}, JSON.stringify({
       type:    "CHAT",
       roomId:  selectedRoom.roomId,
-      sender:  "관리자",
+      senderId: currentAdmin.userId,
+      sender:  currentAdmin.displayName || "관리자",
       role:    "ADMIN",
       content: inputText.trim(),
     }));

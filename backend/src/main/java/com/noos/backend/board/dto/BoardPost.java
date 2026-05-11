@@ -19,14 +19,13 @@ public class BoardPost {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    public static BoardPost create(BoardRequest request, Long authorId, String author) {
+    public static BoardPost create(BoardRequest request, Long authorId) {
         BoardPost post = new BoardPost();
         post.category = request.getCategory() != null ? request.getCategory() : "FREE";
         post.title = request.getTitle().trim();
         post.content = request.getContent().trim();
         post.pinned = Boolean.TRUE.equals(request.getPinned());
         post.authorId = authorId;
-        post.author = author;
         post.createdAt = LocalDateTime.now();
         return post;
     }

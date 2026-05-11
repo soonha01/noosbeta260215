@@ -60,6 +60,7 @@ public class AdminService {
     }
 
     public String describeCurrentAdmin(HttpSession session) {
+        requireAdmin(session);
         if (session == null || session.getAttribute(LOGIN_USER_NAME) == null) {
             return "로그인 안됨";
         }

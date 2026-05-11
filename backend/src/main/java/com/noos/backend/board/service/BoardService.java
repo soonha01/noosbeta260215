@@ -16,7 +16,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_NAME;
 import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ROLE;
 
 @Service
@@ -59,7 +58,7 @@ public class BoardService {
         Long authorId = requireUserId(session);
         validatePostRequest(request, true);
 
-        BoardPost post = BoardPost.create(request, authorId, currentUserName(session));
+        BoardPost post = BoardPost.create(request, authorId);
         boardMapper.insertPost(post);
         return post;
     }
@@ -123,7 +122,7 @@ public class BoardService {
         requirePost(postId);
         validateCommentContent(content);
 
-        BoardComment comment = BoardComment.create(postId, authorId, currentUserName(session), content);
+        BoardComment comment = BoardComment.create(postId, authorId, content);
         boardMapper.insertComment(comment);
         boardMapper.incrementCommentCount(postId);
         return comment;
@@ -195,11 +194,6 @@ public class BoardService {
         }
         Object userId = session.getAttribute(LOGIN_USER_ID);
         return userId instanceof Number number ? number.longValue() : null;
-    }
-
-    private String currentUserName(HttpSession session) {
-        Object name = session != null ? session.getAttribute(LOGIN_USER_NAME) : null;
-        return name instanceof String value && !value.isBlank() ? value : "Anonymous";
     }
 
     private boolean isAdmin(HttpSession session) {

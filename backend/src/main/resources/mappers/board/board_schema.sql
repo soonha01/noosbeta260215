@@ -1,12 +1,8 @@
-ALTER TABLE users
-ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'USER';
-
 CREATE TABLE IF NOT EXISTS board_posts (
     id BIGINT NOT NULL AUTO_INCREMENT,
     category VARCHAR(20) NOT NULL DEFAULT 'FREE',
     title VARCHAR(100) NOT NULL,
     content TEXT NOT NULL,
-    author VARCHAR(50) NOT NULL,
     author_id BIGINT NOT NULL,
     views INT NOT NULL DEFAULT 0,
     likes INT NOT NULL DEFAULT 0,
@@ -22,13 +18,13 @@ CREATE TABLE IF NOT EXISTS board_posts (
     CONSTRAINT fk_board_posts_author
         FOREIGN KEY (author_id) REFERENCES users(user_id)
         ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS board_comments (
     id BIGINT NOT NULL AUTO_INCREMENT,
     post_id BIGINT NOT NULL,
     author_id BIGINT NOT NULL,
-    author VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     likes INT NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -39,10 +35,12 @@ CREATE TABLE IF NOT EXISTS board_comments (
     INDEX idx_board_comments_created_at (created_at),
     CONSTRAINT fk_board_comments_post
         FOREIGN KEY (post_id) REFERENCES board_posts(id)
-        ON DELETE CASCADE,
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
     CONSTRAINT fk_board_comments_author
         FOREIGN KEY (author_id) REFERENCES users(user_id)
         ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS board_post_likes (
@@ -51,10 +49,12 @@ CREATE TABLE IF NOT EXISTS board_post_likes (
     PRIMARY KEY (user_id, post_id),
     CONSTRAINT fk_board_post_likes_user
         FOREIGN KEY (user_id) REFERENCES users(user_id)
-        ON DELETE CASCADE,
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
     CONSTRAINT fk_board_post_likes_post
         FOREIGN KEY (post_id) REFERENCES board_posts(id)
         ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS board_comment_likes (
@@ -63,8 +63,10 @@ CREATE TABLE IF NOT EXISTS board_comment_likes (
     PRIMARY KEY (user_id, comment_id),
     CONSTRAINT fk_board_comment_likes_user
         FOREIGN KEY (user_id) REFERENCES users(user_id)
-        ON DELETE CASCADE,
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
     CONSTRAINT fk_board_comment_likes_comment
         FOREIGN KEY (comment_id) REFERENCES board_comments(id)
         ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

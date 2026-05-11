@@ -15,11 +15,10 @@ public class BoardComment {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    public static BoardComment create(Long postId, Long authorId, String author, String content) {
+    public static BoardComment create(Long postId, Long authorId, String content) {
         BoardComment comment = new BoardComment();
         comment.postId = postId;
         comment.authorId = authorId;
-        comment.author = author;
         comment.content = content.trim();
         comment.createdAt = LocalDateTime.now();
         return comment;
