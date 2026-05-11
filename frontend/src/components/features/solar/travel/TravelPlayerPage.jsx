@@ -1,5 +1,5 @@
 import React from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import {
   Bot,
   LayoutDashboard,
@@ -39,6 +39,15 @@ import {
   VolumeRow,
   VolumeValue,
 } from './spaceTravel.styles';
+
+const planetTextureRoll = keyframes`
+  from {
+    background-position-x: 0px;
+  }
+  to {
+    background-position-x: -1200px;
+  }
+`;
 
 const Page = styled.div`
   min-height: 100%;
@@ -168,11 +177,17 @@ const PlanetOrb = styled.div`
   background-image: url(${({ $image }) => $image});
   background-repeat: repeat-x;
   background-size: auto 100%;
-  background-position: center;
+  background-position: 0 50%;
   border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}78`};
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 24px 58px rgba(0, 0, 0, 0.58);
+  will-change: background-position;
+  animation: ${planetTextureRoll} ${({ $spinDurationSec = 24 }) => `${$spinDurationSec}s`} linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
 const PlanetLabel = styled.p`
@@ -509,9 +524,7 @@ const TravelPlayerPage = ({
               <PlanetOrb
                 $image={planetMedia.image}
                 $accent={accentColor}
-                style={{
-                  animation: `planetTextureRoll ${planetSpinDurationSec}s linear infinite`,
-                }}
+                $spinDurationSec={planetSpinDurationSec}
               />
               <PlanetTitle $accent={accentColor}>{planetMedia.trackName}</PlanetTitle>
               <PlanetBody>{planetMedia.description}</PlanetBody>

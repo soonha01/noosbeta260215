@@ -16,7 +16,7 @@ const cardData = [
     title: 'AI Objet',
     description: 'LED의 섬세한 빛의 움직임과 빛의 색 제공, 최적화된 사운드 제공',
     label: 'Smart Environment',
-    image: asset('aiobjet-modern.svg')
+    image: asset('aiobjet-product.jpg')
   },
   {
     color: '#060010',

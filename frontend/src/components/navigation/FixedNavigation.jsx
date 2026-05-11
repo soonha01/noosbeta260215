@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { publicAsset } from "../../lib/env";
 
 const FixedNavigation = () => {
   const [currentSection, setCurrentSection] = useState(1);
@@ -84,7 +85,7 @@ const FixedNavigation = () => {
             <img
               alt="NOOS Logo"
               className="block max-w-none h-full w-full object-contain"
-              src="/media/icons/icon.png"
+              src={publicAsset("media/icons/icon.png")}
             />
           </div>
           <span className="font-cardinal-fruit text-[13px] text-white">

@@ -24,7 +24,7 @@ const imgVector = publicAsset("media/home/section5.png"); // Section 5 brand ima
 
 // Hardware/Product images
 const imgImage22 = publicAsset("media/hardware/muse.png"); // Muse S Athena
-const imgImage23 = publicAsset("media/hardware/aiobjet-modern.svg"); // AI Object main
+const imgImage23 = publicAsset("media/hardware/aiobjet-product.jpg"); // AI Object main
 const imgImage24 = publicAsset("media/hardware/multiplatform-modern.svg"); // Multiplatform
 
 // Process step images

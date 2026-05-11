@@ -1,4 +1,5 @@
 import { PLANET_LIGHTING_PREVIEW } from './lightingPreview';
+import { publicAsset } from '../../../../lib/env';
 
 export const STEP_SEATING = 'seating';
 export const STEP_TICKET = 'ticket';
@@ -26,6 +27,8 @@ export const DEFAULT_PROFILE = {
   password: '',
 };
 
+const planetImage = (planet) => publicAsset(`media/planets/textures/${planet}.jpg`);
+
 export const PLANET_MEDIA = {
   mercury: {
     title: 'Mercury',
@@ -33,7 +36,7 @@ export const PLANET_MEDIA = {
     description:
       '망설임을 줄이고 빠르게 시작할 수 있도록 돕는 환경입니다. 짧은 시간 안에 집중을 켜고, 작업 진입 속도를 끌어올리고 싶을 때 적합합니다.',
     trackName: 'Mercury Pulse',
-    image: 'https://www.solarsystemscope.com/images/textures/full/2k_makemake_fictional.jpg',
+    image: planetImage('mercury'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.mercury,
   },
   venus: {
@@ -42,7 +45,7 @@ export const PLANET_MEDIA = {
     description:
       '감각과 감정을 부드럽게 깨워 아이디어가 자연스럽게 흐르도록 돕는 환경입니다. 글쓰기, 디자인, 브랜딩처럼 섬세한 표현과 연상이 필요한 순간에 어울립니다.',
     trackName: 'Venus Drift',
-    image: 'https://nasa3d.arc.nasa.gov/shared_assets/images/ven0aaa2/ven0aaa2-copy-428-321.jpg',
+    image: planetImage('venus'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.venus,
   },
   earth: {
@@ -51,7 +54,7 @@ export const PLANET_MEDIA = {
     description:
       '과하게 긴장하지 않으면서도 안정적으로 집중을 유지하도록 설계된 환경입니다. 장시간 업무, 학습, 루틴 작업을 편안하게 이어가고 싶을 때 적합합니다.',
     trackName: 'Earth Balance',
-    image: 'https://img00.deviantart.net/04ef/i/2009/114/3/e/new_earth_texture_map_by_lightondesigns.jpg',
+    image: planetImage('earth'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.earth,
   },
   mars: {
@@ -60,8 +63,8 @@ export const PLANET_MEDIA = {
     description:
       '미루고 있던 일을 바로 행동으로 옮길 수 있도록 추진력을 높이는 환경입니다. 빠른 결단, 실행, 돌파가 필요한 순간에 가장 잘 맞습니다.',
     trackName: 'Mars Forward',
-    image: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/217233/mars_texture.jpg',
-    audio: '/media/travel-player/audio/mars/mars.mp3',
+    image: planetImage('mars'),
+    audio: publicAsset('media/travel-player/audio/mars/mars.mp3'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.mars,
   },
   jupiter: {
@@ -70,7 +73,7 @@ export const PLANET_MEDIA = {
     description:
       '큰 그림을 보고 판단의 중심을 잡을 수 있도록 돕는 환경입니다. 중요한 선택, 발표 준비, 리더십이 필요한 상황에서 넓고 단단한 사고를 지원합니다.',
     trackName: 'Jupiter Command',
-    image: 'https://www.jpl.nasa.gov/spaceimages/images/largesize/PIA07782_hires.jpg',
+    image: planetImage('jupiter'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.jupiter,
   },
   saturn: {
@@ -79,7 +82,7 @@ export const PLANET_MEDIA = {
     description:
       '느리고 정교한 사고를 오래 유지할 수 있도록 돕는 환경입니다. 기획, 연구, 구조 설계, 철학적 정리처럼 긴 호흡의 사고가 필요한 순간에 적합합니다.',
     trackName: 'Saturn Ring Study',
-    image: 'https://www.solarsystemscope.com/images/textures/full/2k_saturn.jpg',
+    image: planetImage('saturn'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.saturn,
   },
   uranus: {
@@ -88,7 +91,7 @@ export const PLANET_MEDIA = {
     description:
       '익숙한 방식에서 벗어나 새로운 관점으로 사고를 전환하도록 돕는 환경입니다. 막힌 아이디어를 깨고, 발상 전환이나 실험적 접근이 필요할 때 어울립니다.',
     trackName: 'Uranus Shift',
-    image: 'https://img00.deviantart.net/957c/i/2017/165/4/9/uranus_texture_map_by_jcpag2010-db7yjwb.png',
+    image: planetImage('uranus'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.uranus,
   },
   neptune: {
@@ -97,7 +100,7 @@ export const PLANET_MEDIA = {
     description:
       '외부 잡음을 최대한 줄이고 좁고 깊은 집중 상태로 들어가도록 설계된 환경입니다. 코딩, 독서, 논문, 분석처럼 높은 몰입 밀도가 필요한 작업에 적합합니다.',
     trackName: 'Neptune Deep Focus',
-    image: 'https://www.solarsystemscope.com/images/textures/full/2k_neptune.jpg',
+    image: planetImage('neptune'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.neptune,
   },
   pluto: {
@@ -106,7 +109,7 @@ export const PLANET_MEDIA = {
     description:
       '긴장을 낮추고 감각을 천천히 가라앉히며 하루를 정리하도록 돕는 환경입니다. 과부하 이후 회복, 정서적 안정, 전환이 필요한 시간에 가장 잘 맞습니다.',
     trackName: 'Pluto Calm Night',
-    image: 'https://pre00.deviantart.net/4677/th/pre/f/2015/314/4/e/pluto_map__2015_nov_10__by_snowfall_the_cat-d918tlb.png',
+    image: planetImage('pluto'),
     lightingPreview: PLANET_LIGHTING_PREVIEW.pluto,
   },
 };
