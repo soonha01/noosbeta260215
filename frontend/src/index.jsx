@@ -10,6 +10,9 @@ const App = lazy(() => import("./App.jsx"));
 const AboutUs = lazy(() => import("./components/sections/AboutUs.jsx"));
 const SolarExplorer = lazy(() => import("./components/features/solar/SolarExplorer.jsx"));
 const SpaceTravel = lazy(() => import("./components/features/solar/SpaceTravel.jsx"));
+const AdminPage = lazy(() => import("./components/features/auth/AdminPage.jsx"));
+const BoardPage = lazy(() => import("./components/features/auth/board/BoardPage.jsx"));
+const LiveChatPage = lazy(() => import("./components/features/auth/livechat/LiveChatPage.jsx"));
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
@@ -68,6 +71,30 @@ root.render(
           element={(
             <LazyRoute>
               <SpaceTravel />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/admin"
+          element={(
+            <LazyRoute>
+              <AdminPage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/api.auth/board"
+          element={(
+            <LazyRoute>
+              <BoardPage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/api.auth/livechat"
+          element={(
+            <LazyRoute>
+              <LiveChatPage />
             </LazyRoute>
           )}
         />

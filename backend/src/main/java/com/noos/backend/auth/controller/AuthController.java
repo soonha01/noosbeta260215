@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
 import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_LOGIN_ID;
 import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_NAME;
+import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ROLE;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -51,9 +52,11 @@ public class AuthController {
         }
 
         HttpSession session = httpServletRequest.getSession(true);
+        String role = user.getRole() != null && !user.getRole().isBlank() ? user.getRole() : "USER";
         session.setAttribute(LOGIN_USER_ID, user.getUserId());
         session.setAttribute(LOGIN_USER_LOGIN_ID, user.getLoginId());
         session.setAttribute(LOGIN_USER_NAME, user.getDisplayName());
+        session.setAttribute(LOGIN_USER_ROLE, role);
 
         return ResponseEntity.ok(AuthSessionResponse.fromUser(user));
     }
@@ -68,6 +71,7 @@ public class AuthController {
         Object userId = session.getAttribute(LOGIN_USER_ID);
         Object loginId = session.getAttribute(LOGIN_USER_LOGIN_ID);
         Object displayName = session.getAttribute(LOGIN_USER_NAME);
+        Object role = session.getAttribute(LOGIN_USER_ROLE);
 
         if (!(userId instanceof Number number)) {
             return AuthSessionResponse.anonymous();
@@ -77,7 +81,8 @@ public class AuthController {
                 true,
                 number.longValue(),
                 loginId instanceof String value ? value : null,
-                displayName instanceof String value ? value : null
+                displayName instanceof String value ? value : null,
+                role instanceof String value ? value : "USER"
         );
     }
 

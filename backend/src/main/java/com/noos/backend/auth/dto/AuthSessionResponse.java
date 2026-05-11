@@ -4,10 +4,11 @@ public record AuthSessionResponse(
         boolean authenticated,
         Long userId,
         String loginId,
-        String displayName
+        String displayName,
+        String role
 ) {
     public static AuthSessionResponse anonymous() {
-        return new AuthSessionResponse(false, null, null, null);
+        return new AuthSessionResponse(false, null, null, null, null);
     }
 
     public static AuthSessionResponse fromUser(User user) {
@@ -19,7 +20,8 @@ public record AuthSessionResponse(
                 true,
                 user.getUserId(),
                 user.getLoginId(),
-                user.getDisplayName()
+                user.getDisplayName(),
+                user.getRole() != null && !user.getRole().isBlank() ? user.getRole() : "USER"
         );
     }
 }

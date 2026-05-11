@@ -13,4 +13,5 @@ public class User {
     private String providerId;   // provider_id
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String role;
 }
