@@ -7,6 +7,16 @@ from .context import normalized_confidence_average
 from .planet_profiles import CANONICAL_AXES, PlanetProfile
 
 
+MIN_SESSION_DURATION_SEC = 10
+MAX_DURATION_OVERRIDE_SEC = 600
+MAX_SESSION_DURATION_SEC = 1800
+MAX_FEEDBACK_DURATION_DELTA_SEC = 600
+
+
+def _bounded_duration(value: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(int(value), maximum))
+
+
 def _transition_mode(current_axes: dict[str, float], target_axes: dict[str, float], planet: PlanetProfile) -> str:
     stress = current_axes["stress_load"]
     fatigue = current_axes["fatigue_risk"]
@@ -165,12 +175,17 @@ def build_intervention_plan(
     session_adjustments = feedback_profile.get("session_adjustments") if isinstance(feedback_profile, dict) else {}
     if not isinstance(session_adjustments, dict):
         session_adjustments = {}
-    duration_delta_sec = int(session_adjustments.get("duration_delta_sec") or 0)
+    duration_delta_sec = _bounded_duration(
+        int(session_adjustments.get("duration_delta_sec") or 0),
+        -MAX_FEEDBACK_DURATION_DELTA_SEC,
+        MAX_FEEDBACK_DURATION_DELTA_SEC,
+    )
     intent_context = intent_context or {}
     delta_axes = {axis: round_float(target_axes[axis] - current_axes[axis]) for axis in CANONICAL_AXES}
     intensity = average_delta_intensity(current_axes, target_axes)
     if duration_override_sec is not None:
-        total_duration_sec = max(10, int(duration_override_sec) + duration_delta_sec)
+        bounded_override_sec = _bounded_duration(duration_override_sec, MIN_SESSION_DURATION_SEC, MAX_DURATION_OVERRIDE_SEC)
+        total_duration_sec = bounded_override_sec + duration_delta_sec
     else:
         total_duration_sec = int(planet.session_duration_sec)
         if intensity >= 0.30:
@@ -178,6 +193,7 @@ def build_intervention_plan(
         elif intensity >= 0.18:
             total_duration_sec += 90
         total_duration_sec += duration_delta_sec
+    total_duration_sec = _bounded_duration(total_duration_sec, MIN_SESSION_DURATION_SEC, MAX_SESSION_DURATION_SEC)
 
     mode = _transition_mode(current_axes, target_axes, planet)
     phases = _phase_plan(mode, planet, current_axes, target_axes, total_duration_sec)

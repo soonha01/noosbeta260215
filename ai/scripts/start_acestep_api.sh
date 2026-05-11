@@ -15,12 +15,21 @@ NO_INIT="${ACESTEP_NO_INIT:-true}"
 
 if [[ "$(uname)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   export ACESTEP_LM_BACKEND="${ACESTEP_LM_BACKEND:-mlx}"
+  export ACESTEP_OFFLOAD_TO_CPU="${ACESTEP_OFFLOAD_TO_CPU:-false}"
+  export ACESTEP_OFFLOAD_DIT_TO_CPU="${ACESTEP_OFFLOAD_DIT_TO_CPU:-false}"
+  export PYTORCH_ENABLE_MPS_FALLBACK="${PYTORCH_ENABLE_MPS_FALLBACK:-1}"
 fi
 
 cd "$VENDOR_DIR"
 
 if [[ "$NO_INIT" == "true" ]]; then
   export ACESTEP_NO_INIT=true
+fi
+
+LOCAL_ACESTEP_API="$VENDOR_DIR/.venv/bin/acestep-api"
+
+if [[ -x "$LOCAL_ACESTEP_API" ]]; then
+  exec "$LOCAL_ACESTEP_API" --host "$HOST" --port "$PORT"
 fi
 
 exec uv run acestep-api --host "$HOST" --port "$PORT"

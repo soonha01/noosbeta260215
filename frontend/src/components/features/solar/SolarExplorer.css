@@ -230,31 +230,31 @@
   cursor: pointer;
 }
 .solar-explorer-body label.mercury > .preview {
-  background: url("https://www.solarsystemscope.com/images/textures/full/2k_makemake_fictional.jpg") !important;
+  background-image: url("https://www.solarsystemscope.com/images/textures/full/2k_makemake_fictional.jpg") !important;
 }
 .solar-explorer-body label.venus > .preview {
-  background: url("https://nasa3d.arc.nasa.gov/shared_assets/images/ven0aaa2/ven0aaa2-copy-428-321.jpg") !important;
+  background-image: url("https://nasa3d.arc.nasa.gov/shared_assets/images/ven0aaa2/ven0aaa2-copy-428-321.jpg") !important;
 }
 .solar-explorer-body label.earth > .preview {
-  background: url("https://img00.deviantart.net/04ef/i/2009/114/3/e/new_earth_texture_map_by_lightondesigns.jpg") !important;
+  background-image: url("https://img00.deviantart.net/04ef/i/2009/114/3/e/new_earth_texture_map_by_lightondesigns.jpg") !important;
 }
 .solar-explorer-body label.mars > .preview {
-  background: url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/217233/mars_texture.jpg") !important;
+  background-image: url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/217233/mars_texture.jpg") !important;
 }
 .solar-explorer-body label.jupiter > .preview {
-  background: url("https://www.jpl.nasa.gov/spaceimages/images/largesize/PIA07782_hires.jpg") !important;
+  background-image: url("https://www.jpl.nasa.gov/spaceimages/images/largesize/PIA07782_hires.jpg") !important;
 }
 .solar-explorer-body label.saturn > .preview {
-  background: url("https://www.solarsystemscope.com/images/textures/full/2k_saturn.jpg") !important;
+  background-image: url("https://www.solarsystemscope.com/images/textures/full/2k_saturn.jpg") !important;
 }
 .solar-explorer-body label.uranus > .preview {
-  background: url("https://img00.deviantart.net/957c/i/2017/165/4/9/uranus_texture_map_by_jcpag2010-db7yjwb.png") !important;
+  background-image: url("https://img00.deviantart.net/957c/i/2017/165/4/9/uranus_texture_map_by_jcpag2010-db7yjwb.png") !important;
 }
 .solar-explorer-body label.neptune > .preview {
-  background: url("https://img00.deviantart.net/f068/i/2017/165/b/c/neptune_texture_map_by_jcpag2010-dbcjcv5.png") !important;
+  background-image: url("https://img00.deviantart.net/f068/i/2017/165/b/c/neptune_texture_map_by_jcpag2010-dbcjcv5.png") !important;
 }
 .solar-explorer-body label.pluto > .preview {
-  background: url("https://pre00.deviantart.net/4677/th/pre/f/2015/314/4/e/pluto_map__2015_nov_10__by_snowfall_the_cat-d918tlb.png") !important;
+  background-image: url("https://pre00.deviantart.net/4677/th/pre/f/2015/314/4/e/pluto_map__2015_nov_10__by_snowfall_the_cat-d918tlb.png") !important;
 }
 .solar-explorer-body label.menu {
   color: white;
@@ -311,9 +311,11 @@
 .solar-explorer-body label.menu .preview {
   width: 30px;
   height: 30px;
-  background: yellow;
+  background-color: #05070c;
   float: left;
-  background-size: auto 100% !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: 72% center !important;
   position: absolute;
   border-radius: 100px;
   box-shadow: 0 -13px 10px 2px black inset;

@@ -13,30 +13,31 @@ import FirstLook from "./pages/home/FirstLook";
 import Login from "./components/features/auth/Login";
 import ClickSpark from "./components/ui/effects/ClickSpark";
 import { DEFAULT_GALLERY_ITEMS } from "./lib/galleryItems";
+import { publicAsset } from "./lib/env";
 
 // Gallery images - kept for potential future use
 
 // Image assets - matched by name and purpose
-const imgIcon1 = `${process.env.PUBLIC_URL}/media/icons/icon.png`; // Project logo/icon
-const imgSection2Bg = `${process.env.PUBLIC_URL}/media/home/2section.png`; // Section 2 full background
-const imgVector = `${process.env.PUBLIC_URL}/media/home/section5.png`; // Section 5 brand image
+const imgIcon1 = publicAsset("media/icons/icon.png"); // Project logo/icon
+const imgSection2Bg = publicAsset("media/home/2section.webp"); // Section 2 full background
+const imgVector = publicAsset("media/home/section5.png"); // Section 5 brand image
 
 // Hardware/Product images
-const imgImage22 = `${process.env.PUBLIC_URL}/media/hardware/muse.png`; // Muse S Athena
-const imgImage23 = `${process.env.PUBLIC_URL}/media/hardware/aiobjet-modern.svg`; // AI Object main
-const imgImage24 = `${process.env.PUBLIC_URL}/media/hardware/multiplatform-modern.svg`; // Multiplatform
+const imgImage22 = publicAsset("media/hardware/muse.png"); // Muse S Athena
+const imgImage23 = publicAsset("media/hardware/aiobjet-modern.svg"); // AI Object main
+const imgImage24 = publicAsset("media/hardware/multiplatform-modern.svg"); // Multiplatform
 
 // Process step images
-const imgTSbhXcBw10HvxPaJ6SsTtRiiplkPng = `${process.env.PUBLIC_URL}/media/home/10 1.png`; // Step 1 illustration
-const imgMX5DAhTlaceN4NDguCeAZcFbIPng = `${process.env.PUBLIC_URL}/media/home/10-2.png`; // Space travel illustration
-const img7VSjm6K3MAQqqM3HtSKme77ZhCsPng = `${process.env.PUBLIC_URL}/media/home/10 3.png`; // Dashboard/past analysis illustration
+const imgTSbhXcBw10HvxPaJ6SsTtRiiplkPng = publicAsset("media/home/10-1.webp"); // Step 1 illustration
+const imgMX5DAhTlaceN4NDguCeAZcFbIPng = publicAsset("media/home/10-2.webp"); // Space travel illustration
+const img7VSjm6K3MAQqqM3HtSKme77ZhCsPng = publicAsset("media/home/10 3.png"); // Dashboard/past analysis illustration
 
 // Background images for sections
-const imgSection9Modern1 = `${process.env.PUBLIC_URL}/media/home/section9-modern-1.svg`; // Section 9 custom card 1
-const imgSection9Modern2 = `${process.env.PUBLIC_URL}/media/home/section9-modern-2.svg`; // Section 9 custom card 2
-const imgSection9Modern3 = `${process.env.PUBLIC_URL}/media/home/section9-modern-3.svg`; // Section 9 custom card 3
-const imgSection9Modern4 = `${process.env.PUBLIC_URL}/media/home/section9-modern-4.svg`; // Section 9 custom card 4
-const imgSection9Modern5 = `${process.env.PUBLIC_URL}/media/home/section9-modern-5.svg`; // Section 9 custom card 5
+const imgSection9Modern1 = publicAsset("media/home/section9-modern-1.svg"); // Section 9 custom card 1
+const imgSection9Modern2 = publicAsset("media/home/section9-modern-2.svg"); // Section 9 custom card 2
+const imgSection9Modern3 = publicAsset("media/home/section9-modern-3.svg"); // Section 9 custom card 3
+const imgSection9Modern4 = publicAsset("media/home/section9-modern-4.svg"); // Section 9 custom card 4
+const imgSection9Modern5 = publicAsset("media/home/section9-modern-5.svg"); // Section 9 custom card 5
 
 // Section 1 - Hero
 const HeroSection = ({ onLoginClick }) => {

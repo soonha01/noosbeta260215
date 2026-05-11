@@ -1,18 +1,4 @@
-const DEFAULT_API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080').replace(
-  /\/$/,
-  ''
-);
-
-const DEFAULT_EEG_ANALYSIS_ENDPOINT =
-  process.env.REACT_APP_EEG_ANALYSIS_ENDPOINT || '/api/eeg/results';
-const DEFAULT_EEG_SESSION_START_ENDPOINT =
-  process.env.REACT_APP_EEG_SESSION_START_ENDPOINT || '/api/eeg/sessions/start';
-const DEFAULT_EEG_RAW_CHUNK_ENDPOINT =
-  process.env.REACT_APP_EEG_RAW_CHUNK_ENDPOINT || '/api/eeg/raw/chunks';
-const EEG_CHANNEL_KEYS = ['TP9', 'AF7', 'AF8', 'TP10'];
-const DEFAULT_RAW_CHUNK_DURATION_SEC = Number(
-  process.env.REACT_APP_EEG_RAW_CHUNK_DURATION_SEC || 10
-);
+import { API_BASE_URL, EEG_ANALYSIS_ENDPOINT } from './env';
 
 const roundTo = (value, digits = 6) => {
   if (!Number.isFinite(value)) {
@@ -250,7 +236,7 @@ export const uploadEegRawChunks = async (
 };
 
 export const submitEegAnalysis = async (payload, { signal } = {}) => {
-  const response = await fetch(`${DEFAULT_API_BASE_URL}${DEFAULT_EEG_ANALYSIS_ENDPOINT}`, {
+  const response = await fetch(`${API_BASE_URL}${EEG_ANALYSIS_ENDPOINT}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -10,6 +10,7 @@ import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
 import com.noos.backend.ai.dto.StateExplanationRequest;
+import com.noos.backend.lighting.service.WizLightingService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -21,8 +22,12 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.URI;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -46,8 +51,14 @@ public class NoosAiService {
 
     private static final String ACE_STEP_FALLBACK_WARNING =
             "ACE-Step generation is unavailable. Falling back to the NOOS intervention plan without generated audio.";
+    private static final String DEFAULT_ACE_STEP_MODEL_NAME = "acestep-v15-turbo";
     private static final Duration ACE_STEP_HEALTHCHECK_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration ACE_STEP_STARTUP_WAIT = Duration.ofSeconds(25);
+    private static final int DEFAULT_INTERVENTION_DURATION_SEC = 90;
+    private static final int MIN_INTERVENTION_DURATION_SEC = 10;
+    private static final int MAX_INTERVENTION_DURATION_SEC = 600;
+    private static final int PROCESS_LOG_MAX_BYTES = 12_000;
+    private static final long REMOTE_AUDIO_DOWNLOAD_MAX_BYTES = 250L * 1024L * 1024L;
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private static final List<String> CANONICAL_AXES = List.of(
@@ -63,9 +74,16 @@ public class NoosAiService {
     private final String pythonBin;
     private final String aceStepBaseUrl;
     private final long aceStepTimeoutSec;
+    private final boolean aceStepAutoStart;
+    private final String aceStepModelName;
+    private final boolean aceStepUseEnhancedRequest;
+    private final String aceStepLmModel;
+    private final int aceStepRequestDurationCapSec;
+    private final int aceStepInferenceSteps;
     private final boolean gemmaEnabled;
     private final String gemmaBaseUrl;
     private final long gemmaTimeoutSec;
+    private final WizLightingService wizLightingService;
     private final HttpClient httpClient;
     private final Object aceStepServerLock = new Object();
     private volatile Process aceStepServerProcess;
@@ -75,17 +93,31 @@ public class NoosAiService {
             @Value("${noos.ai.python-bin:python}") String pythonBin,
             @Value("${noos.ai.ace-step.base-url:http://127.0.0.1:8011}") String aceStepBaseUrl,
             @Value("${noos.ai.ace-step.timeout-sec:900}") long aceStepTimeoutSec,
+            @Value("${noos.ai.ace-step.auto-start:true}") boolean aceStepAutoStart,
+            @Value("${noos.ai.ace-step.model:acestep-v15-turbo}") String aceStepModelName,
+            @Value("${noos.ai.ace-step.use-enhanced-request:false}") boolean aceStepUseEnhancedRequest,
+            @Value("${noos.ai.ace-step.lm-model:}") String aceStepLmModel,
+            @Value("${noos.ai.ace-step.request-duration-cap-sec:0}") int aceStepRequestDurationCapSec,
+            @Value("${noos.ai.ace-step.inference-steps:0}") int aceStepInferenceSteps,
             @Value("${noos.ai.gemma.enabled:true}") boolean gemmaEnabled,
             @Value("${noos.ai.gemma.base-url:http://127.0.0.1:8091}") String gemmaBaseUrl,
-            @Value("${noos.ai.gemma.timeout-sec:120}") long gemmaTimeoutSec
+            @Value("${noos.ai.gemma.timeout-sec:120}") long gemmaTimeoutSec,
+            WizLightingService wizLightingService
     ) {
         this.objectMapper = objectMapper;
         this.pythonBin = pythonBin;
         this.aceStepBaseUrl = aceStepBaseUrl;
         this.aceStepTimeoutSec = aceStepTimeoutSec;
+        this.aceStepAutoStart = aceStepAutoStart;
+        this.aceStepModelName = aceStepModelName;
+        this.aceStepUseEnhancedRequest = aceStepUseEnhancedRequest;
+        this.aceStepLmModel = aceStepLmModel;
+        this.aceStepRequestDurationCapSec = aceStepRequestDurationCapSec;
+        this.aceStepInferenceSteps = aceStepInferenceSteps;
         this.gemmaEnabled = gemmaEnabled;
         this.gemmaBaseUrl = gemmaBaseUrl;
         this.gemmaTimeoutSec = gemmaTimeoutSec;
+        this.wizLightingService = wizLightingService;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(Math.max(5, gemmaTimeoutSec)))
                 .build();
@@ -193,10 +225,12 @@ public class NoosAiService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "planet is required");
         }
 
+        int durationSec = normalizeInterventionDuration(request.durationSec());
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("session_type", "intervention");
         payload.put("planet", request.planet());
-        payload.put("duration_sec", request.durationSec() != null ? request.durationSec() : 90);
+        payload.put("duration_sec", durationSec);
         payload.put("candidate_count_override", request.candidateCountOverride() != null ? request.candidateCountOverride() : 1);
 
         if (request.currentState() != null && !request.currentState().isEmpty()) {
@@ -240,8 +274,16 @@ public class NoosAiService {
             generationWarning = ACE_STEP_FALLBACK_WARNING;
         }
 
+        if (generationWarning == null && isRemoteAceStepBaseUrl()) {
+            try {
+                materializeRemoteAceStepAudio(interventionResult);
+            } catch (ResponseStatusException error) {
+                generationWarning = error.getReason();
+            }
+        }
+
         String audioPath = extractAudioFilePath(interventionResult);
-        aceStepAvailable = audioPath != null;
+        aceStepAvailable = audioPath != null && isStreamableAudioPath(audioPath);
         if (!aceStepAvailable && generationWarning == null) {
             generationWarning = ACE_STEP_FALLBACK_WARNING;
         }
@@ -274,6 +316,28 @@ public class NoosAiService {
         response.put("llmSessionCoach", llmSessionCoach);
         response.put("aceStepAvailable", aceStepAvailable);
         response.put("generationWarning", generationWarning);
+        response.put("wizLighting", maybeStartWizLighting(interventionResult));
+        return response;
+    }
+
+    public Map<String, Object> prewarmIntervention() {
+        boolean aceStepReady = ensureAceStepServerReady();
+        boolean aceStepModelReady = false;
+        String aceStepPrewarmError = null;
+        if (aceStepReady) {
+            try {
+                aceStepModelReady = ensureAceStepModelInitialized();
+            } catch (ResponseStatusException error) {
+                aceStepPrewarmError = error.getReason();
+            }
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("aceStepReady", aceStepReady);
+        response.put("aceStepModelReady", aceStepModelReady);
+        response.put("aceStepBaseUrl", aceStepBaseUrl);
+        if (aceStepPrewarmError != null && !aceStepPrewarmError.isBlank()) {
+            response.put("aceStepPrewarmError", aceStepPrewarmError);
+        }
         return response;
     }
 
@@ -283,12 +347,8 @@ public class NoosAiService {
         }
 
         Path audioPath = Paths.get(rawPath).toAbsolutePath().normalize();
-        List<Path> allowedRoots = List.of(
-                resolveAiRoot().resolve("vendor").resolve("ACE-Step-1.5").toAbsolutePath().normalize(),
-                resolveAiRoot().resolve("generated").toAbsolutePath().normalize()
-        );
 
-        boolean allowed = allowedRoots.stream().anyMatch(audioPath::startsWith);
+        boolean allowed = allowedAudioRoots().stream().anyMatch(audioPath::startsWith);
         if (!allowed) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "audio path is outside the allowed NOOS AI directories");
         }
@@ -457,10 +517,12 @@ public class NoosAiService {
         Path aiRoot = resolveAiRoot();
         Path inputJson = null;
         Path outputJson = null;
+        Path logFile = null;
 
         try {
             inputJson = Files.createTempFile("noos-ai-input-", ".json");
             outputJson = Files.createTempFile("noos-ai-output-", ".json");
+            logFile = Files.createTempFile("noos-ai-process-", ".log");
             objectMapper.writeValue(inputJson.toFile(), payload);
 
             String pythonExecutable = resolvePythonExecutable(aiRoot);
@@ -474,6 +536,9 @@ public class NoosAiService {
 
             if (generateAceStep) {
                 command.add("--generate-ace-step");
+                if (aceStepUseEnhancedRequest) {
+                    command.add("--use-enhanced-request");
+                }
                 command.add("--api-base-url");
                 command.add(aceStepBaseUrl);
                 command.add("--timeout-sec");
@@ -484,24 +549,26 @@ public class NoosAiService {
 
             ProcessBuilder processBuilder = new ProcessBuilder(command)
                     .directory(aiRoot.toFile())
-                    .redirectErrorStream(true);
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile.toFile());
             Map<String, String> env = processBuilder.environment();
-            if (isAppleSiliconMac()) {
-                env.putIfAbsent("NOOS_ACE_STEP_REQUEST_DURATION_CAP_SEC", "30");
+            if (generateAceStep) {
+                configureAceStepGenerationEnvironment(env);
             }
             Process process = processBuilder.start();
-            String logs = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
             boolean completed = process.waitFor(generateAceStep ? aceStepTimeoutSec + 60 : 60, TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
-                throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "NOOS AI process timed out");
+                process.waitFor(5, TimeUnit.SECONDS);
+                throw new ResponseStatusException(
+                        HttpStatus.GATEWAY_TIMEOUT,
+                        "NOOS AI process timed out" + formatProcessLogSuffix(readProcessLog(logFile))
+                );
             }
             if (process.exitValue() != 0) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_GATEWAY,
-                        "NOOS AI process failed using [" + pythonExecutable + "]: " + logs
-                );
+                String logs = readProcessLog(logFile);
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "NOOS AI process failed: " + logs);
             }
 
             return objectMapper.readValue(outputJson.toFile(), MAP_TYPE);
@@ -513,6 +580,7 @@ public class NoosAiService {
         } finally {
             deleteIfExists(inputJson);
             deleteIfExists(outputJson);
+            deleteIfExists(logFile);
         }
     }
 
@@ -556,6 +624,93 @@ public class NoosAiService {
             Files.deleteIfExists(path);
         } catch (IOException ignored) {
         }
+    }
+
+    private int normalizeInterventionDuration(Integer requestedDurationSec) {
+        int durationSec = requestedDurationSec != null ? requestedDurationSec : DEFAULT_INTERVENTION_DURATION_SEC;
+        if (durationSec < MIN_INTERVENTION_DURATION_SEC || durationSec > MAX_INTERVENTION_DURATION_SEC) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "durationSec must be between " + MIN_INTERVENTION_DURATION_SEC + " and " + MAX_INTERVENTION_DURATION_SEC + " seconds"
+            );
+        }
+        return durationSec;
+    }
+
+    private Map<String, Object> maybeStartWizLighting(Map<String, Object> interventionResult) {
+        if (wizLightingService == null || !wizLightingService.shouldAutoApply()) {
+            return Map.of("enabled", wizLightingService != null && wizLightingService.shouldAutoApply());
+        }
+        try {
+            return wizLightingService.startAlternatingFromPayload(Map.of("interventionResult", interventionResult));
+        } catch (ResponseStatusException error) {
+            return Map.of(
+                    "enabled", true,
+                    "started", false,
+                    "error", error.getReason() != null ? error.getReason() : error.getMessage()
+            );
+        }
+    }
+
+    private void configureAceStepGenerationEnvironment(Map<String, String> env) {
+        env.put("NOOS_ACE_STEP_MODEL", normalizedAceStepModelName());
+        putIntEnv(env, "NOOS_ACE_STEP_REQUEST_DURATION_CAP_SEC", aceStepRequestDurationCapSec, defaultAceStepRequestDurationCapSec());
+        putIntEnv(env, "NOOS_ACE_STEP_INFERENCE_STEPS", aceStepInferenceSteps, defaultAceStepInferenceSteps());
+        env.put("NOOS_ACE_STEP_ENABLE_LM", aceStepUseEnhancedRequest ? "true" : "false");
+        String lmModel = normalizedAceStepLmModel();
+        if (!lmModel.isBlank()) {
+            env.put("NOOS_ACE_STEP_LM_MODEL", lmModel);
+        }
+    }
+
+    private void putIntEnv(Map<String, String> env, String key, int configuredValue, int defaultValue) {
+        if (configuredValue > 0) {
+            env.put(key, String.valueOf(configuredValue));
+        } else {
+            env.putIfAbsent(key, String.valueOf(defaultValue));
+        }
+    }
+
+    private int defaultAceStepRequestDurationCapSec() {
+        return isAppleSiliconMac() && !isRemoteAceStepBaseUrl() ? 30 : 120;
+    }
+
+    private int defaultAceStepInferenceSteps() {
+        return isAppleSiliconMac() && !isRemoteAceStepBaseUrl() ? 4 : 8;
+    }
+
+    private String normalizedAceStepModelName() {
+        String model = aceStepModelName != null ? aceStepModelName.trim() : "";
+        return model.isBlank() ? DEFAULT_ACE_STEP_MODEL_NAME : model;
+    }
+
+    private String normalizedAceStepLmModel() {
+        String configured = aceStepLmModel != null ? aceStepLmModel.trim() : "";
+        if (!configured.isBlank()) {
+            return configured;
+        }
+        return isRemoteAceStepBaseUrl() ? "acestep-5Hz-lm-1.7B" : "acestep-5Hz-lm-0.6B";
+    }
+
+    private String readProcessLog(Path logFile) {
+        if (logFile == null || !Files.exists(logFile)) {
+            return "";
+        }
+        try (RandomAccessFile file = new RandomAccessFile(logFile.toFile(), "r")) {
+            long size = file.length();
+            long start = Math.max(0, size - PROCESS_LOG_MAX_BYTES);
+            file.seek(start);
+            byte[] bytes = new byte[(int) (size - start)];
+            file.readFully(bytes);
+            String logs = new String(bytes, StandardCharsets.UTF_8).trim();
+            return start > 0 ? "[truncated]\n" + logs : logs;
+        } catch (IOException ignored) {
+            return "";
+        }
+    }
+
+    private String formatProcessLogSuffix(String logs) {
+        return logs == null || logs.isBlank() ? "" : ": " + logs;
     }
 
     private double safeNumber(Double value, double fallback) {
@@ -637,6 +792,127 @@ public class NoosAiService {
         return null;
     }
 
+    private void materializeRemoteAceStepAudio(Map<String, Object> interventionResult) {
+        Map<String, Object> aceStepJob = mapValue(interventionResult.get("ace_step_job"));
+        List<Map<String, Object>> parsedEntries = listOfMaps(aceStepJob.get("parsed_entries"));
+        if (parsedEntries.isEmpty()) {
+            return;
+        }
+
+        Map<String, Object> taskResult = mapValue(aceStepJob.get("task_result"));
+        String taskId = stringValue(taskResult.get("task_id"));
+        for (int index = 0; index < parsedEntries.size(); index += 1) {
+            Map<String, Object> entry = parsedEntries.get(index);
+            String remoteFile = stringValue(entry.get("file"));
+            if (remoteFile == null || remoteFile.isBlank()) {
+                continue;
+            }
+            Path localAudio = downloadRemoteAceStepAudio(remoteFile, taskId, index);
+            entry.put("remote_file", remoteFile);
+            entry.put("file", buildAceStepAudioFileReference(localAudio));
+            entry.put("local_file_path", localAudio.toString());
+        }
+    }
+
+    private Path downloadRemoteAceStepAudio(String fileReference, String taskId, int index) {
+        URI audioUri = resolveAceStepAudioUri(fileReference);
+        String extension = inferAudioExtension(fileReference);
+        String safeTaskId = sanitizeFileName(taskId != null && !taskId.isBlank() ? taskId : "ace-step-audio");
+        Path outputDir = resolveAiRoot().resolve("generated").resolve("ace_step_audio").toAbsolutePath().normalize();
+        Path outputPath = outputDir.resolve(safeTaskId + "-" + index + extension).normalize();
+        if (!outputPath.startsWith(outputDir)) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "ACE-Step audio download path was invalid");
+        }
+
+        try {
+            Files.createDirectories(outputDir);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(audioUri)
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .timeout(Duration.ofSeconds(Math.max(120, aceStepTimeoutSec)))
+                    .GET()
+                    .build();
+            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        "ACE-Step remote audio download failed with HTTP " + response.statusCode()
+                );
+            }
+            try (InputStream input = response.body(); OutputStream output = Files.newOutputStream(outputPath)) {
+                copyWithLimit(input, output, REMOTE_AUDIO_DOWNLOAD_MAX_BYTES);
+            }
+            return outputPath;
+        } catch (IOException error) {
+            deleteIfExists(outputPath);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to download ACE-Step remote audio", error);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            deleteIfExists(outputPath);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "ACE-Step remote audio download was interrupted", error);
+        } catch (ResponseStatusException error) {
+            deleteIfExists(outputPath);
+            throw error;
+        }
+    }
+
+    private void copyWithLimit(InputStream input, OutputStream output, long maxBytes) throws IOException {
+        byte[] buffer = new byte[8192];
+        long copied = 0;
+        int read;
+        while ((read = input.read(buffer)) >= 0) {
+            copied += read;
+            if (copied > maxBytes) {
+                throw new IOException("remote audio exceeded " + maxBytes + " bytes");
+            }
+            output.write(buffer, 0, read);
+        }
+    }
+
+    private URI resolveAceStepAudioUri(String fileReference) {
+        String trimmed = fileReference.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return URI.create(trimmed);
+        }
+        String base = aceStepBaseUrl.replaceAll("/$", "") + "/";
+        String relative = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
+        return URI.create(base).resolve(relative);
+    }
+
+    private String buildAceStepAudioFileReference(Path localAudio) {
+        return "/v1/audio?path=" + URLEncoder.encode(localAudio.toString(), StandardCharsets.UTF_8);
+    }
+
+    private String inferAudioExtension(String fileReference) {
+        String lowered = fileReference.toLowerCase();
+        if (lowered.contains(".wav")) {
+            return ".wav";
+        }
+        if (lowered.contains(".flac")) {
+            return ".flac";
+        }
+        return ".mp3";
+    }
+
+    private String sanitizeFileName(String value) {
+        String sanitized = value.replaceAll("[^A-Za-z0-9._-]", "_");
+        return sanitized.isBlank() ? "ace-step-audio" : sanitized;
+    }
+
+    private boolean isStreamableAudioPath(String rawPath) {
+        Path audioPath = Paths.get(rawPath).toAbsolutePath().normalize();
+        return allowedAudioRoots().stream().anyMatch(audioPath::startsWith)
+                && Files.exists(audioPath)
+                && Files.isRegularFile(audioPath);
+    }
+
+    private List<Path> allowedAudioRoots() {
+        return List.of(
+                resolveAiRoot().resolve("vendor").resolve("ACE-Step-1.5").toAbsolutePath().normalize(),
+                resolveAiRoot().resolve("generated").toAbsolutePath().normalize()
+        );
+    }
+
     private String extractAudioFilePath(Map<String, Object> interventionResult) {
         Map<String, Object> aceStepJob = mapValue(interventionResult.get("ace_step_job"));
         List<Map<String, Object>> parsedEntries = listOfMaps(aceStepJob.get("parsed_entries"));
@@ -671,6 +947,9 @@ public class NoosAiService {
             if (isAceStepReachable()) {
                 return true;
             }
+            if (!shouldAutoStartAceStep()) {
+                return false;
+            }
             if (aceStepServerProcess == null || !aceStepServerProcess.isAlive()) {
                 startAceStepServer();
             }
@@ -680,6 +959,9 @@ public class NoosAiService {
     }
 
     private boolean restartAceStepServer() {
+        if (!shouldAutoStartAceStep()) {
+            return false;
+        }
         synchronized (aceStepServerLock) {
             if (aceStepServerProcess != null && aceStepServerProcess.isAlive()) {
                 aceStepServerProcess.destroyForcibly();
@@ -691,6 +973,9 @@ public class NoosAiService {
     }
 
     private void startAceStepServer() {
+        if (!shouldAutoStartAceStep()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "ACE-Step auto-start is disabled for remote worker mode");
+        }
         Path scriptPath = resolveAiRoot().resolve("scripts").resolve("start_acestep_api.sh");
         if (!Files.exists(scriptPath)) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "ACE-Step start script not found");
@@ -714,10 +999,10 @@ public class NoosAiService {
             env.put("ACESTEP_INIT_LLM", "false");
             env.put("TOKENIZERS_PARALLELISM", "false");
             if (isAppleSiliconMac()) {
-                env.put("ACESTEP_DEVICE", "cpu");
-                env.put("ACESTEP_LM_DEVICE", "cpu");
-                env.put("ACESTEP_OFFLOAD_TO_CPU", "true");
-                env.put("ACESTEP_OFFLOAD_DIT_TO_CPU", "true");
+                env.putIfAbsent("ACESTEP_LM_BACKEND", "mlx");
+                env.putIfAbsent("ACESTEP_OFFLOAD_TO_CPU", "false");
+                env.putIfAbsent("ACESTEP_OFFLOAD_DIT_TO_CPU", "false");
+                env.putIfAbsent("PYTORCH_ENABLE_MPS_FALLBACK", "1");
             }
 
             aceStepServerProcess = processBuilder.start();
@@ -743,24 +1028,100 @@ public class NoosAiService {
     }
 
     private boolean isAceStepReachable() {
+        return aceStepHealth() != null;
+    }
+
+    private Map<String, Object> aceStepHealth() {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(aceStepBaseUrl.replaceAll("/$", "") + "/health"))
+                    .version(HttpClient.Version.HTTP_1_1)
                     .timeout(ACE_STEP_HEALTHCHECK_TIMEOUT)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() >= 200 && response.statusCode() < 300;
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return null;
+            }
+            return objectMapper.readValue(response.body(), MAP_TYPE);
         } catch (IOException | InterruptedException error) {
             if (error instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            return false;
+            return null;
+        }
+    }
+
+    private boolean ensureAceStepModelInitialized() {
+        Map<String, Object> health = aceStepHealth();
+        Map<String, Object> healthData = mapValue(health != null ? health.get("data") : null);
+        String expectedModel = normalizedAceStepModelName();
+        String expectedLmModel = normalizedAceStepLmModel();
+        boolean modelReady = Boolean.TRUE.equals(healthData.get("models_initialized"))
+                && expectedModel.equals(stringValue(healthData.get("loaded_model")));
+        boolean lmReady = !aceStepUseEnhancedRequest
+                || (Boolean.TRUE.equals(healthData.get("llm_initialized"))
+                && expectedLmModel.equals(stringValue(healthData.get("loaded_lm_model"))));
+        if (modelReady && lmReady) {
+            return true;
+        }
+
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("model", expectedModel);
+            payload.put("slot", 1);
+            payload.put("init_llm", aceStepUseEnhancedRequest);
+            if (aceStepUseEnhancedRequest && !expectedLmModel.isBlank()) {
+                payload.put("lm_model_path", expectedLmModel);
+            }
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(aceStepBaseUrl.replaceAll("/$", "") + "/v1/init"))
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .timeout(Duration.ofSeconds(Math.max(120, aceStepTimeoutSec)))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        "ACE-Step model prewarm failed with HTTP " + response.statusCode()
+                );
+            }
+
+            Map<String, Object> result = objectMapper.readValue(response.body(), MAP_TYPE);
+            Object code = result.get("code");
+            if (code instanceof Number number && number.intValue() != 200) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        "ACE-Step model prewarm failed: " + stringValue(result.get("error"))
+                );
+            }
+            return true;
+        } catch (IOException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to prewarm ACE-Step model", error);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "ACE-Step model prewarm was interrupted", error);
         }
     }
 
     private URI aceStepBaseUri() {
         return URI.create(aceStepBaseUrl.replaceAll("/$", ""));
+    }
+
+    private boolean shouldAutoStartAceStep() {
+        return aceStepAutoStart && !isRemoteAceStepBaseUrl();
+    }
+
+    private boolean isRemoteAceStepBaseUrl() {
+        String host = aceStepBaseUri().getHost();
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        String normalized = host.toLowerCase();
+        return !List.of("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1").contains(normalized);
     }
 
     private boolean isAppleSiliconMac() {

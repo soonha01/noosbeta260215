@@ -59,6 +59,9 @@ const TravelLightingPreview = ({ preview, accentColor, compact = false }) => {
 
   const citationList = compact ? preview.citations.slice(0, 2) : preview.citations;
   const phaseList = compact ? preview.phases.slice(0, 2) : preview.phases;
+  const primaryMode = preview.primaryMode || 'cct';
+  const primaryCctKelvin = preview.primaryCctKelvin || preview.cctKelvin || 0;
+  const primaryIsCct = primaryMode === 'cct';
 
   return (
     <LightingPanel $accent={accentColor}>
@@ -77,9 +80,9 @@ const TravelLightingPreview = ({ preview, accentColor, compact = false }) => {
         <SwatchStack>
           <LightingSwatch style={{ background: preview.primaryHex }} />
           <LightingSwatchLabel>
-            {compact ? 'Primary' : 'Primary tone'}
+            {compact ? 'Primary' : primaryIsCct ? 'Primary CCT' : 'Primary tone'}
             <br />
-            {preview.primaryHex}
+            {primaryIsCct ? `${primaryCctKelvin} K` : preview.primaryHex}
           </LightingSwatchLabel>
         </SwatchStack>
         <SwatchStack>
@@ -120,8 +123,16 @@ const TravelLightingPreview = ({ preview, accentColor, compact = false }) => {
       </LightingMetricGrid>
 
       <LightingMeta>
-        Device payload <LightingCode>{preview.deviceProfile}</LightingCode> · primary RGB{' '}
-        <LightingCode>{hexToRgbString(preview.primaryHex)}</LightingCode>
+        Device payload <LightingCode>{preview.deviceProfile}</LightingCode> ·{' '}
+        {primaryIsCct ? (
+          <>
+            primary CCT <LightingCode>{primaryCctKelvin} K</LightingCode>
+          </>
+        ) : (
+          <>
+            primary RGB <LightingCode>{hexToRgbString(preview.primaryHex)}</LightingCode>
+          </>
+        )}
       </LightingMeta>
 
       <LightingPhaseGrid>
@@ -135,7 +146,14 @@ const TravelLightingPreview = ({ preview, accentColor, compact = false }) => {
               {phase.cctKelvin} K · {phase.luxAnchor} lx · {phase.brightnessPercent}% · {phase.patternLabel}
             </PhaseBody>
             <PhaseSwatchRow>
-              <LightingSwatch style={{ background: phase.primaryHex, height: 26 }} />
+              <LightingSwatch
+                title={
+                  (phase.primaryMode || 'cct') === 'cct'
+                    ? `${phase.primaryCctKelvin || phase.cctKelvin || 0} K`
+                    : phase.primaryHex
+                }
+                style={{ background: phase.primaryHex, height: 26 }}
+              />
               <LightingSwatch style={{ background: phase.secondaryHex, height: 26 }} />
               <LightingSwatch style={{ background: phase.accentHex, height: 26 }} />
             </PhaseSwatchRow>

@@ -1,0 +1,7 @@
+flowchart LR
+  MAC["MacBook"] --> V["Frontend<br/>localhost:3000"]
+  MAC --> S["Backend<br/>localhost:8080"]
+  S --> PY["Python noos_ai CLI<br/>Mac local"]
+  S --> WIN["Windows RTX 4080<br/>ACE-Step API :8011"]
+  S --> BULB["WiZ bulbs<br/>UDP 38899"]
+  GEM["Gemma<br/>127.0.0.1:8091<br/>현재 기본 비활성"] -. optional .-> S

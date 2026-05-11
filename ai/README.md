@@ -8,12 +8,19 @@
 여기서 중요한 점은, 이 폴더가 직접 “치료 판단”을 하거나 “음악 파일을 무조건 생성”하는 엔진은 아니라는 점입니다.  
 핵심은 상태를 구조화하고, 그 상태를 바탕으로 설명 가능한 개입 계획을 만드는 것입니다.
 
+전체 프로젝트 구조와 실행 방법은 루트 문서도 함께 보세요.
+
+- [../README.md](../README.md)
+- [../docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)
+- [../docs/RUNTIME_AND_OPERATIONS.md](../docs/RUNTIME_AND_OPERATIONS.md)
+
 ## 한눈에 보기
 
 - 입력은 `readings` 원시 EEG 배열 또는 `band_summary` 요약값이다.
 - 핵심 세션은 `recognition`과 `intervention` 두 가지다.
 - `recognition`은 현재 상태를 점수와 근거로 정리한다.
-- `intervention`은 현재 상태에서 목표 상태까지 가는 조명/음악 spec을 만든다.
+- `intervention`은 현재 상태에서 목표 상태까지 가는 조명/음악 명세를 만든다.
+- 조명 명세는 현재 `cct-plus-rgb` 구조다. Primary는 연구 기반 CCT, secondary는 행성 RGB 톤이다.
 - 실제 음악 생성은 선택 기능이며, 필요할 때만 ACE-Step을 붙인다.
 - 설명, 추천, 요약 같은 보조 텍스트 작업은 선택 기능이며, 필요할 때만 Gemma 서비스를 붙인다.
 
@@ -29,14 +36,14 @@
 
 ```mermaid
 flowchart LR
-    A["Frontend / Backend input"] --> B["recognition session"]
+    A["프론트엔드 / 백엔드 입력"] --> B["recognition 세션"]
     B --> C["state_profile<br/>quality<br/>bands<br/>limitations"]
-    C --> D["intervention session"]
+    C --> D["intervention 세션"]
     D --> E["transition_plan"]
     D --> F["lighting_spec"]
     D --> G["music_spec"]
-    G --> H["ACE-Step request (optional)"]
-    C --> I["Gemma helper tasks (optional)"]
+    G --> H["ACE-Step 요청(선택)"]
+    C --> I["Gemma 보조 태스크(선택)"]
 ```
 
 ## 이 폴더가 하는 일과 하지 않는 일
@@ -49,8 +56,8 @@ flowchart LR
 - 현재 상태를 여러 축으로 점수화
 - 행성별 목표 상태 정의
 - 목표 상태로 이동하기 위한 전환 계획 생성
-- 조명 spec과 음악 spec 생성
-- ACE-Step에 넘길 요청 payload 구성
+- 조명 명세와 음악 명세 생성
+- ACE-Step에 넘길 요청 페이로드 구성
 - Gemma 기반 보조 설명/추천 태스크 제공
 
 ### 하지 않는 일
@@ -117,7 +124,7 @@ python -m noos_ai.cli examples/recognition_input.json
 python -m noos_ai.cli examples/intervention_input.json
 ```
 
-이 명령은 행성 목표에 맞는 전환 계획, 조명 spec, 음악 spec을 반환합니다.
+이 명령은 행성 목표에 맞는 전환 계획, 조명 명세, 음악 명세를 반환합니다.
 
 ### 4. 테스트 실행
 
@@ -173,7 +180,7 @@ ai/
 - `noos_ai/sessions/`
   - 세션 단위 실행 엔진
 - `noos_ai/intervention/`
-  - 목표 상태, 전환 계획, 조명/음악 spec 계산
+  - 목표 상태, 전환 계획, 조명/음악 명세 계산
 - `noos_ai/gemma/`
   - Gemma 기반 보조 API
 - `noos_ai/integrations/`
@@ -352,17 +359,17 @@ ai/
 - `transition_plan`
   - 어떤 강도와 순서로 전환할지
 - `lighting_spec`
-  - 조명 프로그램, phase, 최종 scene, 하드웨어 handoff 구조
+  - 조명 프로그램, phase, 최종 scene, 하드웨어 인계 구조
 - `music_spec`
   - BPM, 에너지, 긴장도, 질감, 렌더 계획, ACE-Step 요청 구조
 - `ace_step_integration`
-  - 실제 생성 엔진에 넘길 request payload
+  - 실제 생성 엔진에 넘길 요청 페이로드
 
 ### intervention의 중요한 특징
 
 - 이 세션은 “실제 음악 파일 생성”보다 “생성 명세 생성”에 가깝습니다.
-- 행성 branding과 목표 상태 벡터를 분리해 둬서 조명과 음악을 일관되게 계산합니다.
-- 긴 세션은 한 번에 무리하게 생성하지 않고 segmented render 계획으로 나눕니다.
+- 행성 브랜딩과 목표 상태 벡터를 분리해 둬서 조명과 음악을 일관되게 계산합니다.
+- 긴 세션은 한 번에 무리하게 생성하지 않고 분할 렌더 계획으로 나눕니다.
 
 ### 자주 헷갈리는 포인트
 
@@ -425,15 +432,15 @@ curl http://127.0.0.1:8091/health
 
 ### Gemma 서비스의 동작 방식
 
-- 첫 요청 전에는 lazy 상태일 수 있습니다.
-- 초기 warmup 중에는 fallback 응답을 줄 수 있습니다.
+- 첫 요청 전에는 지연 초기화 상태일 수 있습니다.
+- 초기 준비 중에는 대체 응답을 줄 수 있습니다.
 - 결과는 `generated/gemma_cache/` 아래에 캐시됩니다.
-- 환경 변수로 fallback 강제 모드를 켤 수 있습니다.
+- 환경 변수로 대체 응답 강제 모드를 켤 수 있습니다.
 
 ## 4. 선택 기능: ACE-Step 연동
 
 ACE-Step은 실제 음악 생성 엔진입니다.  
-NOOS AI는 ACE-Step을 직접 포함하지 않고, 필요한 request를 만들어 주는 방식으로 붙습니다.
+NOOS AI는 ACE-Step을 직접 포함하지 않고, 필요한 요청을 만들어 주는 방식으로 붙습니다.
 
 ### 중요한 전제
 
@@ -441,7 +448,7 @@ NOOS AI는 ACE-Step을 직접 포함하지 않고, 필요한 request를 만들�
 - 대신 `music_spec`과 `ace_step_integration`을 만들어 줍니다.
 - 실제 생성이 필요할 때만 ACE-Step API를 띄우고 `--generate-ace-step`을 사용합니다.
 
-### vendor 저장소 준비
+### 외부 저장소 준비
 
 `ai/vendor/ACE-Step-1.5`는 외부 저장소입니다. 체크포인트와 런타임이 매우 커서 이 앱 저장소에는 포함하지 않습니다.
 
@@ -514,7 +521,7 @@ python -m noos_ai.cli \
 
 - `--generate-ace-step`은 `intervention` 세션에서만 동작합니다.
 - 긴 세션은 `music_spec.render_plan`에서 분할 생성 계획을 제안합니다.
-- 단일 요청 길이 제한과 batch 크기 제한을 고려해 request가 구성됩니다.
+- 단일 요청 길이 제한과 batch 크기 제한을 고려해 요청이 구성됩니다.
 
 ACE-Step 관련 상세 문서는 [docs/ace_step_noos_integration.md](./docs/ace_step_noos_integration.md)에 있습니다.
 
@@ -541,9 +548,9 @@ python3 -m noos_ai.cli \
 1. 프런트 또는 백엔드가 EEG 입력을 수집한다.
 2. `recognition`으로 상태를 구조화한다.
 3. 사용자가 행성을 선택한다.
-4. `intervention`으로 조명/음악 spec을 생성한다.
+4. `intervention`으로 조명/음악 명세를 생성한다.
 5. 필요하면 Gemma 설명을 붙인다.
-6. 실제 생성이 필요하면 ACE-Step으로 request를 넘긴다.
+6. 실제 생성이 필요하면 ACE-Step으로 요청을 넘긴다.
 
 ## 자주 묻는 질문
 
@@ -565,7 +572,7 @@ python3 -m noos_ai.cli \
 
 ### Q. ACE-Step이 없으면 intervention이 안 되나?
 
-아닙니다. intervention은 여전히 조명/음악 spec과 request payload를 생성합니다.  
+아닙니다. intervention은 여전히 조명/음악 명세와 요청 페이로드를 생성합니다.  
 다만 실제 오디오 파일 생성은 하지 않습니다.
 
 ### Q. 이 결과를 의학적 판단에 써도 되나?
@@ -585,7 +592,7 @@ python3 -m unittest discover -s tests
 - 이완 프로파일에서 relaxation 점수가 stress보다 높게 나오는지
 - 작업부하 프로파일에서 workload 점수가 relaxation보다 높게 나오는지
 - 피로 프로파일에서 fatigue 점수가 workload보다 높게 나오는지
-- intervention이 조명/음악 spec과 ACE-Step request를 정상 구성하는지
+- intervention이 조명/음악 명세와 ACE-Step 요청을 정상 구성하는지
 
 ## 설계 원칙
 
@@ -601,7 +608,7 @@ python3 -m unittest discover -s tests
 - dry electrode 특성상 artifact 영향이 큽니다.
 - band summary만 있을 때는 채널 수준 해석이 제한됩니다.
 - 개인 baseline이 없으면 개인 맞춤 해석 수준이 떨어집니다.
-- intervention 결과는 “좋아 보이는 생성 프롬프트”가 아니라 “상태 전환 spec”이라는 점을 유지해야 합니다.
+- intervention 결과는 “좋아 보이는 생성 프롬프트”가 아니라 “상태 전환 명세”라는 점을 유지해야 합니다.
 
 ## 관련 문서
 

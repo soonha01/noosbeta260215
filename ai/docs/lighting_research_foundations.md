@@ -1,6 +1,6 @@
 # NOOS Lighting Research Foundations
 
-이 문서는 `recognition -> intervention` 파이프라인에서 사용하는 조명값의 근거를 정리한다.  
+이 문서는 `recognition -> intervention` 파이프라인에서 사용하는 조명값의 근거를 정리한다.
 핵심 원칙은 다음 두 가지다.
 
 - `색온도(CCT)`와 `조도(lx)`는 가능한 한 직접 연구 근거를 사용한다.

@@ -25,7 +25,9 @@ def build_hardware_handoff(phases: list[dict[str, Any]], final_scene: dict[str, 
                 "duration_ms": int(phase["duration_sec"]) * 1000,
                 "transition_ms": int(phase["transition_sec"]) * 1000,
                 "channels": {
+                    "primary_mode": phase.get("primary_mode", "cct"),
                     "primary_rgb": _rgb_object(phase["primary_hex"]),
+                    "primary_cct_kelvin": int(phase.get("primary_cct_kelvin") or phase["cct_kelvin"]),
                     "secondary_rgb": _rgb_object(phase["secondary_hex"]),
                     "accent_rgb": _rgb_object(phase["accent_hex"]),
                 },
@@ -52,7 +54,7 @@ def build_hardware_handoff(phases: list[dict[str, Any]], final_scene: dict[str, 
 
     return {
         "protocol": "noos-lighting-handoff-v1",
-        "device_profile": "generic-rgb",
+        "device_profile": "cct-plus-rgb",
         "transport": {
             "implemented": False,
             "reserved_adapters": ["http", "mqtt", "serial", "wled"],
@@ -61,7 +63,9 @@ def build_hardware_handoff(phases: list[dict[str, Any]], final_scene: dict[str, 
         "final_hold": {
             "scene_name": final_scene.get("name"),
             "brightness_percent": final_scene.get("brightness_percent"),
+            "primary_mode": final_scene.get("primary_mode", "cct"),
             "primary_rgb": _rgb_object(str(final_scene.get("primary_hex", "#000000"))),
+            "primary_cct_kelvin": int(final_scene.get("primary_cct_kelvin") or final_scene.get("cct_kelvin") or 0),
             "pattern": final_scene.get("animation_pattern"),
         },
         "notes": [
@@ -69,4 +73,3 @@ def build_hardware_handoff(phases: list[dict[str, Any]], final_scene: dict[str, 
             "Each scene carries both RGB values and the research anchor CCT/lux target for calibration.",
         ],
     }
-

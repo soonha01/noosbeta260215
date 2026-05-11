@@ -11,7 +11,30 @@ from .planet_profiles import PlanetProfile
 
 ACE_STEP_MIN_DURATION_SEC = 10
 ACE_STEP_MAX_DURATION_SEC = 600
+ACE_STEP_MAX_TOTAL_DURATION_SEC = 1800
 ACE_STEP_MAX_BATCH_SIZE = 4
+ACE_STEP_MIN_INFERENCE_STEPS = 2
+ACE_STEP_MAX_INFERENCE_STEPS = 20
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _ace_model_name() -> str:
+    return os.getenv("NOOS_ACE_STEP_MODEL", "acestep-v15-turbo").strip() or "acestep-v15-turbo"
+
+
+def _ace_lm_model_path(memory_gb: float) -> str | None:
+    override = os.getenv("NOOS_ACE_STEP_LM_MODEL", "").strip()
+    if override.lower() in {"none", "off", "false", "0"}:
+        return None
+    if override:
+        return override
+    return "acestep-5Hz-lm-0.6B" if memory_gb >= 16.0 else None
 
 
 def _ace_request_duration_cap_sec() -> int:
@@ -28,6 +51,24 @@ def _ace_request_duration_cap_sec() -> int:
             return 30
 
     return 120
+
+
+def _is_apple_silicon_mac() -> bool:
+    if not hasattr(os, "uname"):
+        return False
+    uname = os.uname()
+    return uname.sysname == "Darwin" and uname.machine == "arm64"
+
+
+def _ace_inference_steps() -> int:
+    override = os.getenv("NOOS_ACE_STEP_INFERENCE_STEPS", "").strip()
+    if override:
+        try:
+            return max(ACE_STEP_MIN_INFERENCE_STEPS, min(int(override), ACE_STEP_MAX_INFERENCE_STEPS))
+        except ValueError:
+            pass
+
+    return 4 if _is_apple_silicon_mac() else 8
 
 
 @lru_cache(maxsize=1)
@@ -72,7 +113,10 @@ def _ace_negative_prompt(spec: dict[str, Any]) -> str:
 
 
 def _build_render_plan(total_duration_sec: int) -> dict[str, Any]:
-    bounded_total = max(ACE_STEP_MIN_DURATION_SEC, int(total_duration_sec))
+    bounded_total = min(
+        ACE_STEP_MAX_TOTAL_DURATION_SEC,
+        max(ACE_STEP_MIN_DURATION_SEC, int(total_duration_sec)),
+    )
     segment_count = max(1, ceil(bounded_total / ACE_STEP_MAX_DURATION_SEC))
     request_duration_cap_sec = _ace_request_duration_cap_sec()
     segments = []
@@ -106,8 +150,11 @@ def _build_render_plan(total_duration_sec: int) -> dict[str, Any]:
 
 def _build_ace_step_requests(spec: dict[str, Any], prompt: str, negative_prompt: str, memory_gb: float) -> dict[str, Any]:
     render_plan = spec["render_plan"]
+    ace_model = _ace_model_name()
+    lm_model_path = _ace_lm_model_path(memory_gb)
+    use_lm = _env_flag("NOOS_ACE_STEP_ENABLE_LM", memory_gb >= 16.0) and lm_model_path is not None
     default_request = {
-        "model": "acestep-v15-turbo",
+        "model": ace_model,
         "prompt": prompt,
         "lyrics": "",
         "thinking": False,
@@ -117,7 +164,7 @@ def _build_ace_step_requests(spec: dict[str, Any], prompt: str, negative_prompt:
         "time_signature": spec["time_signature"],
         "audio_duration": int(render_plan["request_duration_sec"]),
         "task_type": "text2music",
-        "inference_steps": 8,
+        "inference_steps": _ace_inference_steps(),
         "batch_size": min(int(spec["candidate_count"]), ACE_STEP_MAX_BATCH_SIZE),
         "use_random_seed": True,
         "seed": -1,
@@ -128,8 +175,8 @@ def _build_ace_step_requests(spec: dict[str, Any], prompt: str, negative_prompt:
     enhanced_request = dict(default_request)
     enhanced_request.update(
         {
-            "thinking": memory_gb >= 16.0,
-            "lm_model_path": "acestep-5Hz-lm-0.6B" if memory_gb >= 16.0 else None,
+            "thinking": use_lm,
+            "lm_model_path": lm_model_path if use_lm else None,
             "use_cot_caption": True,
             "use_cot_language": False,
             "constrained_decoding": True,
@@ -142,8 +189,8 @@ def _build_ace_step_requests(spec: dict[str, Any], prompt: str, negative_prompt:
     return {
         "default_request": default_request,
         "enhanced_request": enhanced_request,
-        "recommended_model": default_request["model"],
-        "recommended_lm_model": "acestep-5Hz-lm-0.6B" if memory_gb >= 16.0 else None,
+        "recommended_model": ace_model,
+        "recommended_lm_model": lm_model_path if use_lm else None,
         "healthcheck_url": DEFAULT_ACE_STEP_HEALTHCHECK_URL,
         "api_base_url": DEFAULT_ACE_STEP_BASE_URL,
     }
