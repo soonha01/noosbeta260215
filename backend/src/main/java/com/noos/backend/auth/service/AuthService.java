@@ -24,12 +24,16 @@ public class AuthService {
     }
 
     // 로그인 시 입력 비밀번호와 저장된 해시를 비교
-    public boolean login(SignupRequest request) {
+    public User login(SignupRequest request) {
         User user = authMapper.findLocalUserByLoginId(request.getLoginId());
         if (user == null || user.getPasswordHash() == null) {
-            return false;
+            return null;
         }
 
-        return passwordEncoder.matches(request.getPassword(), user.getPasswordHash());
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            return null;
+        }
+
+        return user;
     }
 }

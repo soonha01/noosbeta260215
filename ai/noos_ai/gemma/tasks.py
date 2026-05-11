@@ -487,24 +487,174 @@ TASK_INSTRUCTIONS = {
 }
 
 
+def _truncate_text(value: Any, max_length: int = 160) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max(0, max_length - 3)]}..."
+
+
+def _compact_object(value: Any, max_items: int = 6) -> Any:
+    if not isinstance(value, Mapping):
+        return value
+
+    compacted: dict[str, Any] = {}
+    for key, item in list(value.items())[:max_items]:
+        if isinstance(item, str):
+            compacted[key] = _truncate_text(item, 80)
+        elif isinstance(item, list):
+            compacted[key] = item[:4]
+        elif isinstance(item, Mapping):
+            compacted[key] = _compact_object(item, 4)
+        else:
+            compacted[key] = item
+    return compacted
+
+
+def _summarize_feedback_history(feedback_history: Any) -> list[dict[str, Any]]:
+    if not isinstance(feedback_history, list):
+        return []
+
+    summarized: list[dict[str, Any]] = []
+    for entry in feedback_history[-4:]:
+        if not isinstance(entry, Mapping):
+            continue
+        summarized.append(
+            {
+                "planet": entry.get("planetSlug") or entry.get("planet") or "",
+                "rating": entry.get("rating"),
+                "summary": _truncate_text(
+                    entry.get("summary") or entry.get("memo") or entry.get("feedbackText") or "",
+                    80,
+                ),
+            }
+        )
+    return summarized
+
+
+def _build_output_skeleton(value: Any) -> Any:
+    if isinstance(value, list):
+        return []
+    if isinstance(value, Mapping):
+        return {key: _build_output_skeleton(item) for key, item in value.items()}
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return 0
+    return ""
+
+
+def _build_task_reference(task: str, payload: Mapping[str, Any]) -> dict[str, Any] | list[dict[str, Any]] | None:
+    if task == "planet-recommendation":
+        return [
+            {
+                "slug": item["slug"],
+                "title": item["title"],
+                "goal_label": item["goal_label"],
+                "category": item["category"],
+            }
+            for item in PLANET_CATALOG
+        ]
+
+    if task in {"session-coach", "state-explanation"}:
+        planet_slug = str(payload.get("targetPlanet") or payload.get("planet") or "").strip().lower()
+        profile = PLANET_BY_SLUG.get(planet_slug)
+        if not profile:
+            return None
+        return {
+            "selected_planet": {
+                "slug": profile["slug"],
+                "title": profile["title"],
+                "goal_label": profile["goal_label"],
+                "category": profile["category"],
+            }
+        }
+
+    return None
+
+
+def _build_task_prompt_payload(task: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    if task == "feedback-parse":
+        return {
+            "feedbackText": _truncate_text(payload.get("feedbackText"), 220),
+            "rating": payload.get("rating"),
+            "planet": payload.get("planet") or "",
+            "targetState": payload.get("targetState") or "",
+            "measuredState": payload.get("measuredState") or "",
+            "measuredSource": payload.get("measuredSource") or "",
+            "currentState": _top_axes(payload),
+        }
+    if task == "planet-recommendation":
+        return {
+            "intentText": _truncate_text(payload.get("intentText"), 180),
+            "desiredOutcome": _truncate_text(payload.get("desiredOutcome"), 140),
+            "memoText": _truncate_text(payload.get("memoText"), 180),
+            "currentState": _top_axes(payload),
+            "requestedDurationSec": payload.get("requestedDurationSec"),
+            "feedbackHistory": _summarize_feedback_history(payload.get("feedbackHistory")),
+        }
+    if task == "state-explanation":
+        return {
+            "title": _truncate_text(payload.get("title"), 80),
+            "stateLabel": _truncate_text(payload.get("stateLabel"), 80),
+            "summary": _truncate_text(payload.get("summary"), 140),
+            "currentState": _top_axes(payload),
+            "targetPlanet": payload.get("targetPlanet") or "",
+        }
+    if task == "dashboard-summary":
+        return {
+            "currentState": _top_axes(payload),
+            "memoText": _truncate_text(payload.get("memoText"), 180),
+            "feedbackHistory": _summarize_feedback_history(payload.get("feedbackHistory")),
+        }
+    if task == "session-coach":
+        return {
+            "planet": payload.get("planet") or "",
+            "intentText": _truncate_text(payload.get("intentText"), 180),
+            "recommendedDurationSec": payload.get("recommendedDurationSec"),
+            "recommendation": _compact_object(payload.get("recommendation"), 6),
+        }
+    if task == "device-troubleshoot":
+        return {
+            "issueText": _truncate_text(payload.get("issueText"), 220),
+            "stage": payload.get("stage") or "",
+            "browser": payload.get("browser") or "",
+            "deviceType": payload.get("deviceType") or "",
+        }
+    return dict(_compact_object(payload, 8) or {})
+
+
 def build_messages(task: str, payload: Mapping[str, Any]) -> list[dict[str, str]]:
     if task not in SUPPORTED_TASKS:
         raise ValueError(f"unsupported task: {task}")
 
     fallback = FALLBACK_BUILDERS[task](payload)
+    compact_payload = _build_task_prompt_payload(task, payload)
+    reference = _build_task_reference(task, payload)
+    output_skeleton = _build_output_skeleton(fallback)
     system_prompt = (
         "You are NOOS Local Copilot running on Gemma 4 E4B-it. "
         "Return only one valid JSON object. "
         "Use Korean for explanation strings, keep planet ids as lowercase slugs, and do not mention diagnoses or medical claims. "
-        "Stay grounded in the provided NOOS planet catalog and state vectors."
+        "Preserve the same key structure as the provided output shape. "
+        "Keep the response concise and grounded only in the provided data."
     )
-    user_prompt = (
-        f"Task: {TASK_INSTRUCTIONS[task]}\n"
-        f"Planet catalog:\n{json.dumps(PLANET_CATALOG, ensure_ascii=False, indent=2)}\n\n"
-        f"Input payload:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n\n"
-        f"Expected JSON shape example:\n{json.dumps(fallback, ensure_ascii=False, indent=2)}\n\n"
-        "Return only JSON. Preserve the same top-level keys as the example."
+    sections = [f"Task: {TASK_INSTRUCTIONS[task]}"]
+    if reference is not None:
+        sections.append(
+            "Reference: "
+            + json.dumps(reference, ensure_ascii=False, separators=(",", ":"))
+        )
+    sections.extend(
+        [
+            "Input payload: "
+            + json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":")),
+            "Output shape: "
+            + json.dumps(output_skeleton, ensure_ascii=False, separators=(",", ":")),
+            "Return only JSON.",
+        ]
     )
+    user_prompt = "\n\n".join(sections)
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},

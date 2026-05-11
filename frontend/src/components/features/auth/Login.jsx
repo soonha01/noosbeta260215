@@ -18,7 +18,12 @@ import {
 } from '../../../lib/stateSurvey';
 import { createMuseClient } from '../../../lib/muse';
 import { DEFAULT_FFT_SIZE, analyzeEegBands } from '../../../lib/muse/signalProcessing';
-import { createEegAnalysisPayload, submitEegAnalysis } from '../../../lib/eegAnalysisApi';
+import {
+  createEegAnalysisPayload,
+  startEegSession,
+  submitEegAnalysis,
+  uploadEegRawChunks,
+} from '../../../lib/eegAnalysisApi';
 import {
   buildFallbackCurrentStateFromBandAnalysis,
   requestDeviceTroubleshoot,
@@ -502,13 +507,14 @@ const Login = ({ onBack }) => {
       return undefined;
     }
 
-    const payload = createEegAnalysisPayload({
+    const basePayload = createEegAnalysisPayload({
       analysis: museFftAnalysis,
       measuredAt: measurementCompletedAt,
       measurementDurationSec: MEASUREMENT_DURATION_SEC,
+      sampleRateHz: EEG_SAMPLE_RATE,
     });
 
-    if (!payload) {
+    if (!basePayload) {
       return undefined;
     }
 
@@ -516,7 +522,49 @@ const Login = ({ onBack }) => {
 
     const controller = new AbortController();
 
-    submitEegAnalysis(payload, { signal: controller.signal })
+    (async () => {
+      let eegSessionId = null;
+
+      try {
+        const startedSession = await startEegSession(
+          {
+            deviceType: 'Muse S Athena',
+            measuredAt: measurementCompletedAt,
+          },
+          { signal: controller.signal }
+        );
+        eegSessionId = startedSession?.eegSessionId ?? null;
+
+        if (!eegSessionId) {
+          throw new Error('EEG session start did not return eegSessionId.');
+        }
+
+        const rawUpload = await uploadEegRawChunks(
+          {
+            eegSessionId,
+            rawReadings: measuredEegData,
+            sampleRateHz: EEG_SAMPLE_RATE,
+          },
+          { signal: controller.signal }
+        );
+        eegSessionId = rawUpload?.eegSessionId ?? eegSessionId;
+      } catch (uploadError) {
+        if (!controller.signal.aborted) {
+          console.warn(
+            'Failed to start EEG session or upload raw EEG chunks. Falling back to summary-only analysis:',
+            uploadError
+          );
+        }
+      }
+
+      return submitEegAnalysis(
+        {
+          ...basePayload,
+          eegSessionId,
+        },
+        { signal: controller.signal }
+      );
+    })()
       .then((response) => {
         if (controller.signal.aborted) {
           return;
@@ -539,7 +587,7 @@ const Login = ({ onBack }) => {
       });
 
     return () => controller.abort();
-  }, [authStage, measurementCompletedAt, museFftAnalysis]);
+  }, [authStage, email, measuredEegData, measurementCompletedAt, museFftAnalysis]);
 
   useEffect(() => {
     if (authStage !== 'analysis-result' || !surveyResult?.canonicalState) {
@@ -580,7 +628,7 @@ const Login = ({ onBack }) => {
       stateLabel: museRecognitionResult?.state_profile?.label || DEVICE_CONNECTION_RESULT.title,
       summary:
         museRecognitionResult?.state_profile?.summary?.join(' · ') ||
-        `${totalMeasurementDurationLabel} 측정 기반 상태 요약이 준비되었습니다.`,
+        `${totalMeasurementDurationText} 측정 기반 상태 요약이 준비되었습니다.`,
       currentState: museCurrentState,
       targetPlanet: null,
       signal: controller.signal,
@@ -597,7 +645,7 @@ const Login = ({ onBack }) => {
       });
 
     return () => controller.abort();
-  }, [authStage, museCurrentState, museRecognitionResult?.state_profile?.label, museRecognitionResult?.state_profile?.summary, totalMeasurementDurationLabel]);
+  }, [authStage, museCurrentState, museRecognitionResult?.state_profile?.label, museRecognitionResult?.state_profile?.summary, totalMeasurementDurationText]);
 
   const handleOpenDeviceHelp = () => {
     setShowDeviceHelp(true);
@@ -860,7 +908,7 @@ const handleSkipLoginForTesting = () => {
           title: museStateLabel,
           summary:
             resolvedRecognitionResult?.state_profile?.summary?.join(' · ') ||
-            `${totalMeasurementDurationLabel} 측정 기반 상태 요약이 준비되었습니다.`,
+            `${totalMeasurementDurationText} 측정 기반 상태 요약이 준비되었습니다.`,
           recognitionResult: resolvedRecognitionResult,
           canonicalState: resolvedCurrentState,
           dominantState,

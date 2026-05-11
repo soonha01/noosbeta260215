@@ -90,7 +90,7 @@ public class NoosAiService {
 
     public NoosAiService(
             ObjectMapper objectMapper,
-            @Value("${noos.ai.python-bin:python3}") String pythonBin,
+            @Value("${noos.ai.python-bin:python}") String pythonBin,
             @Value("${noos.ai.ace-step.base-url:http://127.0.0.1:8011}") String aceStepBaseUrl,
             @Value("${noos.ai.ace-step.timeout-sec:900}") long aceStepTimeoutSec,
             @Value("${noos.ai.ace-step.auto-start:true}") boolean aceStepAutoStart,
@@ -123,16 +123,20 @@ public class NoosAiService {
                 .build();
     }
 
-    public Map<String, Object> recognizeFromSummary(EegRecognitionRequest request) {
+    public Map<String, Object> recognize(EegRecognitionRequest request, List<Map<String, Object>> rawReadings) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("session_type", "recognition");
         payload.put("device_type", request.deviceType() != null && !request.deviceType().isBlank() ? request.deviceType() : "Muse S Athena");
         payload.put("measured_at", request.measuredAt());
-        payload.put("sample_rate_hz", 256);
+        payload.put("sample_rate_hz", request.sampleRateHz() != null ? request.sampleRateHz() : 256);
         payload.put("context", Map.of(
                 "measurement_duration_sec", request.measurementDurationSec() != null ? request.measurementDurationSec() : 0,
-                "source", "frontend-band-summary"
+                "source", rawReadings != null && !rawReadings.isEmpty() ? "frontend-raw-chunk-upload" : "frontend-band-summary"
         ));
+
+        if (rawReadings != null && !rawReadings.isEmpty()) {
+            payload.put("readings", rawReadings);
+        }
 
         Map<String, Object> bandSummary = new LinkedHashMap<>();
         bandSummary.put("sampleCount", request.sampleCount() != null ? request.sampleCount() : 0);
@@ -151,6 +155,10 @@ public class NoosAiService {
         response.put("currentState", extractCurrentState(recognitionResult));
         response.put("stateLabel", nestedString(recognitionResult, "state_profile", "label"));
         return response;
+    }
+
+    public Map<String, Object> recognizeFromSummary(EegRecognitionRequest request) {
+        return recognize(request, List.of());
     }
 
     public Map<String, Object> parseFeedback(AiFeedbackParseRequest request) {
@@ -517,8 +525,9 @@ public class NoosAiService {
             logFile = Files.createTempFile("noos-ai-process-", ".log");
             objectMapper.writeValue(inputJson.toFile(), payload);
 
+            String pythonExecutable = resolvePythonExecutable(aiRoot);
             List<String> command = new ArrayList<>();
-            command.add(pythonBin);
+            command.add(pythonExecutable);
             command.add("-m");
             command.add("noos_ai.cli");
             command.add(inputJson.toString());
@@ -577,6 +586,22 @@ public class NoosAiService {
 
     private Path resolveAiRoot() {
         return resolveRepoRoot().resolve("ai").toAbsolutePath().normalize();
+    }
+
+    private String resolvePythonExecutable(Path aiRoot) {
+        if (hasText(pythonBin) && !isGenericPythonCommand(pythonBin)) {
+            return pythonBin.trim();
+        }
+
+        Path preferredVenvPython = isWindows()
+                ? aiRoot.resolve(".venv").resolve("Scripts").resolve("python.exe")
+                : aiRoot.resolve(".venv").resolve("bin").resolve("python");
+
+        if (Files.isRegularFile(preferredVenvPython)) {
+            return preferredVenvPython.toAbsolutePath().normalize().toString();
+        }
+
+        return hasText(pythonBin) ? pythonBin.trim() : (isWindows() ? "python" : "python3");
     }
 
     private Path resolveRepoRoot() {
@@ -690,6 +715,22 @@ public class NoosAiService {
 
     private double safeNumber(Double value, double fallback) {
         return value != null ? value : fallback;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private boolean isGenericPythonCommand(String value) {
+        if (!hasText(value)) {
+            return true;
+        }
+        String normalized = value.trim().toLowerCase();
+        return "python".equals(normalized) || "python3".equals(normalized);
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
     private Map<String, Object> extractCurrentState(Map<String, Object> recognitionResult) {

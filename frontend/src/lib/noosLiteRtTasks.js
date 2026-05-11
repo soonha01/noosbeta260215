@@ -93,6 +93,131 @@ const TASK_INSTRUCTIONS = {
   'device-troubleshoot': 'Transform a device issue description into likely causes and safe troubleshooting steps.',
 };
 
+const truncateText = (value, maxLength = 160) => {
+  const text = String(value || '').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+};
+
+const compactObject = (value, maxItems = 6) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, maxItems)
+      .map(([key, item]) => {
+        if (typeof item === 'string') return [key, truncateText(item, 80)];
+        if (Array.isArray(item)) return [key, item.slice(0, 4)];
+        if (item && typeof item === 'object') return [key, compactObject(item, 4)];
+        return [key, item];
+      })
+  );
+};
+
+const summarizeFeedbackHistory = (feedbackHistory) => {
+  if (!Array.isArray(feedbackHistory)) return [];
+
+  return feedbackHistory.slice(-4).map((entry) => ({
+    planet: entry?.planetSlug || entry?.planet || '',
+    rating: entry?.rating ?? null,
+    summary: truncateText(entry?.summary || entry?.memo || entry?.feedbackText || '', 80),
+  }));
+};
+
+const buildOutputSkeleton = (value) => {
+  if (Array.isArray(value)) return [];
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, buildOutputSkeleton(item)]));
+  }
+  if (typeof value === 'number') return 0;
+  if (typeof value === 'boolean') return false;
+  return '';
+};
+
+const buildTaskReference = (task, payload) => {
+  if (task === 'planet-recommendation') {
+    return PLANET_CATALOG.map(({ slug, title, goal_label, category }) => ({
+      slug,
+      title,
+      goal_label,
+      category,
+    }));
+  }
+
+  if (task === 'session-coach' || task === 'state-explanation') {
+    const planetSlug = String(payload?.targetPlanet || payload?.planet || '').trim().toLowerCase();
+    const profile = PLANET_BY_SLUG[planetSlug];
+    if (!profile) return null;
+
+    return {
+      selected_planet: {
+        slug: profile.slug,
+        title: profile.title,
+        goal_label: profile.goal_label,
+        category: profile.category,
+      },
+    };
+  }
+
+  return null;
+};
+
+const buildTaskPromptPayload = (task, payload) => {
+  switch (task) {
+    case 'feedback-parse':
+      return {
+        feedbackText: truncateText(payload?.feedbackText, 220),
+        rating: payload?.rating ?? null,
+        planet: payload?.planet || '',
+        targetState: payload?.targetState || '',
+        measuredState: payload?.measuredState || '',
+        measuredSource: payload?.measuredSource || '',
+        currentState: topAxes(payload),
+      };
+    case 'planet-recommendation':
+      return {
+        intentText: truncateText(payload?.intentText, 180),
+        desiredOutcome: truncateText(payload?.desiredOutcome, 140),
+        memoText: truncateText(payload?.memoText, 180),
+        currentState: topAxes(payload),
+        requestedDurationSec: payload?.requestedDurationSec ?? null,
+        feedbackHistory: summarizeFeedbackHistory(payload?.feedbackHistory),
+      };
+    case 'state-explanation':
+      return {
+        title: truncateText(payload?.title, 80),
+        stateLabel: truncateText(payload?.stateLabel, 80),
+        summary: truncateText(payload?.summary, 140),
+        currentState: topAxes(payload),
+        targetPlanet: payload?.targetPlanet || '',
+      };
+    case 'dashboard-summary':
+      return {
+        currentState: topAxes(payload),
+        memoText: truncateText(payload?.memoText, 180),
+        feedbackHistory: summarizeFeedbackHistory(payload?.feedbackHistory),
+      };
+    case 'session-coach':
+      return {
+        planet: payload?.planet || '',
+        intentText: truncateText(payload?.intentText, 180),
+        recommendedDurationSec: payload?.recommendedDurationSec ?? null,
+        recommendation: compactObject(payload?.recommendation, 6),
+      };
+    case 'device-troubleshoot':
+      return {
+        issueText: truncateText(payload?.issueText, 220),
+        stage: payload?.stage || '',
+        browser: payload?.browser || '',
+        deviceType: payload?.deviceType || '',
+      };
+    default:
+      return compactObject(payload, 8);
+  }
+};
+
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
 const roundFloat = (value, digits = 3) => {
@@ -510,22 +635,31 @@ const buildMessages = (task, payload) => {
   }
 
   const fallback = FALLBACK_BUILDERS[task](payload);
+  const compactPayload = buildTaskPromptPayload(task, payload);
+  const reference = buildTaskReference(task, payload);
+  const outputSkeleton = buildOutputSkeleton(fallback);
   const systemPrompt = [
     'You are NOOS Local Copilot running on Gemma 4 E2B Web via LiteRT.',
     'Return exactly one valid JSON object and nothing else.',
     'Use Korean for explanation strings.',
     'Use lowercase slugs for planet ids.',
     'Do not produce medical claims, diagnoses, or warnings beyond non-medical caution.',
-    'Preserve the same top-level keys as the example JSON shape.',
+    'Preserve the same key structure as the provided output shape.',
+    'Keep the response concise and grounded only in the provided data.',
   ].join(' ');
 
-  const userPrompt = [
+  const userPromptSections = [
     `Task: ${TASK_INSTRUCTIONS[task]}`,
-    `Planet catalog:\n${JSON.stringify(PLANET_CATALOG, null, 2)}`,
-    `Input payload:\n${JSON.stringify(payload, null, 2)}`,
-    `Expected JSON shape example:\n${JSON.stringify(fallback, null, 2)}`,
+    `Input payload: ${JSON.stringify(compactPayload)}`,
+    `Output shape: ${JSON.stringify(outputSkeleton)}`,
     'Return only JSON.',
-  ].join('\n\n');
+  ];
+
+  if (reference) {
+    userPromptSections.splice(1, 0, `Reference: ${JSON.stringify(reference)}`);
+  }
+
+  const userPrompt = userPromptSections.join('\n\n');
 
   return [
     { role: 'system', content: systemPrompt },
