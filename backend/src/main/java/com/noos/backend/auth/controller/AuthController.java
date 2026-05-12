@@ -8,7 +8,6 @@ import com.noos.backend.auth.session.SessionUser;
 import com.noos.backend.auth.service.AuthSessionService;
 import com.noos.backend.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,7 +40,7 @@ public class AuthController {
     ) {
         User user = authService.login(request);
         if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(AuthSessionResponse.anonymous());
+            return ResponseEntity.ok(AuthSessionResponse.anonymous());
         }
 
         SessionUser sessionUser = authSessionService.createLoginSession(httpServletRequest, user);
