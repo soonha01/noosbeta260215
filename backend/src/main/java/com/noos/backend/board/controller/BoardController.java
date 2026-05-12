@@ -3,6 +3,7 @@ package com.noos.backend.board.controller;
 import com.noos.backend.board.dto.BoardComment;
 import com.noos.backend.board.dto.BoardCommentRequest;
 import com.noos.backend.board.dto.BoardLikeResponse;
+import com.noos.backend.board.dto.BoardListRequest;
 import com.noos.backend.board.dto.BoardListResponse;
 import com.noos.backend.board.dto.BoardPost;
 import com.noos.backend.board.dto.BoardPostDetailResponse;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -33,14 +33,8 @@ public class BoardController {
     }
 
     @GetMapping
-    public ResponseEntity<BoardListResponse> getPosts(
-            @RequestParam(defaultValue = "ALL") String category,
-            @RequestParam(defaultValue = "") String search,
-            @RequestParam(defaultValue = "latest") String sort,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "8") int size
-    ) {
-        return ResponseEntity.ok(boardService.getPosts(category, search, sort, page, size));
+    public ResponseEntity<BoardListResponse> getPosts(BoardListRequest request) {
+        return ResponseEntity.ok(boardService.getPosts(request));
     }
 
     @GetMapping("/{id}")

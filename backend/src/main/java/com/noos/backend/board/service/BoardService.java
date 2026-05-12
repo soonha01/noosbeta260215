@@ -2,6 +2,7 @@ package com.noos.backend.board.service;
 
 import com.noos.backend.board.dto.BoardComment;
 import com.noos.backend.board.dto.BoardLikeResponse;
+import com.noos.backend.board.dto.BoardListRequest;
 import com.noos.backend.board.dto.BoardListResponse;
 import com.noos.backend.board.dto.BoardPost;
 import com.noos.backend.board.dto.BoardPostDetailResponse;
@@ -28,7 +29,13 @@ public class BoardService {
     }
 
     @Transactional(readOnly = true)
-    public BoardListResponse getPosts(String category, String searchQuery, String sortBy, int page, int size) {
+    public BoardListResponse getPosts(BoardListRequest request) {
+        String category = request.getCategory();
+        String searchQuery = request.getSearch();
+        String sortBy = request.getSort();
+        int page = request.getPage();
+        int size = request.getSize();
+
         String categoryFilter = category == null || "ALL".equals(category) ? null : category;
         String searchFilter = searchQuery == null || searchQuery.isBlank() ? null : searchQuery.trim();
         int resolvedPage = Math.max(1, page);
