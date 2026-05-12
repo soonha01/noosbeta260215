@@ -1,5 +1,7 @@
 package com.noos.backend.auth.dto;
 
+import com.noos.backend.auth.session.SessionUser;
+
 public record AuthSessionResponse(
         boolean authenticated,
         Long userId,
@@ -16,12 +18,25 @@ public record AuthSessionResponse(
             return anonymous();
         }
 
-        return new AuthSessionResponse(
-                true,
+        return fromSessionUser(new SessionUser(
                 user.getUserId(),
                 user.getLoginId(),
                 user.getDisplayName(),
-                user.getRole() != null && !user.getRole().isBlank() ? user.getRole() : "USER"
+                user.getRole()
+        ));
+    }
+
+    public static AuthSessionResponse fromSessionUser(SessionUser sessionUser) {
+        if (sessionUser == null) {
+            return anonymous();
+        }
+
+        return new AuthSessionResponse(
+                true,
+                sessionUser.userId(),
+                sessionUser.loginId(),
+                sessionUser.displayName(),
+                sessionUser.role()
         );
     }
 }

@@ -9,6 +9,8 @@ import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
 import com.noos.backend.ai.dto.StateExplanationRequest;
 import com.noos.backend.ai.service.NoosAiService;
+import com.noos.backend.auth.service.AuthSessionService;
+import com.noos.backend.auth.session.SessionUser;
 import com.noos.backend.eeg.dto.EegRawChunkUploadRequest;
 import com.noos.backend.eeg.dto.EegRawChunkUploadResponse;
 import com.noos.backend.eeg.dto.EegSessionStartRequest;
@@ -16,7 +18,6 @@ import com.noos.backend.eeg.dto.EegSessionStartResponse;
 import com.noos.backend.eeg.service.EegAnalysisService;
 import com.noos.backend.eeg.service.EegRawChunkService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
@@ -32,8 +33,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
-
 @RestController
 @RequestMapping("/api")
 public class NoosAiController {
@@ -43,15 +42,18 @@ public class NoosAiController {
     private final NoosAiService noosAiService;
     private final EegAnalysisService eegAnalysisService;
     private final EegRawChunkService eegRawChunkService;
+    private final AuthSessionService authSessionService;
 
     public NoosAiController(
             NoosAiService noosAiService,
             EegAnalysisService eegAnalysisService,
-            EegRawChunkService eegRawChunkService
+            EegRawChunkService eegRawChunkService,
+            AuthSessionService authSessionService
     ) {
         this.noosAiService = noosAiService;
         this.eegAnalysisService = eegAnalysisService;
         this.eegRawChunkService = eegRawChunkService;
+        this.authSessionService = authSessionService;
     }
 
     @PostMapping("/eeg/sessions/start")
@@ -148,15 +150,7 @@ public class NoosAiController {
     }
 
     private Long resolveSessionUserId(HttpServletRequest httpServletRequest) {
-        HttpSession session = httpServletRequest.getSession(false);
-        if (session == null) {
-            return null;
-        }
-
-        Object userId = session.getAttribute(LOGIN_USER_ID);
-        if (userId instanceof Number number) {
-            return number.longValue();
-        }
-        return null;
+        SessionUser sessionUser = authSessionService.getSessionUser(httpServletRequest);
+        return sessionUser != null ? sessionUser.userId() : null;
     }
 }

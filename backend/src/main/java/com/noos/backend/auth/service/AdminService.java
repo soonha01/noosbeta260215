@@ -4,6 +4,7 @@ import com.noos.backend.auth.dto.UpdateUserRequest;
 import com.noos.backend.auth.dto.User;
 import com.noos.backend.auth.dto.UserSearchRequest;
 import com.noos.backend.auth.mapper.AdminMapper;
+import com.noos.backend.auth.session.SessionUser;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -12,18 +13,21 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_NAME;
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ROLE;
-
 @Service
 public class AdminService {
 
     private final AdminMapper adminMapper;
     private final PasswordEncoder passwordEncoder;
+    private final AuthSessionService authSessionService;
 
-    public AdminService(AdminMapper adminMapper, PasswordEncoder passwordEncoder) {
+    public AdminService(
+            AdminMapper adminMapper,
+            PasswordEncoder passwordEncoder,
+            AuthSessionService authSessionService
+    ) {
         this.adminMapper = adminMapper;
         this.passwordEncoder = passwordEncoder;
+        this.authSessionService = authSessionService;
     }
 
     public List<User> findAllUsers(HttpSession session) {
@@ -60,19 +64,20 @@ public class AdminService {
     }
 
     public String describeCurrentAdmin(HttpSession session) {
-        requireAdmin(session);
-        if (session == null || session.getAttribute(LOGIN_USER_NAME) == null) {
+        SessionUser sessionUser = requireAdmin(session);
+        if (sessionUser.displayName() == null) {
             return "로그인 안됨";
         }
-        return "이름: " + session.getAttribute(LOGIN_USER_NAME)
-                + " / 권한: " + session.getAttribute(LOGIN_USER_ROLE);
+        return "이름: " + sessionUser.displayName()
+                + " / 권한: " + sessionUser.role();
     }
 
-    private void requireAdmin(HttpSession session) {
-        Object role = session != null ? session.getAttribute(LOGIN_USER_ROLE) : null;
-        if (!"ADMIN".equals(role)) {
+    private SessionUser requireAdmin(HttpSession session) {
+        SessionUser sessionUser = authSessionService.getSessionUser(session);
+        if (sessionUser == null || !sessionUser.isAdmin()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin role is required.");
         }
+        return sessionUser;
     }
 
     private String normalize(String value) {

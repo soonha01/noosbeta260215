@@ -1,5 +1,7 @@
 package com.noos.backend.board.service;
 
+import com.noos.backend.auth.service.AuthSessionService;
+import com.noos.backend.auth.session.SessionUser;
 import com.noos.backend.board.dto.BoardComment;
 import com.noos.backend.board.dto.BoardLikeResponse;
 import com.noos.backend.board.dto.BoardListRequest;
@@ -16,16 +18,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ROLE;
-
 @Service
 public class BoardService {
 
     private final BoardMapper boardMapper;
+    private final AuthSessionService authSessionService;
 
-    public BoardService(BoardMapper boardMapper) {
+    public BoardService(BoardMapper boardMapper, AuthSessionService authSessionService) {
         this.boardMapper = boardMapper;
+        this.authSessionService = authSessionService;
     }
 
     @Transactional(readOnly = true)
@@ -196,15 +197,13 @@ public class BoardService {
     }
 
     private Long currentUserIdOrNull(HttpSession session) {
-        if (session == null) {
-            return null;
-        }
-        Object userId = session.getAttribute(LOGIN_USER_ID);
-        return userId instanceof Number number ? number.longValue() : null;
+        SessionUser sessionUser = authSessionService.getSessionUser(session);
+        return sessionUser != null ? sessionUser.userId() : null;
     }
 
     private boolean isAdmin(HttpSession session) {
-        return session != null && "ADMIN".equals(session.getAttribute(LOGIN_USER_ROLE));
+        SessionUser sessionUser = authSessionService.getSessionUser(session);
+        return sessionUser != null && sessionUser.isAdmin();
     }
 
     private void requireOwnerOrAdmin(Long ownerId, Long requesterId, HttpSession session, String message) {

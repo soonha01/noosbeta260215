@@ -1,5 +1,7 @@
 package com.noos.backend.chat.service;
 
+import com.noos.backend.auth.service.AuthSessionService;
+import com.noos.backend.auth.session.SessionUser;
 import com.noos.backend.chat.dto.ChatMessage;
 import com.noos.backend.chat.dto.ChatRoom;
 import com.noos.backend.chat.mapper.ChatMapper;
@@ -12,16 +14,15 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ROLE;
-
 @Service
 public class ChatService {
 
     private final ChatMapper chatMapper;
+    private final AuthSessionService authSessionService;
 
-    public ChatService(ChatMapper chatMapper) {
+    public ChatService(ChatMapper chatMapper, AuthSessionService authSessionService) {
         this.chatMapper = chatMapper;
+        this.authSessionService = authSessionService;
     }
 
     @Transactional
@@ -62,10 +63,14 @@ public class ChatService {
 
     @Transactional
     public List<ChatMessage> findHistory(String roomId, HttpSession session) {
-        if (!isAdmin(session) && !roomId.equals(String.valueOf(sessionUserId(session)))) {
+        SessionUser sessionUser = authSessionService.getSessionUser(session);
+        boolean admin = sessionUser != null && sessionUser.isAdmin();
+        Long userId = sessionUser != null ? sessionUser.userId() : null;
+
+        if (!admin && (userId == null || !roomId.equals(String.valueOf(userId)))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chat room access denied.");
         }
-        if (isAdmin(session)) {
+        if (admin) {
             chatMapper.markRoomRead(roomId);
         }
         return chatMapper.findMessagesByRoomId(roomId);
@@ -111,16 +116,8 @@ public class ChatService {
     }
 
     private boolean isAdmin(HttpSession session) {
-        return session != null
-                && "ADMIN".equals(session.getAttribute(LOGIN_USER_ROLE));
-    }
-
-    private Long sessionUserId(HttpSession session) {
-        if (session == null) {
-            return null;
-        }
-        Object userId = session.getAttribute(LOGIN_USER_ID);
-        return userId instanceof Number number ? number.longValue() : null;
+        SessionUser sessionUser = authSessionService.getSessionUser(session);
+        return sessionUser != null && sessionUser.isAdmin();
     }
 
     private Long parseRoomUserId(String roomId) {
