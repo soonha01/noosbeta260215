@@ -2,6 +2,7 @@ package com.noos.backend.auth.service;
 
 import com.noos.backend.auth.dto.UpdateUserRequest;
 import com.noos.backend.auth.dto.User;
+import com.noos.backend.auth.dto.UserSearchRequest;
 import com.noos.backend.auth.mapper.AdminMapper;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
@@ -30,13 +31,12 @@ public class AdminService {
         return adminMapper.findAllUsers();
     }
 
-    public List<User> searchUsers(
-            String type,
-            String keyword,
-            String startDate,
-            String endDate,
-            HttpSession session
-    ) {
+    public List<User> searchUsers(UserSearchRequest request, HttpSession session) {
+        String type = request.getType();
+        String keyword = request.getKeyword();
+        String startDate = request.getStartDate();
+        String endDate = request.getEndDate();
+
         requireAdmin(session);
         return adminMapper.searchUsers(
                 normalize(type),

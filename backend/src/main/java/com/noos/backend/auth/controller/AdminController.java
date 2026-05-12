@@ -2,6 +2,7 @@ package com.noos.backend.auth.controller;
 
 import com.noos.backend.auth.dto.UpdateUserRequest;
 import com.noos.backend.auth.dto.User;
+import com.noos.backend.auth.dto.UserSearchRequest;
 import com.noos.backend.auth.service.AdminService;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.ResponseEntity;
@@ -11,7 +12,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -37,14 +37,8 @@ public class AdminController {
     }
 
     @GetMapping("/search/users")
-    public ResponseEntity<List<User>> searchUsers(
-            @RequestParam(required = false) String type,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String startDate,
-            @RequestParam(required = false) String endDate,
-            HttpSession session
-    ) {
-        return ResponseEntity.ok(adminService.searchUsers(type, keyword, startDate, endDate, session));
+    public ResponseEntity<List<User>> searchUsers(UserSearchRequest request, HttpSession session) {
+        return ResponseEntity.ok(adminService.searchUsers(request, session));
     }
 
     @PutMapping("/users/{userId}")
