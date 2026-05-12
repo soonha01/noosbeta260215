@@ -5,6 +5,7 @@ import { Apple, Chrome, Github } from 'lucide-react';
 import Grainient from '../../ui/effects/Grainient';
 import Stepper, { Step } from './Stepper';
 import BackButton from '../../ui/buttons/BackButton';
+import NoosLogo from '../../brand/NoosLogo';
 import StateSurveyPage from './StateSurveyPage';
 import StateSurveyResultPage from './StateSurveyResultPage';
 import MuseSignalDashboard from './MuseSignalDashboard';
@@ -227,10 +228,30 @@ const LOGIN_STAGE_GRAINIENT_PROPS = Object.freeze({
 });
 
 const PrismStageShell = ({ children }) => (
-  <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
-    <div style={{ position: 'absolute', inset: 0 }}>
-      <Grainient {...LOGIN_STAGE_GRAINIENT_PROPS} />
+  <div
+    style={{
+      width: '100vw',
+      minHeight: '100dvh',
+      height: '100dvh',
+      position: 'relative',
+      overflow: 'hidden',
+      background: '#000000',
+      isolation: 'isolate',
+    }}
+  >
+    <div style={{ position: 'absolute', inset: '-10%', width: '120%', height: '120%' }}>
+      <Grainient {...LOGIN_STAGE_GRAINIENT_PROPS} centerX={-0.12} centerY={0.08} zoom={1.35} />
     </div>
+    <div
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background:
+          'radial-gradient(circle at 50% 48%, rgba(255,255,255,0.08), transparent 42%), linear-gradient(90deg, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.42) 48%, rgba(0,0,0,0.16) 100%)',
+        pointerEvents: 'none',
+      }}
+    />
     <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%' }}>{children}</div>
   </div>
 );
@@ -1148,7 +1169,9 @@ const handleSkipLoginForTesting = () => {
                 {authStage === 'login' && (
                   <form className="form" onSubmit={handleLoginClick}>
                     <p className="auth-kicker">Login</p>
-                    <h1 className="auth-title">Project : NOOS</h1>
+                    <h1 className="auth-title auth-title-logo">
+                      <NoosLogo className="auth-title-logo__mark" />
+                    </h1>
                     <p className="auth-subtitle">
                       계정으로 로그인하여 개인 맞춤 몰입 환경을 시작하세요.
                     </p>
@@ -1243,7 +1266,7 @@ const handleSkipLoginForTesting = () => {
                     <p className="flow-kicker">Device Check</p>
                     <h2 className="flow-title">"Muse S Athena"를 보유하고 계신가요?</h2>
                     <p className="flow-description">
-                      Project NOOS의 집중/감정 분석을 위해 장치 보유 여부를 먼저 확인합니다.
+                      NOOS의 집중/감정 분석을 위해 장치 보유 여부를 먼저 확인합니다.
                     </p>
                     <div className="binary-actions">
                       <button
@@ -1652,10 +1675,13 @@ const LoginContainer = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
+  min-height: 100dvh;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: clamp(32px, 4vw, 72px);
+  overflow-y: auto;
   z-index: 10;
 `;
 
@@ -1708,6 +1734,9 @@ const StepperWrapper = styled.div`
 `;
 
 const StyledWrapper = styled.div`
+  width: clamp(520px, 34vw, 760px);
+  max-width: calc(100vw - 64px);
+
   @keyframes connectionDotPulse {
     0%, 100% {
       transform: scale(0.9);
@@ -1751,11 +1780,13 @@ const StyledWrapper = styled.div`
   }
 
   .form {
-    width: min(100%, 560px);
-    padding: 28px 30px;
+    width: 100%;
+    min-height: min(780px, calc(100dvh - 112px));
+    padding: clamp(38px, 3.4vw, 62px);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    justify-content: center;
+    gap: clamp(15px, 1.2vw, 21px);
     border-radius: 0;
     border: 1px solid rgba(168, 168, 168, 0.45);
     background: rgba(6, 6, 6, 0.9);
@@ -1782,6 +1813,18 @@ const StyledWrapper = styled.div`
     letter-spacing: -0.02em;
     line-height: 1.04;
     font-weight: 500;
+  }
+
+  .auth-title-logo {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
+  }
+
+  .auth-title-logo__mark {
+    width: min(70vw, 260px);
+    height: auto;
+    color: #ffffff;
   }
 
   .auth-subtitle {
@@ -2246,6 +2289,9 @@ const StyledWrapper = styled.div`
   }
 
   @media (max-width: 640px) {
+    width: min(94vw, 520px);
+    max-width: 94vw;
+
     .form,
     .flow-card {
       padding: 18px;

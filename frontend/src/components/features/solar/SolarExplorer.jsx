@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import './SolarExplorer.css';
 import SpaceTravel from './SpaceTravel';
 import ExplorerAssistantPanel from './travel/ExplorerAssistantPanel';
+import NoosLogo from '../../brand/NoosLogo';
 import {
   AI_CONTEXT_STORAGE_KEY,
   FEEDBACK_STORAGE_KEY,
@@ -396,7 +397,7 @@ const SolarExplorer = ({ onPlanetSelect }) => {
       </button>
 
       <h1 className='logo'>
-        Project: NOOS
+        <NoosLogo className='logo__mark' />
         <span>Choose Our planet. And Explore.</span>
         <span className='korean-subtitle'>왼쪽에 있는 행성을 클릭하세요. 그리고 탐험하세요.</span>
       </h1>

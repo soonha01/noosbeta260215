@@ -3,12 +3,12 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import DecryptedText from "../ui/text/DecryptedText";
-import CircularText from "../ui/text/CircularText";
-import FaultyTerminal from "../ui/effects/FaultyTerminal";
-import ShineButton from "../ui/buttons/ShineButton";
-import ArrowButton from "../ui/buttons/ArrowButton";
-import { ChromaGrid } from "../ui/showcase/ChromaGrid";
+import DecryptedText from "../../components/ui/text/DecryptedText";
+import CircularText from "../../components/ui/text/CircularText";
+import FaultyTerminal from "../../components/ui/effects/FaultyTerminal";
+import ShineButton from "../../components/ui/buttons/ShineButton";
+import ArrowButton from "../../components/ui/buttons/ArrowButton";
+import { ChromaGrid } from "../../components/ui/showcase/ChromaGrid";
 import { publicAsset } from "../../lib/env";
 
 gsap.registerPlugin(ScrollTrigger);

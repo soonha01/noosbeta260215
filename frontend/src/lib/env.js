@@ -15,6 +15,8 @@ export const publicAsset = (path) => {
 
 export const API_BASE_URL = trimTrailingSlash(envValue('API_BASE_URL', 'http://localhost:8080'));
 
+export const AI_OBJET_URL = trimTrailingSlash(envValue('AI_OBJET_URL', '/ai-objet'));
+
 export const EEG_ANALYSIS_ENDPOINT = envValue('EEG_ANALYSIS_ENDPOINT', '/api/eeg/results');
 
 export const NOOS_LITERT_MODEL_URL = envValue(
