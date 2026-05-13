@@ -226,6 +226,14 @@
   font-weight: 100;
   letter-spacing: 4px;
 }
+.solar-explorer-body .logo__mark {
+  display: block;
+  width: min(54vw, 240px);
+  height: auto;
+  margin: 0 auto 8px;
+  color: #ffffff;
+  letter-spacing: 0;
+}
 .solar-explorer-body .logo span {
   font-size: 12px;
   color: #f39041;

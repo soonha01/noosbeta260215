@@ -4,6 +4,7 @@ import Stars from "../../components/ui/effects/Stars";
 import Nebula from "../../components/ui/effects/Nebula";
 import WhiteParticles from "../../components/ui/effects/WhiteParticles";
 import GlowButton from "../../components/ui/buttons/GlowButton";
+import NoosLogo from "../../components/brand/NoosLogo";
 import styles from "./FirstLook.module.css";
 
 const FirstLook = ({ onJump }) => {
@@ -94,7 +95,7 @@ const FirstLook = ({ onJump }) => {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             transition={{ duration: 1, delay: 1.5 }}
           >
-            Project : NOOS
+            <NoosLogo className={styles.titleLogo} />
           </motion.span>
         </motion.h1>
 

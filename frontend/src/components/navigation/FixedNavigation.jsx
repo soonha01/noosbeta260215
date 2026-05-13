@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { API_BASE_URL, publicAsset } from "../../lib/env";
+import NoosLogo from "../brand/NoosLogo";
 
 const FixedNavigation = () => {
   const [currentSection, setCurrentSection] = useState(1);
@@ -184,16 +184,7 @@ const FixedNavigation = () => {
       <div className="bg-black/80 backdrop-blur-lg border border-white/30 rounded-full px-5 py-2.5 flex items-center gap-5 shadow-2xl">
         {/* Logo */}
         <Link to="/?main=true" className="flex items-center gap-2.5">
-          <div className="h-7 w-7 overflow-hidden rounded-full">
-            <img
-              alt="NOOS Logo"
-              className="block max-w-none h-full w-full object-contain"
-              src={publicAsset("media/icons/icon.png")}
-            />
-          </div>
-          <span className="font-cardinal-fruit text-[13px] text-white">
-            Project : NOOS
-          </span>
+          <NoosLogo className="h-6 w-[122px] text-white" />
         </Link>
 
         {/* Navigation Links */}

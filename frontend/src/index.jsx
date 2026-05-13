@@ -1,106 +1,13 @@
 import "./lib/ensureMatchMediaCompat";
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import App from "./App.jsx";
 import "./index.css";
-import FixedNavigation from "./components/navigation/FixedNavigation.jsx";
-import { PUBLIC_BASE_URL } from "./lib/env";
-
-const App = lazy(() => import("./App.jsx"));
-const AboutUs = lazy(() => import("./components/sections/AboutUs.jsx"));
-const SolarExplorer = lazy(() => import("./components/features/solar/SolarExplorer.jsx"));
-const SpaceTravel = lazy(() => import("./components/features/solar/SpaceTravel.jsx"));
-const AdminPage = lazy(() => import("./components/features/auth/AdminPage.jsx"));
-const BoardPage = lazy(() => import("./components/features/auth/board/BoardPage.jsx"));
-const LiveChatPage = lazy(() => import("./components/features/auth/livechat/LiveChatPage.jsx"));
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
-const BASENAME = import.meta.env.PROD ? PUBLIC_BASE_URL : '';
-const ROUTE_FALLBACK_STYLE = Object.freeze({
-  width: "100%",
-  height: "100vh",
-  backgroundColor: "#000000",
-});
-
-const RouteFallback = () => <div style={ROUTE_FALLBACK_STYLE} />;
-
-const LazyRoute = ({ children }) => (
-  <Suspense fallback={<RouteFallback />}>{children}</Suspense>
-);
-
 root.render(
   <React.StrictMode>
-    <Router basename={BASENAME}>
-      <FixedNavigation />
-      <Routes>
-        <Route
-          path="/"
-          element={(
-            <LazyRoute>
-              <App />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/about"
-          element={(
-            <LazyRoute>
-              <AboutUs />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/solar-explorer"
-          element={(
-            <LazyRoute>
-              <SolarExplorer />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/solar-explorer/"
-          element={(
-            <LazyRoute>
-              <SolarExplorer />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/space-travel"
-          element={(
-            <LazyRoute>
-              <SpaceTravel />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/admin"
-          element={(
-            <LazyRoute>
-              <AdminPage />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/api.auth/board"
-          element={(
-            <LazyRoute>
-              <BoardPage />
-            </LazyRoute>
-          )}
-        />
-        <Route
-          path="/api.auth/livechat"
-          element={(
-            <LazyRoute>
-              <LiveChatPage />
-            </LazyRoute>
-          )}
-        />
-        {/* Fallback: always go to canonical Solar Explorer */}
-        <Route path="*" element={<Navigate to="/solar-explorer" replace />} />
-      </Routes>
-    </Router>
+    <App />
   </React.StrictMode>
 );

@@ -1,0 +1,50 @@
+import React from "react";
+
+const NoosLogo = ({
+  className = "h-7 w-[142px] text-current",
+  title = "NOOS",
+}) => (
+  <svg
+    role="img"
+    aria-label={title}
+    className={className}
+    viewBox="0 0 142 28"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="M4.5 14.1C4.5 8.1 9.2 4.8 17.3 4.8h15.4c8.1 0 12.8 3.3 12.8 9.3 0 6.1-4.7 9.4-12.8 9.4H17.3C9.2 23.5 4.5 20.2 4.5 14.1Z"
+      stroke="currentColor"
+      strokeWidth="2"
+    />
+    <path
+      d="M10.9 14.8c4.2-3.9 9.8-5.9 16.9-5.9 5.6 0 9.7 1.1 12.5 3.4"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+    <circle cx="16.2" cy="17.7" r="0.9" fill="currentColor" />
+    <circle cx="20.1" cy="18.6" r="0.9" fill="currentColor" />
+    <circle cx="24" cy="18.9" r="0.9" fill="currentColor" />
+    <circle cx="27.9" cy="18.6" r="0.9" fill="currentColor" />
+    <circle cx="31.8" cy="17.7" r="0.9" fill="currentColor" />
+    <path
+      d="M56 22V6h3.1l10.1 10.4V6h3.7v16h-3.1L59.7 11.6V22H56Z"
+      fill="currentColor"
+    />
+    <path
+      d="M78.1 14c0-5.1 3.7-8.4 9.3-8.4s9.3 3.3 9.3 8.4-3.7 8.4-9.3 8.4-9.3-3.3-9.3-8.4Zm14.9 0c0-3-2.2-5-5.6-5s-5.6 2-5.6 5 2.2 5 5.6 5 5.6-2 5.6-5Z"
+      fill="currentColor"
+    />
+    <path
+      d="M100.4 14c0-5.1 3.7-8.4 9.3-8.4s9.3 3.3 9.3 8.4-3.7 8.4-9.3 8.4-9.3-3.3-9.3-8.4Zm14.9 0c0-3-2.2-5-5.6-5s-5.6 2-5.6 5 2.2 5 5.6 5 5.6-2 5.6-5Z"
+      fill="currentColor"
+    />
+    <path
+      d="M122.8 17.1h3.7c.2 1.6 1.9 2.4 5 2.4 2.8 0 4.3-.7 4.3-2 0-1.2-1.1-1.7-4-1.9l-2.5-.2c-4.3-.4-6.1-2-6.1-4.7 0-3.2 2.9-5.1 7.9-5.1 5.2 0 8.1 2 8.4 5.3h-3.7c-.3-1.5-1.8-2.3-4.7-2.3-2.7 0-4.1.7-4.1 1.9s1.1 1.6 3.8 1.9l2.5.2c4.5.4 6.3 2 6.3 4.8 0 3.2-2.9 5-8.1 5-5.5 0-8.5-1.9-8.7-5.3Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+export default NoosLogo;

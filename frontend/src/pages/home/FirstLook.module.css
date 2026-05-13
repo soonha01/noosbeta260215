@@ -118,6 +118,17 @@
     0 0 40px rgba(255, 255, 255, 0.05);
 }
 
+.titleLogo {
+  display: block;
+  width: min(68vw, 430px);
+  height: auto;
+  margin: 0.2rem auto 0;
+  color: #ffffff;
+  filter:
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.24))
+    drop-shadow(0 0 24px rgba(255, 255, 255, 0.12));
+}
+
 /* 우주선 발사 버튼 */
 .launchButton {
   position: relative;

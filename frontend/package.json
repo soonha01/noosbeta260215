@@ -36,7 +36,8 @@
   },
   "scripts": {
     "start": "vite",
-    "build": "vite build",
+    "sync:embedded": "node scripts/sync-embedded-sites.mjs",
+    "build": "npm run sync:embedded && vite build",
     "test": "vitest run --passWithNoTests",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build"
