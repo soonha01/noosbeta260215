@@ -34,6 +34,7 @@
             display_name AS displayName,
             provider AS provider,
             provider_id AS providerId,
+            COALESCE(role, 'USER') AS role,
             created_at AS createdAt,
             updated_at AS updatedAt
         FROM users
@@ -70,6 +71,7 @@
             display_name AS displayName,
             provider AS provider,
             provider_id AS providerId,
+            COALESCE(role, 'USER') AS role,
             created_at AS createdAt,
             updated_at AS updatedAt
         FROM users

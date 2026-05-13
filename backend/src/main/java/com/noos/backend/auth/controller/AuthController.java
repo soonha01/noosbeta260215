@@ -4,10 +4,10 @@ import com.noos.backend.auth.dto.AuthSessionResponse;
 import com.noos.backend.auth.dto.SignupRequest;
 import com.noos.backend.auth.dto.SimpleOkResponse;
 import com.noos.backend.auth.dto.User;
+import com.noos.backend.auth.session.SessionUser;
+import com.noos.backend.auth.service.AuthSessionService;
 import com.noos.backend.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,18 +15,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_ID;
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_LOGIN_ID;
-import static com.noos.backend.auth.session.AuthSessionKeys.LOGIN_USER_NAME;
-
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
     private final AuthService authService;
+    private final AuthSessionService authSessionService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, AuthSessionService authSessionService) {
         this.authService = authService;
+        this.authSessionService = authSessionService;
     }
 
     @PostMapping("/signup")
@@ -42,52 +40,21 @@ public class AuthController {
     ) {
         User user = authService.login(request);
         if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(AuthSessionResponse.anonymous());
+            return ResponseEntity.ok(AuthSessionResponse.anonymous());
         }
 
-        HttpSession existingSession = httpServletRequest.getSession(false);
-        if (existingSession != null) {
-            existingSession.invalidate();
-        }
-
-        HttpSession session = httpServletRequest.getSession(true);
-        session.setAttribute(LOGIN_USER_ID, user.getUserId());
-        session.setAttribute(LOGIN_USER_LOGIN_ID, user.getLoginId());
-        session.setAttribute(LOGIN_USER_NAME, user.getDisplayName());
-
-        return ResponseEntity.ok(AuthSessionResponse.fromUser(user));
+        SessionUser sessionUser = authSessionService.createLoginSession(httpServletRequest, user);
+        return ResponseEntity.ok(AuthSessionResponse.fromSessionUser(sessionUser));
     }
 
     @GetMapping("/me")
     public AuthSessionResponse me(HttpServletRequest httpServletRequest) {
-        HttpSession session = httpServletRequest.getSession(false);
-        if (session == null) {
-            return AuthSessionResponse.anonymous();
-        }
-
-        Object userId = session.getAttribute(LOGIN_USER_ID);
-        Object loginId = session.getAttribute(LOGIN_USER_LOGIN_ID);
-        Object displayName = session.getAttribute(LOGIN_USER_NAME);
-
-        if (!(userId instanceof Number number)) {
-            return AuthSessionResponse.anonymous();
-        }
-
-        return new AuthSessionResponse(
-                true,
-                number.longValue(),
-                loginId instanceof String value ? value : null,
-                displayName instanceof String value ? value : null
-        );
+        return authSessionService.getCurrentSession(httpServletRequest);
     }
 
     @PostMapping("/logout")
     public SimpleOkResponse logout(HttpServletRequest httpServletRequest) {
-        HttpSession session = httpServletRequest.getSession(false);
-        if (session != null) {
-            session.invalidate();
-        }
-
+        authSessionService.logout(httpServletRequest);
         return new SimpleOkResponse(true);
     }
 }

@@ -7,8 +7,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -36,7 +37,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void loginReturnsTrueWhenPasswordMatchesHash() {
+    void loginReturnsUserWhenPasswordMatchesHash() {
         SignupRequest request = new SignupRequest();
         request.setLoginId("tester");
         request.setPassword("plain-password");
@@ -47,11 +48,11 @@ class AuthServiceTest {
 
         when(authMapper.findLocalUserByLoginId("tester")).thenReturn(user);
 
-        assertTrue(authService.login(request));
+        assertSame(user, authService.login(request));
     }
 
     @Test
-    void loginReturnsFalseWhenPasswordDoesNotMatchHash() {
+    void loginReturnsNullWhenPasswordDoesNotMatchHash() {
         SignupRequest request = new SignupRequest();
         request.setLoginId("tester");
         request.setPassword("wrong-password");
@@ -62,6 +63,6 @@ class AuthServiceTest {
 
         when(authMapper.findLocalUserByLoginId("tester")).thenReturn(user);
 
-        assertFalse(authService.login(request));
+        assertNull(authService.login(request));
     }
 }

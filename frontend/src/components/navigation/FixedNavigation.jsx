@@ -5,9 +5,66 @@ import NoosLogo from "../brand/NoosLogo";
 const FixedNavigation = () => {
   const [currentSection, setCurrentSection] = useState(1);
   const [isMainPage, setIsMainPage] = useState(false);
+  const [sessionUser, setSessionUser] = useState(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const initialSyncTimerRef = useRef(null);
+  const profileMenuRef = useRef(null);
+
+  const fetchSessionUser = () => {
+    fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((session) => {
+        setSessionUser(session?.authenticated ? session : null);
+      })
+      .catch(() => setSessionUser(null));
+  };
+
+  useEffect(() => {
+    fetchSessionUser();
+
+    const handleAuthChanged = () => fetchSessionUser();
+    const handleWindowFocus = () => fetchSessionUser();
+
+    window.addEventListener("noos-auth-changed", handleAuthChanged);
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      window.removeEventListener("noos-auth-changed", handleAuthChanged);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchSessionUser();
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target)
+      ) {
+        setIsProfileOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  const handleLogout = () => {
+    fetch(`${API_BASE_URL}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    }).finally(() => {
+      setSessionUser(null);
+      setIsProfileOpen(false);
+      window.dispatchEvent(new Event("noos-auth-changed"));
+      window.location.assign("/");
+    });
+  };
 
   useEffect(() => {
     // 메인 페이지인지 확인 (FirstLook에서 온 경우 또는 AboutUs에서 돌아온 경우 포함)
@@ -68,8 +125,54 @@ const FixedNavigation = () => {
     [currentSection, isMainPage, location.pathname]
   );
 
+  const profileInitial = sessionUser?.displayName?.trim()?.[0] || "N";
+
   return (
-    <div
+    <>
+      {sessionUser && location.pathname === "/" && (
+        <div
+          ref={profileMenuRef}
+          className="fixed top-5 right-5"
+          style={{ zIndex: 10000 }}
+        >
+          <button
+            type="button"
+            onClick={() => setIsProfileOpen((value) => !value)}
+            className="h-11 w-11 rounded-full border border-white/30 bg-black/80 text-white shadow-2xl backdrop-blur-lg transition hover:bg-white/15"
+            aria-label="프로필 메뉴"
+          >
+            <span className="font-cardinal-fruit text-[15px]">
+              {profileInitial}
+            </span>
+          </button>
+
+          {isProfileOpen && (
+            <div className="absolute right-0 mt-3 w-64 overflow-hidden rounded-2xl border border-white/20 bg-black/90 text-white shadow-2xl backdrop-blur-xl">
+              <div className="border-b border-white/10 px-4 py-3">
+                <p className="text-[12px] text-white/50">계정정보</p>
+                <p className="mt-1 truncate text-[14px] font-semibold">
+                  {sessionUser.displayName}
+                </p>
+                <p className="truncate text-[12px] text-white/60">
+                  {sessionUser.loginId}
+                </p>
+                <p className="mt-2 inline-flex rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                  {sessionUser.role || "USER"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full px-4 py-3 text-left text-[13px] text-white/80 transition hover:bg-white/10 hover:text-white"
+              >
+                로그아웃
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
       className="fixed top-5 left-1/2 transition-all duration-500"
       style={{
         zIndex: 9999,
@@ -100,7 +203,8 @@ const FixedNavigation = () => {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

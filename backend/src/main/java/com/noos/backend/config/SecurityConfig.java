@@ -28,7 +28,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable()) // 현재 API 흐름에서는 CSRF를 비활성화
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/", "/error", "/login/**", "/api/auth/**", "/api/eeg/**", "/api/ai/**", "/api/lighting/**").permitAll() // 인증 진입 경로는 허용
+                        .requestMatchers("/", "/error", "/login/**", "/ws/**", "/api/auth/**", "/api/admin/**", "/api/chat/**", "/api/eeg/**", "/api/ai/**", "/api/lighting/**").permitAll() // 인증 진입 경로는 허용
                         .anyRequest().authenticated() // 그 외 요청은 인증 필요
                 );
 

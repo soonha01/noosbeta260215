@@ -338,6 +338,27 @@ const Login = ({ onBack }) => {
     return params.get('login') === 'success' ? 'device-question' : 'login';
   });
 
+  useEffect(() => {
+    let canceled = false;
+
+    fetch(backendUrl('/api/auth/me'), { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((session) => {
+        if (!canceled && session?.authenticated) {
+          if (session.role === 'ADMIN') {
+            window.location.assign('/admin');
+            return;
+          }
+          setAuthStage('device-question');
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
   //뇌파 데이터
   const [eegData, setEegData] = useState([]);
   const [measuredEegData, setMeasuredEegData] = useState([]);
@@ -742,6 +763,7 @@ const Login = ({ onBack }) => {
       //백엔드로 로그인 요청 전송
       const response = await fetch(backendUrl('/api/auth/login'), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -750,9 +772,14 @@ const Login = ({ onBack }) => {
 
       //응답 결과 처리
       if (response.ok) {
-        const result = await response.text();
+        const result = await response.json();
 
-        if (result === "ok") {
+        if (result.authenticated) {
+          window.dispatchEvent(new Event('noos-auth-changed'));
+          if (result.role === 'ADMIN') {
+            window.location.assign('/admin');
+            return;
+          }
           setTimeout(() => {
             setAuthStage('device-question');
             setIsTransitioning(false);
@@ -761,6 +788,9 @@ const Login = ({ onBack }) => {
           setIsTransitioning(false);
           alert("아이디 또는 비밀번호가 올바르지 않습니다.");
         }
+      } else if (response.status === 401) {
+        setIsTransitioning(false);
+        alert("아이디 또는 비밀번호가 올바르지 않습니다.");
       } else {
         setIsTransitioning(false);
         alert("로그인 요청 중 서버 에러가 발생했습니다.");
@@ -783,6 +813,14 @@ const handleSkipLoginForTesting = () => {
 };
 
 //Muse기기 유무 확인
+  const openBoardPage = () => {
+    window.location.assign('/api.auth/board');
+  };
+
+  const openLiveChatPage = () => {
+    window.location.assign('/api.auth/livechat');
+  };
+
   const scheduleEegFlush = () => {
     if (eegFlushTimerRef.current) return;
 
@@ -1268,6 +1306,21 @@ const handleSkipLoginForTesting = () => {
                     <p className="flow-description">
                       NOOS의 집중/감정 분석을 위해 장치 보유 여부를 먼저 확인합니다.
                     </p>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                        gap: '0.75rem',
+                        marginBottom: '1rem',
+                      }}
+                    >
+                      <button type="button" className="option-button" onClick={openBoardPage}>
+                        게시판
+                      </button>
+                      <button type="button" className="option-button" onClick={openLiveChatPage}>
+                        채팅
+                      </button>
+                    </div>
                     <div className="binary-actions">
                       <button
                         type="button"
