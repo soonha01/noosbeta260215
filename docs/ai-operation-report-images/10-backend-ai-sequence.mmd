@@ -1,0 +1,14 @@
+sequenceDiagram
+  participant FE as 프론트엔드
+  participant BE as 백엔드
+  participant AI as Python AI CLI
+  participant ACE as ACE-Step API
+  participant WIZ as WiZ 전구
+
+  FE->>BE: 세션 생성 요청
+  BE->>AI: intervention 입력 JSON 전달
+  AI-->>BE: interventionResult 반환
+  BE->>ACE: 음악 생성 요청
+  ACE-->>BE: mp3 결과 반환
+  BE->>WIZ: 조명 적용 요청
+  BE-->>FE: audioUrl + AI 결과 + 조명 상태 반환

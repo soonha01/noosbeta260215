@@ -1,0 +1,9 @@
+flowchart TD
+  A["입력 데이터<br/>Muse EEG, band summary, 설문, 메모"] --> B["Recognition<br/>현재 상태 해석"]
+  B --> C["State Profile<br/>상태 축 점수화"]
+  C --> D["Intervention<br/>목표 행성 상태와 비교"]
+  D --> E["Transition Plan<br/>상태 전환 방향 결정"]
+  E --> F["Music Spec<br/>음악 생성 명세"]
+  E --> G["Lighting Spec<br/>조명 생성 명세"]
+  F --> H["ACE-Step Request<br/>음악 생성 요청"]
+  G --> I["WiZ Lighting Payload<br/>조명 실행 값"]

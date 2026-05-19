@@ -1,0 +1,12 @@
+flowchart TD
+  A["Transition Plan"] --> B["조명 프로그램 선택"]
+  B --> C["Primary<br/>연구 기반 CCT 색온도"]
+  B --> D["Secondary<br/>행성 RGB 톤"]
+  B --> E["Brightness<br/>밝기"]
+  B --> F["Pattern<br/>전환 방식"]
+  C --> G["lighting_spec"]
+  D --> G
+  E --> G
+  F --> G
+  G --> H["WiZ 하드웨어 payload"]
+  H --> I["WiZ 전구 4개"]

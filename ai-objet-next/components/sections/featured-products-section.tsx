@@ -54,14 +54,14 @@ export function FeaturedProductsSection() {
             외형과 내부 구조를 함께 보는 설계 스케치
           </h2>
           <p className="max-w-md text-sm leading-relaxed text-muted-foreground md:text-base">
-            사용자가 보게 될 부드러운 바디와 제작자가 확인해야 할 포트, 흡배기, LED 채널, 내부 부품 배치를 같은 언어로 정리했습니다.
+            사용자가 보게 될 바디와 제작자가 확인해야 할 포트, 흡배기, LED 채널, 내부 부품 배치를 스케치로 미리 설계해보았습니다.
           </p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 w-full max-w-7xl mx-auto auto-rows-[180px] md:auto-rows-[220px]">
           {features.map((feature, index) => (
-            <div 
-              key={index} 
+            <div
+              key={index}
               className={`relative overflow-hidden rounded-lg border border-gray-200 ${feature.span}`}
             >
               <FadeImage
