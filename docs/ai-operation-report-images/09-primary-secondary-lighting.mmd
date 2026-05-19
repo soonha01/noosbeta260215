@@ -1,0 +1,6 @@
+flowchart LR
+  A["Primary 조명"] --> B["CCT 색온도<br/>예: 4200K, 500 lx"]
+  C["Secondary 조명"] --> D["RGB 행성 톤<br/>예: Mars 보조 주황 톤"]
+  B --> E["10초 간격 전환"]
+  D --> E
+  E --> F["WiZ 전구 적용"]

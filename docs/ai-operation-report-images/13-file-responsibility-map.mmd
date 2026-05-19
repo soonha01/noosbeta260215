@@ -1,0 +1,22 @@
+flowchart TD
+  A["MuseSignalDashboard.jsx<br/>현재 상태를 사용자가 이해하기 쉽게 표시"]
+  B["SpaceTravel.jsx<br/>생성, 플레이어, 조명 복구 흐름 제어"]
+  C["noosAiApi.js<br/>백엔드 API 호출"]
+  D["NoosAiController.java<br/>AI API 엔드포인트"]
+  E["NoosAiService.java<br/>Python AI, ACE-Step, mp3 저장 조율"]
+  F["recognition.py<br/>현재 상태 분석"]
+  G["intervention.py<br/>세션 전체 설계"]
+  H["planner.py<br/>전환 계획 생성"]
+  I["music.py<br/>음악 명세 생성"]
+  J["lighting.py<br/>조명 명세 생성"]
+  K["ace_step.py<br/>ACE-Step API 통신"]
+  L["WizLightingService.java<br/>WiZ 조명 실행과 복구"]
+
+  A --> B --> C --> D --> E
+  E --> F
+  E --> G
+  G --> H
+  H --> I
+  H --> J
+  I --> K
+  E --> L

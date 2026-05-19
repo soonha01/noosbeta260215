@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import NoosLogo from "../brand/NoosLogo";
+import { API_BASE_URL } from "../../lib/env";
 
 const FixedNavigation = () => {
   const [currentSection, setCurrentSection] = useState(1);

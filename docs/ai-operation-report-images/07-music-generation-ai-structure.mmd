@@ -1,0 +1,17 @@
+flowchart TD
+  A["Transition Plan"] --> B["음악 방향 결정"]
+  B --> C["BPM"]
+  B --> D["Energy"]
+  B --> E["Tension"]
+  B --> F["Texture"]
+  B --> G["Prompt"]
+  B --> H["Duration"]
+  C --> I["music_spec"]
+  D --> I
+  E --> I
+  F --> I
+  G --> I
+  H --> I
+  I --> J["ace_step_request"]
+  J --> K["Windows RTX 4080<br/>ACE-Step API"]
+  K --> L["생성 mp3"]

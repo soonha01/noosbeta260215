@@ -1,0 +1,13 @@
+flowchart TD
+  A["Recognition 결과<br/>또는 current_state"] --> B["현재 상태 축 추출"]
+  C["선택 행성"] --> D["목표 행성 상태 로드"]
+  B --> E["현재 상태와 목표 상태 비교"]
+  D --> E
+  E --> F["Delta Axes 계산"]
+  F --> G["Transition Plan 생성"]
+  G --> H["Music Spec 생성"]
+  G --> I["Lighting Spec 생성"]
+  H --> J["ACE-Step 요청 생성"]
+  I --> K["WiZ 조명 payload 생성"]
+  J --> L["Intervention Result"]
+  K --> L

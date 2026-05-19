@@ -252,7 +252,7 @@ const PrismStageShell = ({ children }) => (
         pointerEvents: 'none',
       }}
     />
-    <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%' }}>{children}</div>
+    <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', minHeight: 0 }}>{children}</div>
   </div>
 );
 
@@ -1046,7 +1046,14 @@ const handleSkipLoginForTesting = () => {
           initial={{ opacity: 0, y: 24, filter: 'blur(12px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           transition={{ duration: DEVICE_SUCCESS_FADE_IN_DURATION_SEC, ease: [0.16, 1, 0.3, 1] }}
-          style={{ position: 'absolute', inset: 0 }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+          }}
         >
           <StateSurveyResultPage
             surveyResult={surveyResult}
@@ -1067,7 +1074,14 @@ const handleSkipLoginForTesting = () => {
           initial={{ opacity: 0, y: 24, filter: 'blur(12px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           transition={{ duration: DEVICE_SUCCESS_FADE_IN_DURATION_SEC, ease: [0.16, 1, 0.3, 1] }}
-          style={{ position: 'absolute', inset: 0 }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+          }}
         >
           <MuseSignalDashboard
             eegData={resultEegData}

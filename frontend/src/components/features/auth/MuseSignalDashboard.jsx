@@ -418,11 +418,13 @@ const MuseSignalDashboard = ({
   return (
     <div
       style={{
-        minHeight: '100vh',
-        padding: '14px 16px 18px',
+        minHeight: '100%',
+        boxSizing: 'border-box',
+        padding: 'clamp(10px, 1.8vw, 18px)',
         color: '#f5f5f5',
         opacity: isTransitioning ? 0.55 : 1,
         transition: 'opacity 240ms ease',
+        overflowX: 'hidden',
         background:
           'radial-gradient(circle at top left, rgba(92,191,255,0.08), transparent 24%), linear-gradient(180deg, #050505 0%, #0a0a0a 58%, #060606 100%)',
       }}
@@ -432,8 +434,8 @@ const MuseSignalDashboard = ({
           position: 'relative',
           maxWidth: 1160,
           margin: '0 auto',
-          padding: '16px 18px',
-          borderRadius: 26,
+          padding: 'clamp(12px, 1.8vw, 18px)',
+          borderRadius: 18,
           border: '1px solid rgba(255,255,255,0.08)',
           background: 'rgba(9,9,9,0.93)',
           boxShadow: '0 24px 90px rgba(0,0,0,0.42)',
@@ -456,16 +458,20 @@ const MuseSignalDashboard = ({
         <header
           style={{
             position: 'relative',
-            display: 'grid',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             gap: 10,
-            marginBottom: 14,
+            marginBottom: 8,
+            maxHeight: 48,
+            overflow: 'hidden',
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 margin: 0,
-                fontSize: 12,
+                fontSize: 10,
                 letterSpacing: '0.18em',
                 textTransform: 'uppercase',
                 color: 'rgba(255,255,255,0.46)',
@@ -475,37 +481,43 @@ const MuseSignalDashboard = ({
             </p>
             <h2
               style={{
-                margin: '8px 0 6px',
-                fontSize: 'clamp(2rem, 3.2vw, 3rem)',
-                lineHeight: 1.02,
+                margin: '3px 0 0',
+                fontSize: 'clamp(1rem, 1.6vw, 1.25rem)',
+                lineHeight: 1.1,
+                wordBreak: 'keep-all',
+                overflowWrap: 'break-word',
               }}
             >
               {title}
             </h2>
             <p
               style={{
+                display: 'none',
                 margin: 0,
                 maxWidth: 880,
                 color: 'rgba(255,255,255,0.74)',
                 lineHeight: 1.45,
+                wordBreak: 'keep-all',
+                overflowWrap: 'break-word',
               }}
             >
               {summary}
             </p>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', flex: '0 0 auto', flexWrap: 'nowrap', gap: 6, overflow: 'hidden' }}>
             {[`${measurementDurationSec}초 측정`, `${eegData.length}개 샘플`, `${CHANNEL_KEYS.length}채널`, '고정 결과'].map(
               (item) => (
                 <span
                   key={item}
                   style={{
-                    padding: '8px 12px',
+                    padding: '5px 8px',
                     borderRadius: 999,
                     border: '1px solid rgba(255,255,255,0.12)',
                     background: 'rgba(255,255,255,0.04)',
                     color: 'rgba(255,255,255,0.82)',
-                    fontSize: 13,
+                    fontSize: 11,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {item}
@@ -519,8 +531,12 @@ const MuseSignalDashboard = ({
           style={{
             ...SECTION_STYLE,
             position: 'relative',
+            display: 'block',
+            minHeight: 0,
+            alignItems: 'initial',
+            justifyContent: 'initial',
             marginBottom: 14,
-            padding: 16,
+            padding: 'clamp(12px, 1.5vw, 16px)',
             borderColor: `${readableState.accent}30`,
             background:
               `radial-gradient(circle at top left, ${readableState.accent}18, transparent 34%), rgba(255,255,255,0.022)`,
@@ -529,17 +545,18 @@ const MuseSignalDashboard = ({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: 14,
+              gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 0.8fr)',
+              gap: 10,
               alignItems: 'stretch',
             }}
           >
             <div
               style={{
-                padding: 18,
-                borderRadius: 18,
+                padding: '12px 13px',
+                borderRadius: 14,
                 border: `1px solid ${readableState.accent}3d`,
                 background: 'rgba(0,0,0,0.24)',
+                minWidth: 0,
               }}
             >
               <p style={{ margin: 0, fontSize: 12, letterSpacing: '0.16em', color: 'rgba(255,255,255,0.52)' }}>
@@ -547,15 +564,17 @@ const MuseSignalDashboard = ({
               </p>
               <h3
                 style={{
-                  margin: '10px 0 8px',
-                  fontSize: 'clamp(1.9rem, 3vw, 2.7rem)',
-                  lineHeight: 1.04,
+                  margin: '8px 0 7px',
+                  fontSize: 'clamp(1.16rem, 1.9vw, 1.55rem)',
+                  lineHeight: 1.16,
                   color: readableState.accent,
+                  wordBreak: 'keep-all',
+                  overflowWrap: 'break-word',
                 }}
               >
                 {readableState.label}
               </h3>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.82)', lineHeight: 1.55, fontSize: 15 }}>
+              <p style={{ margin: 0, color: 'rgba(255,255,255,0.82)', lineHeight: 1.35, fontSize: 13 }}>
                 {readableState.body}
               </p>
             </div>
@@ -564,30 +583,42 @@ const MuseSignalDashboard = ({
               style={{
                 display: 'grid',
                 alignContent: 'space-between',
-                gap: 10,
-                padding: 18,
-                borderRadius: 18,
+                gap: 8,
+                padding: '12px 13px',
+                borderRadius: 14,
                 border: '1px solid rgba(255,255,255,0.08)',
                 background: 'rgba(255,255,255,0.025)',
+                minWidth: 0,
               }}
             >
               <div>
                 <p style={{ margin: 0, fontSize: 12, letterSpacing: '0.16em', color: 'rgba(255,255,255,0.52)' }}>
                   해석
                 </p>
-                <h4 style={{ margin: '9px 0 0', fontSize: '1.24rem', lineHeight: 1.22 }}>
+                <h4
+                  style={{
+                    margin: '9px 0 0',
+                    fontSize: 'clamp(0.94rem, 1.5vw, 1.08rem)',
+                    lineHeight: 1.22,
+                    wordBreak: 'keep-all',
+                    overflowWrap: 'break-word',
+                  }}
+                >
                   {readableState.headline}
                 </h4>
               </div>
               <p
                 style={{
                   margin: 0,
-                  padding: '12px 14px',
-                  borderRadius: 14,
+                  padding: '8px 10px',
+                  borderRadius: 12,
                   border: `1px solid ${readableState.accent}30`,
                   color: 'rgba(255,255,255,0.86)',
                   background: `${readableState.accent}10`,
-                  lineHeight: 1.48,
+                  lineHeight: 1.28,
+                  fontSize: 12,
+                  wordBreak: 'keep-all',
+                  overflowWrap: 'break-word',
                 }}
               >
                 {readableState.recommendation}
@@ -598,37 +629,47 @@ const MuseSignalDashboard = ({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: 10,
-              marginTop: 12,
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 8,
+              marginTop: 10,
             }}
           >
             {stateAxisCards.map((axis) => (
               <article
                 key={axis.key}
                 style={{
-                  padding: 14,
-                  borderRadius: 16,
+                  padding: '10px 11px',
+                  borderRadius: 12,
                   border: `1px solid ${axis.level.color}30`,
                   background: 'rgba(255,255,255,0.022)',
+                  minWidth: 0,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                  <strong style={{ fontSize: 15 }}>{axis.title}</strong>
-                  <span style={{ color: axis.level.color, fontSize: 13 }}>{axis.level.label}</span>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <strong style={{ fontSize: 13, lineHeight: 1.2, minWidth: 0, whiteSpace: 'nowrap' }}>{axis.title}</strong>
+                  <span style={{ color: axis.level.color, fontSize: 11, whiteSpace: 'nowrap' }}>{axis.level.label}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
-                  <span style={{ fontSize: '2rem', lineHeight: 1, fontWeight: 700 }}>{axis.percent}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.58)' }}>%</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 6 }}>
+                  <span style={{ fontSize: 'clamp(1.2rem, 2vw, 1.55rem)', lineHeight: 1, fontWeight: 700 }}>
+                    {axis.percent}
+                  </span>
+                  <span style={{ color: 'rgba(255,255,255,0.58)', fontSize: 12 }}>%</span>
                 </div>
                 <div
                   aria-hidden="true"
                   style={{
-                    height: 9,
+                    height: 6,
                     borderRadius: 999,
                     background: 'rgba(255,255,255,0.08)',
                     overflow: 'hidden',
-                    marginTop: 10,
+                    marginTop: 7,
                   }}
                 >
                   <span
@@ -641,7 +682,18 @@ const MuseSignalDashboard = ({
                     }}
                   />
                 </div>
-                <p style={{ margin: '10px 0 0', color: 'rgba(255,255,255,0.62)', lineHeight: 1.38, fontSize: 13 }}>
+                <p
+                  style={{
+                    margin: '6px 0 0',
+                    color: 'rgba(255,255,255,0.58)',
+                    lineHeight: 1.2,
+                    fontSize: 10,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                  title={axis.body}
+                >
                   {axis.body}
                 </p>
               </article>
@@ -695,7 +747,7 @@ const MuseSignalDashboard = ({
           style={{
             position: 'relative',
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.06fr) minmax(360px, 0.94fr)',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
             gap: 14,
             alignItems: 'start',
           }}
@@ -747,7 +799,7 @@ const MuseSignalDashboard = ({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'minmax(150px, 0.62fr) minmax(0, 1.38fr)',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))',
                   gap: 10,
                 }}
               >
@@ -874,7 +926,7 @@ const MuseSignalDashboard = ({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))',
               gap: 10,
             }}
           >
@@ -925,7 +977,7 @@ const MuseSignalDashboard = ({
               background: '#f7f4ef',
               color: '#111',
               cursor: 'pointer',
-              minWidth: 210,
+              minWidth: 'min(100%, 210px)',
             }}
           >
             Solar Explorer 이동

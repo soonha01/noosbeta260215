@@ -171,9 +171,9 @@ export function HeroSection() {
         style={{ opacity: textOpacity }}
       >
         <p className="mx-auto max-w-2xl text-center text-2xl leading-relaxed text-white md:text-3xl lg:text-[2.5rem] lg:leading-snug">
-          조형적인 AI Objet,
+          AI Objet,
           <br />
-          실제 하드웨어를 담기 위해 설계된 바디.
+          NOOS의 모든 기능들을 담기 위해 설계된 오브제.
         </p>
       </div>
 
