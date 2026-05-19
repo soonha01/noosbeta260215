@@ -163,14 +163,27 @@ const getChartAmplitude = (seriesCollection) =>
 const createWavePath = (
   samples,
   timestamps,
-  { width, baselineY, rowAmplitude, offsetX, amplitude, startTimestamp, durationMs }
+  {
+    width,
+    baselineY,
+    rowAmplitude,
+    offsetX,
+    amplitude,
+    startTimestamp,
+    durationMs,
+    useFixedDurationTimeline = false,
+  }
 ) => {
   if (!samples.length) return '';
+
+  const lastSampleIndex = Math.max(1, samples.length - 1);
 
   return samples
     .map((sample, index) => {
       const timestamp = Number.isFinite(timestamps[index]) ? timestamps[index] : startTimestamp;
-      const elapsedMs = Math.max(0, timestamp - startTimestamp);
+      const elapsedMs = useFixedDurationTimeline
+        ? (index / lastSampleIndex) * durationMs
+        : Math.max(0, timestamp - startTimestamp);
       const clampedRatio = Math.min(1, elapsedMs / Math.max(1, durationMs));
       const x = offsetX + clampedRatio * width;
       const normalized = (Number.isFinite(sample) ? sample : 0) / amplitude;
@@ -187,6 +200,7 @@ const CombinedWaveChart = ({ seriesCollection, measurementDurationSec }) => {
   const actualDurationMs = Math.max(0, endTimestamp - startTimestamp);
   const durationSec = measurementDurationSec || actualDurationMs / 1000 || 1;
   const durationMs = Math.max(1, durationSec * 1000);
+  const useFixedDurationTimeline = Number.isFinite(measurementDurationSec) && measurementDurationSec > 0;
   const amplitude = getChartAmplitude(seriesCollection);
   const { width, height, margin } = CHART_FRAME;
   const plotWidth = width - margin.left - margin.right;
@@ -256,6 +270,7 @@ const CombinedWaveChart = ({ seriesCollection, measurementDurationSec }) => {
                     amplitude,
                     startTimestamp,
                     durationMs,
+                    useFixedDurationTimeline,
                   })}
                   fill="none"
                   stroke={CHANNEL_COLORS[series.key]}
