@@ -800,13 +800,21 @@ const TravelPlayerPage = ({
   const planetSpinDurationSec = getPlanetSpinDurationSec(planetMedia?.title);
   const backgroundImage = planetMedia?.backgroundImage || planetMedia?.image;
   const sessionStatus = hasGeneratedAudio ? 'AI audio generated' : generatedJourney ? 'AI plan synced' : 'planet preset';
+  const isCsvMuseTest = liveMuseMetrics?.testMode === 'csv-mock';
   const liveMuseStatusLabel = LIVE_MUSE_STATUS_LABELS[liveMuseStatus] || liveMuseStatus;
   const liveMuseQualityLabel = Number.isFinite(Number(liveMuseMetrics?.qualityScore))
     ? `${Math.round(Number(liveMuseMetrics.qualityScore) * 100)}%`
     : '대기';
   const liveMuseNextLabel = liveMuseMetrics?.nextAnalysisAt
-    ? new Date(liveMuseMetrics.nextAnalysisAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    ? new Date(liveMuseMetrics.nextAnalysisAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: isCsvMuseTest ? '2-digit' : undefined,
+      })
     : '대기';
+  const liveMuseBaselineChip = isCsvMuseTest ? 'baseline 5s' : 'baseline 1m';
+  const liveMuseAnalysisChip = isCsvMuseTest ? 'CSV analysis 30s' : 'analysis 5m';
+  const liveMuseNextCaption = isCsvMuseTest ? 'CSV test window' : '5분 윈도우';
   const canStartLiveMuse = ['off', 'pending', 'error'].includes(liveMuseStatus);
   const canStopLiveMuse = ['connecting', 'calibrating', 'active', 'analyzing'].includes(liveMuseStatus);
 
@@ -1022,13 +1030,13 @@ const TravelPlayerPage = ({
                       <MetaCard>
                         <MetaLabel>Next</MetaLabel>
                         <MetaValue $accent={accentColor} style={{ fontSize: 18 }}>{liveMuseNextLabel}</MetaValue>
-                        <BodyText>5분 윈도우</BodyText>
+                        <BodyText>{liveMuseNextCaption}</BodyText>
                       </MetaCard>
                     </MetaGrid>
 
                     <ChipRow style={{ marginTop: '0.65rem' }}>
-                      <Chip $accent={accentColor}>baseline 1m</Chip>
-                      <Chip $accent={accentColor}>analysis 5m</Chip>
+                      <Chip $accent={accentColor}>{liveMuseBaselineChip}</Chip>
+                      <Chip $accent={accentColor}>{liveMuseAnalysisChip}</Chip>
                       <Chip $accent={accentColor}>crossfade 30s</Chip>
                       {adaptiveMusicState?.reason ? <Chip $accent={accentColor}>{adaptiveMusicState.reason}</Chip> : null}
                     </ChipRow>

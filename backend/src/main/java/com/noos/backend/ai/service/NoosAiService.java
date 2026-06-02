@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noos.backend.ai.dto.AiFeedbackParseRequest;
 import com.noos.backend.ai.dto.DashboardSummaryRequest;
 import com.noos.backend.ai.dto.DeviceTroubleshootRequest;
-import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
 import com.noos.backend.ai.dto.StateExplanationRequest;
+import com.noos.backend.eeg.dto.EegAnalysisRequest;
+import com.noos.backend.eeg.dto.EegAnalysisResponse;
+import com.noos.backend.eeg.dto.EegCurrentState;
+import com.noos.backend.eeg.dto.EegRecognitionResult;
 import com.noos.backend.lighting.service.WizLightingService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -61,15 +64,6 @@ public class NoosAiService {
     private static final long REMOTE_AUDIO_DOWNLOAD_MAX_BYTES = 250L * 1024L * 1024L;
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-    private static final List<String> CANONICAL_AXES = List.of(
-            "focus_readiness",
-            "stress_load",
-            "fatigue_risk",
-            "relaxation_level",
-            "cortical_arousal",
-            "mental_workload"
-    );
-
     private final ObjectMapper objectMapper;
     private final String pythonBin;
     private final String aceStepBaseUrl;
@@ -123,10 +117,9 @@ public class NoosAiService {
                 .build();
     }
 
-    public Map<String, Object> recognize(EegRecognitionRequest request, List<Map<String, Object>> rawReadings) {
-        boolean hasRawReadings = rawReadings != null && !rawReadings.isEmpty();
-        boolean hasSurveyContext = request.surveyContext() != null && !request.surveyContext().isEmpty();
-        String source = hasRawReadings ? "frontend-raw-chunk-upload" : "frontend-band-summary";
+    public EegAnalysisResponse recognize(EegAnalysisRequest request) {
+        boolean hasSurveyContext = request.surveyContext() != null && request.surveyContext().hasContent();
+        String source = "frontend-band-summary";
         if (hasSurveyContext) {
             source = source + "+survey";
         }
@@ -143,9 +136,6 @@ public class NoosAiService {
         context.put("source", source);
         payload.put("context", context);
 
-        if (hasRawReadings) {
-            payload.put("readings", rawReadings);
-        }
         if (hasSurveyContext) {
             payload.put("survey_context", request.surveyContext());
         }
@@ -161,16 +151,21 @@ public class NoosAiService {
         payload.put("band_summary", bandSummary);
 
         Map<String, Object> recognitionResult = runCli(payload, false);
+        EegRecognitionResult typedRecognitionResult = objectMapper.convertValue(recognitionResult, EegRecognitionResult.class);
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("recognitionResult", recognitionResult);
-        response.put("currentState", extractCurrentState(recognitionResult));
-        response.put("stateLabel", nestedString(recognitionResult, "state_profile", "label"));
+        EegAnalysisResponse response = new EegAnalysisResponse();
+        response.setRecognitionResult(typedRecognitionResult);
+        response.setCurrentState(EegCurrentState.fromRecognitionResult(typedRecognitionResult));
+        response.setStateLabel(
+                typedRecognitionResult.getStateProfile() != null
+                        ? typedRecognitionResult.getStateProfile().getLabel()
+                        : null
+        );
         return response;
     }
 
-    public Map<String, Object> recognizeFromSummary(EegRecognitionRequest request) {
-        return recognize(request, List.of());
+    public EegAnalysisResponse recognizeFromSummary(EegAnalysisRequest request) {
+        return recognize(request);
     }
 
     public Map<String, Object> parseFeedback(AiFeedbackParseRequest request) {
@@ -742,19 +737,6 @@ public class NoosAiService {
 
     private boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
-    }
-
-    private Map<String, Object> extractCurrentState(Map<String, Object> recognitionResult) {
-        Map<String, Object> currentState = new LinkedHashMap<>();
-        Map<String, Object> stateProfile = mapValue(recognitionResult.get("state_profile"));
-        Map<String, Object> dimensions = mapValue(stateProfile.get("dimensions"));
-
-        for (String axis : CANONICAL_AXES) {
-            Map<String, Object> axisPayload = mapValue(dimensions.get(axis));
-            Object score = axisPayload.get("score");
-            currentState.put(axis, score instanceof Number ? ((Number) score).doubleValue() : 0.5);
-        }
-        return currentState;
     }
 
     private String nestedString(Map<String, Object> root, String outerKey, String innerKey) {

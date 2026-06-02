@@ -1,12 +1,10 @@
 package com.noos.backend.eeg.mapper;
 
 import com.noos.backend.eeg.dto.EegResult;
-import com.noos.backend.eeg.dto.EegRawChunk;
 import com.noos.backend.eeg.dto.EegSession;
+import com.noos.backend.eeg.dto.EegWindowResult;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-
-import java.util.List;
 
 @Mapper
 public interface EegMapper {
@@ -19,7 +17,5 @@ public interface EegMapper {
 
     void insertEegResult(EegResult eegResult);
 
-    void insertEegRawChunk(EegRawChunk eegRawChunk);
-
-    List<EegRawChunk> selectEegRawChunksBySessionId(@Param("eegSessionId") Long eegSessionId);
+    void insertEegWindowResult(EegWindowResult eegWindowResult);
 }
