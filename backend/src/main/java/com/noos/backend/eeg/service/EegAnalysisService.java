@@ -32,6 +32,7 @@ public class EegAnalysisService {
 
     private static final Logger logger = LoggerFactory.getLogger(EegAnalysisService.class);
     private static final String ANALYSIS_VERSION = "recognition-v1";
+    private static final int MAX_RAW_ANALYSIS_CHUNKS = 48;
     private static final List<String> CONFIDENCE_AXES = List.of(
             "focus_readiness",
             "stress_load",
@@ -185,12 +186,31 @@ public class EegAnalysisService {
         }
 
         chunks.sort(Comparator.comparing(EegRawChunk::getChunkIndex, Comparator.nullsLast(Integer::compareTo)));
+        chunks = selectAnalysisChunks(chunks);
 
         List<Map<String, Object>> readings = new ArrayList<>();
         for (EegRawChunk chunk : chunks) {
             readings.addAll(decodeChunkSamples(chunk));
         }
         return readings;
+    }
+
+    private List<EegRawChunk> selectAnalysisChunks(List<EegRawChunk> chunks) {
+        if (chunks.size() <= MAX_RAW_ANALYSIS_CHUNKS) {
+            return chunks;
+        }
+
+        List<EegRawChunk> selected = new ArrayList<>();
+        for (int index = 0; index < MAX_RAW_ANALYSIS_CHUNKS; index += 1) {
+            int chunkIndex = (int) Math.floor(index * (chunks.size() - 1.0) / (MAX_RAW_ANALYSIS_CHUNKS - 1.0));
+            selected.add(chunks.get(chunkIndex));
+        }
+        logger.info(
+                "Selected {} of {} EEG raw chunks for recognition payload.",
+                selected.size(),
+                chunks.size()
+        );
+        return selected;
     }
 
     private List<Map<String, Object>> decodeChunkSamples(EegRawChunk chunk) {

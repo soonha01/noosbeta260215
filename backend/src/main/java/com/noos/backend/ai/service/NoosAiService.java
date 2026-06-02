@@ -124,6 +124,13 @@ public class NoosAiService {
     }
 
     public Map<String, Object> recognize(EegRecognitionRequest request, List<Map<String, Object>> rawReadings) {
+        boolean hasRawReadings = rawReadings != null && !rawReadings.isEmpty();
+        boolean hasSurveyContext = request.surveyContext() != null && !request.surveyContext().isEmpty();
+        String source = hasRawReadings ? "frontend-raw-chunk-upload" : "frontend-band-summary";
+        if (hasSurveyContext) {
+            source = source + "+survey";
+        }
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("session_type", "recognition");
         payload.put("device_type", request.deviceType() != null && !request.deviceType().isBlank() ? request.deviceType() : "Muse S Athena");
@@ -131,11 +138,14 @@ public class NoosAiService {
         payload.put("sample_rate_hz", request.sampleRateHz() != null ? request.sampleRateHz() : 256);
         payload.put("context", Map.of(
                 "measurement_duration_sec", request.measurementDurationSec() != null ? request.measurementDurationSec() : 0,
-                "source", rawReadings != null && !rawReadings.isEmpty() ? "frontend-raw-chunk-upload" : "frontend-band-summary"
+                "source", source
         ));
 
-        if (rawReadings != null && !rawReadings.isEmpty()) {
+        if (hasRawReadings) {
             payload.put("readings", rawReadings);
+        }
+        if (hasSurveyContext) {
+            payload.put("survey_context", request.surveyContext());
         }
 
         Map<String, Object> bandSummary = new LinkedHashMap<>();
