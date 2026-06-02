@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Apple, Chrome, Github } from 'lucide-react';
+import { Activity, Apple, BluetoothConnected, Chrome, Github } from 'lucide-react';
 import Grainient from '../../ui/effects/Grainient';
 import Stepper, { Step } from './Stepper';
 import BackButton from '../../ui/buttons/BackButton';
@@ -25,6 +25,7 @@ import {
   submitEegAnalysis,
   uploadEegRawReadingsChunk,
 } from '../../../lib/eegAnalysisApi';
+import { LIVE_MUSE_SESSION_STORAGE_KEY } from '../solar/travel/constants';
 import {
   buildFallbackCurrentStateFromBandAnalysis,
   requestDeviceTroubleshoot,
@@ -40,8 +41,8 @@ const RESULT_NEXT_STEP_MESSAGE =
   '원하시는 집중이나 감정상태를 행성을 선택하여 보다 나은 환경을 만들어보세요.';
 const CURRENT_STATE_STORAGE_KEY = 'noos_current_state';
 const DEVICE_CONNECTION_RESULT = {
-  title: 'Muse S Athena 연결 완료',
-  summary: '디바이스 연결 및 신호 확인이 완료되었습니다. Solar Explorer 진입 준비가 끝났습니다.',
+  title: 'Muse S Athena Live 준비 완료',
+  summary: '음악 세션에서 Muse EEG를 계속 측정하고 5분마다 음악 조정에 반영합니다.',
 };
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
@@ -67,6 +68,10 @@ const RAW_EEG_CHUNK_SAMPLE_COUNT = EEG_SAMPLE_RATE * RAW_EEG_CHUNK_DURATION_SEC;
 const EEG_UI_WINDOW_SEC = 12;
 const MAX_EEG_UI_BUFFER_SIZE = EEG_SAMPLE_RATE * EEG_UI_WINDOW_SEC;
 const EEG_UI_FLUSH_INTERVAL_MS = 50;
+const LIVE_MUSE_BASELINE_DURATION_SEC = 60;
+const LIVE_MUSE_ANALYSIS_INTERVAL_SEC = 300;
+const LIVE_MUSE_CROSSFADE_DURATION_SEC = 30;
+const LIVE_MUSE_FEEDBACK_CADENCE_SEC = 900;
 const NOOP_PLANET_SELECT = () => {};
 const formatMeasurementClock = (seconds) => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -105,6 +110,38 @@ const createSurveyContextPayload = (surveyResult, surveyAnswers, mode = 'survey'
   keyIndicators: surveyResult?.keyIndicators || [],
   canonicalState: surveyResult?.canonicalState || null,
 });
+
+const LIVE_MUSE_NEUTRAL_STATE = Object.freeze({
+  focus_readiness: 0.5,
+  stress_load: 0.45,
+  fatigue_risk: 0.35,
+  relaxation_level: 0.5,
+  cortical_arousal: 0.5,
+  mental_workload: 0.45,
+});
+
+const createLiveMuseSessionPayload = (createdAt, overrides = {}) => ({
+  enabled: true,
+  deviceType: 'Muse S Athena',
+  status: 'pending_player_connection',
+  createdAt,
+  baselineDurationSec: LIVE_MUSE_BASELINE_DURATION_SEC,
+  analysisIntervalSec: LIVE_MUSE_ANALYSIS_INTERVAL_SEC,
+  analysisWindowSec: LIVE_MUSE_ANALYSIS_INTERVAL_SEC,
+  rawChunkDurationSec: RAW_EEG_CHUNK_DURATION_SEC,
+  transitionMode: 'crossfade',
+  crossfadeDurationSec: LIVE_MUSE_CROSSFADE_DURATION_SEC,
+  feedbackCadenceSec: LIVE_MUSE_FEEDBACK_CADENCE_SEC,
+  ...overrides,
+});
+
+const saveLiveMuseSessionPreference = (payload) => {
+  try {
+    window.localStorage.setItem(LIVE_MUSE_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error('Failed to save live Muse session preference:', error);
+  }
+};
 
 const saveCurrentStateSnapshot = (payload) => {
   try {
@@ -151,6 +188,146 @@ const DeviceHelpTextarea = styled.textarea`
   line-height: 1.6;
   color: rgba(0, 0, 0, 0.92);
 `;
+
+const MuseLiveNotice = styled.div`
+  position: fixed;
+  left: 1.35rem;
+  top: ${({ $hasBack }) => ($hasBack ? '6.65rem' : '1.35rem')};
+  z-index: 13000;
+  min-width: min(320px, calc(100vw - 2.7rem));
+  max-width: min(380px, calc(100vw - 2.7rem));
+  padding: 0.86rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid ${({ $connected }) => ($connected ? 'rgba(126, 255, 199, 0.42)' : 'rgba(255, 255, 255, 0.2)')};
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.82), rgba(18, 22, 20, 0.72)),
+    ${({ $connected }) => ($connected ? 'rgba(28, 226, 154, 0.08)' : 'rgba(255, 255, 255, 0.06)')};
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px) saturate(130%);
+  display: grid;
+  gap: 0.42rem;
+  pointer-events: none;
+
+  .muse-notice-main {
+    display: flex;
+    align-items: center;
+    gap: 0.58rem;
+    min-width: 0;
+  }
+
+  .muse-notice-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    background: ${({ $connected }) => ($connected ? 'rgba(126, 255, 199, 0.16)' : 'rgba(255,255,255,0.1)')};
+    color: ${({ $connected }) => ($connected ? '#7effc7' : '#ffffff')};
+    box-shadow: ${({ $connected }) => ($connected ? '0 0 24px rgba(126,255,199,0.22)' : 'none')};
+  }
+
+  .muse-notice-copy {
+    min-width: 0;
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .muse-notice-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  .muse-notice-meta {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .muse-notice-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: ${({ $connected }) => ($connected ? '#7effc7' : '#ffffff')};
+    box-shadow: ${({ $connected }) => ($connected ? '0 0 16px rgba(126,255,199,0.85)' : '0 0 12px rgba(255,255,255,0.45)')};
+    animation: musePulse 1.3s ease-in-out infinite;
+  }
+
+  .muse-notice-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .muse-notice-chip {
+    min-height: 22px;
+    padding: 0 0.48rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  @keyframes musePulse {
+    0%, 100% {
+      transform: scale(0.9);
+      opacity: 0.72;
+    }
+    50% {
+      transform: scale(1.12);
+      opacity: 1;
+    }
+  }
+`;
+
+const MuseConnectionNotice = ({
+  status,
+  latestValue,
+  uploadStats,
+  sampleCount = 0,
+  hasBack = false,
+}) => {
+  const visible = status === 'connecting' || status === 'connected';
+  if (!visible) return null;
+
+  const connected = status === 'connected';
+  const formattedValue = Number.isFinite(latestValue) ? `${latestValue.toFixed(1)}uV` : 'stream 대기';
+
+  return (
+    <MuseLiveNotice $connected={connected} $hasBack={hasBack}>
+      <div className="muse-notice-main">
+        <span className="muse-notice-icon">
+          {connected ? <BluetoothConnected size={16} /> : <Activity size={16} />}
+        </span>
+        <div className="muse-notice-copy">
+          <p className="muse-notice-title">
+            {connected ? 'Muse S Athena 연결됨' : 'Muse S Athena 연결 중'}
+          </p>
+          <p className="muse-notice-meta">
+            {connected ? '실시간 EEG 스트리밍을 유지합니다.' : 'Bluetooth 페어링과 스트림 초기화를 진행 중입니다.'}
+          </p>
+        </div>
+        <span className="muse-notice-pulse" />
+      </div>
+      {connected && (
+        <div className="muse-notice-stats">
+          <span className="muse-notice-chip">{formattedValue}</span>
+          <span className="muse-notice-chip">{uploadStats?.chunkCount || 0} chunks</span>
+          <span className="muse-notice-chip">{sampleCount || uploadStats?.sampleCount || 0} samples</span>
+        </div>
+      )}
+    </MuseLiveNotice>
+  );
+};
 const SURVEY_ITEMS = STATE_SURVEY_SECTIONS.flatMap((section) =>
   section.questions.map((question) => ({
     ...question,
@@ -401,6 +578,9 @@ const Login = ({ onBack }) => {
   const [deviceHelpText, setDeviceHelpText] = useState('');
   const [deviceHelpResponse, setDeviceHelpResponse] = useState(null);
   const [isDeviceHelpLoading, setIsDeviceHelpLoading] = useState(false);
+  const [liveMuseConnectionStatus, setLiveMuseConnectionStatus] = useState('idle');
+  const [liveMuseConnectionError, setLiveMuseConnectionError] = useState('');
+  const [liveMuseConnectedAt, setLiveMuseConnectedAt] = useState(null);
 
   const warpExitTimerRef = useRef(null);
   const museClientRef = useRef(null);
@@ -1019,11 +1199,101 @@ const handleSkipLoginForTesting = () => {
     }
   };
 
+  const startLiveMuseConnection = async () => {
+    if (isTransitioning || liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected') {
+      return;
+    }
+
+    resetMuseStream();
+    setLiveMuseConnectionError('');
+    setLiveMuseConnectionStatus('connecting');
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const client = await createMuseClient({
+        mode: params.get('muse') === 'mock' ? 'mock' : 'web',
+      });
+      museClientRef.current = client;
+
+      await client.connect();
+      await client.start();
+
+      const connectedAt = new Date().toISOString();
+      eegSessionMeasuredAtRef.current = connectedAt;
+      setLiveMuseConnectedAt(connectedAt);
+
+      try {
+        const startedSession = await startEegSession({
+          deviceType: 'Muse S Athena',
+          measuredAt: connectedAt,
+        });
+        const eegSessionId = startedSession?.eegSessionId ?? null;
+        eegSessionIdRef.current = eegSessionId;
+        setEegUploadStats((prev) => ({
+          ...prev,
+          eegSessionId,
+        }));
+      } catch (sessionError) {
+        console.warn('Failed to start live Muse EEG upload session. Continuing with local stream:', sessionError);
+      }
+
+      const maxEegBufferSize = getMaxLocalEegBufferSize(
+        LIVE_MUSE_BASELINE_DURATION_SEC + LIVE_MUSE_ANALYSIS_INTERVAL_SEC
+      );
+
+      museSubscriptionRef.current = client.subscribe((reading) => {
+        collectedSampleCountRef.current += 1;
+        eegBufferRef.current.push(reading);
+
+        if (rawChunkBaseTimestampRef.current === null) {
+          rawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
+            ? Number(reading.timestamp)
+            : Date.now();
+        }
+
+        rawChunkBufferRef.current.push(reading);
+        flushRawEegChunk(false);
+
+        if (eegBufferRef.current.length > maxEegBufferSize) {
+          eegBufferRef.current.splice(0, eegBufferRef.current.length - maxEegBufferSize);
+        }
+
+        scheduleEegFlush();
+      });
+
+      const liveMuseSession = createLiveMuseSessionPayload(connectedAt, {
+        status: 'connected',
+        connectedAt,
+        eegSessionId: eegSessionIdRef.current,
+      });
+      saveLiveMuseSessionPreference(liveMuseSession);
+      setLiveMuseConnectionStatus('connected');
+
+      if (import.meta.env.DEV) {
+        console.debug('Muse S Athena live session connected');
+      }
+    } catch (error) {
+      console.error('Muse live connection failed:', error);
+      resetMuseStream();
+      setLiveMuseConnectionStatus('error');
+      setLiveMuseConnectionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const handleMuseChoice = async(choice) => {
     if (isTransitioning) return;
 
     if (choice === 'yes') {
-      setAuthStage('measurement-duration');
+      setIsTransitioning(true);
+      resetMuseStream();
+      setLiveMuseConnectionStatus('idle');
+      setLiveMuseConnectionError('');
+      setLiveMuseConnectedAt(null);
+      setSurveyAiExplanation(null);
+      window.setTimeout(() => {
+        setAuthStage('device-live-ready');
+        setIsTransitioning(false);
+      }, 520);
       return;
     }
 
@@ -1076,7 +1346,34 @@ const handleSkipLoginForTesting = () => {
 
   const handleContinueToSolarExplorer = () => {
     const now = new Date().toISOString();
-    if (authStage === 'analysis-result') {
+    if (authStage === 'device-live-ready') {
+      if (liveMuseConnectionStatus !== 'connected') {
+        setLiveMuseConnectionError('Muse Bluetooth 연결을 먼저 완료해 주세요.');
+        return;
+      }
+
+      flushRawEegChunk(true);
+      const liveMuseSession = createLiveMuseSessionPayload(liveMuseConnectedAt || now, {
+        status: 'connected',
+        connectedAt: liveMuseConnectedAt || now,
+        eegSessionId: eegSessionIdRef.current,
+        sampleCount: collectedSampleCountRef.current,
+        chunkCount: eegUploadStats.chunkCount,
+      });
+      saveLiveMuseSessionPreference(liveMuseSession);
+      saveCurrentStateSnapshot({
+        source: 'muse-live',
+        sourceLabel: 'Muse S Athena 실시간 측정',
+        title: DEVICE_CONNECTION_RESULT.title,
+        summary: DEVICE_CONNECTION_RESULT.summary,
+        conclusion: '음악 세션 중 최근 5분 EEG 윈도우를 반복 분석해 음악 전환에 반영합니다.',
+        canonicalState: LIVE_MUSE_NEUTRAL_STATE,
+        dominantState: 'live-session-pending',
+        recognitionResult: null,
+        liveMuseSession,
+        measuredAt: now,
+      });
+    } else if (authStage === 'analysis-result') {
       saveCurrentStateSnapshot({
         source: 'survey',
         sourceLabel: '설문 기반 측정',
@@ -1123,6 +1420,16 @@ const handleSkipLoginForTesting = () => {
     }, WARP_EXIT_FADE_DURATION_MS);
   };
 
+  const liveMuseNotice = (
+    <MuseConnectionNotice
+      status={liveMuseConnectionStatus}
+      latestValue={latestEegValue}
+      uploadStats={eegUploadStats}
+      sampleCount={eegData.length}
+      hasBack={Boolean(onBack) && !showSolarExplorer}
+    />
+  );
+
   if (showSolarExplorer) {
     return (
       <motion.div
@@ -1138,12 +1445,18 @@ const handleSkipLoginForTesting = () => {
         <AnimatePresence>
           {showSolarEntryWarp && <SolarEntryWarpOverlay />}
         </AnimatePresence>
+        {liveMuseNotice}
       </motion.div>
     );
   }
 
   if (authStage === 'warp-transition') {
-    return <WarpTransitionScene />;
+    return (
+      <>
+        <WarpTransitionScene />
+        {liveMuseNotice}
+      </>
+    );
   }
 
   if ((authStage === 'survey' || authStage === 'muse-survey') && currentSurveyItem) {
@@ -1255,6 +1568,7 @@ const handleSkipLoginForTesting = () => {
 
   return (
     <PrismStageShell>
+      {liveMuseNotice}
       <LoginContainer>
         {onBack && (
           <BackButtonWrapper>
@@ -1464,7 +1778,7 @@ const handleSkipLoginForTesting = () => {
                     <p className="flow-kicker">Device Check</p>
                     <h2 className="flow-title">"Muse S Athena"를 보유하고 계신가요?</h2>
                     <p className="flow-description">
-                      NOOS의 집중/감정 분석을 위해 장치 보유 여부를 먼저 확인합니다.
+                      Muse가 있으면 음악 세션 중 뇌파를 계속 측정하고, 최근 5분 상태에 맞춰 음악을 자연스럽게 조정합니다.
                     </p>
                     <div
                       style={{
@@ -1500,6 +1814,65 @@ const handleSkipLoginForTesting = () => {
                     <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
                       Muse 연결 도움받기
                     </button>
+                  </div>
+                )}
+
+                {authStage === 'device-live-ready' && (
+                  <div className="flow-card flow-card-device flow-card-device-complete">
+                    <p className="flow-kicker">Muse Live Session</p>
+                    <h2 className="flow-title">Muse S Athena를 먼저 연결합니다.</h2>
+                    <p className="flow-description">
+                      이 화면에서 Bluetooth 페어링을 완료합니다. 연결되면 실시간 EEG 스트리밍을 유지하고,
+                      음악 세션에서는 1분 기준선 이후 5분마다 상태를 분석해 유지, 약한 조정, 크로스페이드 전환 중 하나를 적용합니다.
+                    </p>
+                    <div style={{ width: 'min(100%, 520px)', margin: '1.25rem 0 0', display: 'grid', gap: '0.65rem' }}>
+                      <div className="connection-complete-badge" aria-hidden="true" style={{ position: 'static', transform: 'none' }}>
+                        <span className="connection-complete-dot" />
+                        <span className="connection-complete-label">
+                          {liveMuseConnectionStatus === 'connected'
+                            ? `connected · ${latestEegValue !== null ? `${latestEegValue.toFixed(1)}uV` : 'streaming'}`
+                            : liveMuseConnectionStatus === 'connecting'
+                            ? 'bluetooth pairing · stream sync'
+                            : 'baseline 01:00 · analysis 05:00 · crossfade 00:30'}
+                        </span>
+                      </div>
+                      {liveMuseConnectionError && (
+                        <p style={{ margin: 0, color: 'rgba(255, 146, 146, 0.88)', fontSize: 12, lineHeight: 1.5 }}>
+                          {liveMuseConnectionError}
+                        </p>
+                      )}
+                      <div className="binary-actions" style={{ gridTemplateColumns: '1fr' }}>
+                        <button
+                          type="button"
+                          className={`option-button ${liveMuseConnectionStatus === 'connected' ? 'option-yes' : ''}`}
+                          onClick={startLiveMuseConnection}
+                          disabled={liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected'}
+                        >
+                          {liveMuseConnectionStatus === 'connected'
+                            ? 'Muse 연결 완료'
+                            : liveMuseConnectionStatus === 'connecting'
+                            ? 'Muse 연결 중...'
+                            : 'Muse Bluetooth 연결'}
+                        </button>
+                      </div>
+                      <div className="binary-actions">
+                        <button type="button" className="option-button option-no" onClick={() => setAuthStage('device-question')}>
+                          이전
+                        </button>
+                        <button
+                          type="button"
+                          className="option-button option-yes"
+                          onClick={handleContinueToSolarExplorer}
+                          disabled={liveMuseConnectionStatus !== 'connected'}
+                          style={{
+                            opacity: liveMuseConnectionStatus === 'connected' ? 1 : 0.42,
+                            cursor: liveMuseConnectionStatus === 'connected' ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Solar Explorer 이동
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 

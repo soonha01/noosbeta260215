@@ -136,10 +136,12 @@ public class NoosAiService {
         payload.put("device_type", request.deviceType() != null && !request.deviceType().isBlank() ? request.deviceType() : "Muse S Athena");
         payload.put("measured_at", request.measuredAt());
         payload.put("sample_rate_hz", request.sampleRateHz() != null ? request.sampleRateHz() : 256);
-        payload.put("context", Map.of(
-                "measurement_duration_sec", request.measurementDurationSec() != null ? request.measurementDurationSec() : 0,
-                "source", source
-        ));
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("measurement_duration_sec", request.measurementDurationSec() != null ? request.measurementDurationSec() : 0);
+        context.put("analysis_window_sec", request.analysisWindowSec() != null ? request.analysisWindowSec() : 0);
+        context.put("analysis_mode", request.analysisMode() != null && !request.analysisMode().isBlank() ? request.analysisMode() : "single-measurement");
+        context.put("source", source);
+        payload.put("context", context);
 
         if (hasRawReadings) {
             payload.put("readings", rawReadings);

@@ -247,6 +247,75 @@ export const FeedbackDialog = ({
   );
 };
 
+export const LiveFeedbackDialog = ({
+  open,
+  value,
+  onChange,
+  onSubmit,
+  onClose,
+  accentColor,
+  adaptiveMusicState,
+}) => {
+  const choices = [
+    { id: 'good', label: '좋아요' },
+    { id: 'keep', label: '유지' },
+    { id: 'change', label: '바꿔줘' },
+  ];
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <ModalLayer
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.28 }}
+        >
+          <ModalCard
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <ModalTitle $accent={accentColor}>지금 흐름이 괜찮나요?</ModalTitle>
+            <ModalBody $accent={accentColor}>
+              짧은 피드백은 Muse EEG 기반 음악 조정을 더 정확하게 맞추는 데 사용됩니다.
+              {adaptiveMusicState?.label ? ` 최근 조정: ${adaptiveMusicState.label}` : ''}
+            </ModalBody>
+            <ModalButtons>
+              {choices.map((choice) => (
+                <ModalGhostButton
+                  key={choice.id}
+                  type="button"
+                  $accent={accentColor}
+                  onClick={() => onChange(choice.id)}
+                  style={{
+                    borderColor: value === choice.id ? `${accentColor || '#ffffff'}99` : undefined,
+                    background: value === choice.id ? `${accentColor || '#ffffff'}1f` : undefined,
+                  }}
+                >
+                  {choice.label}
+                </ModalGhostButton>
+              ))}
+            </ModalButtons>
+            <ModalButtons>
+              <ModalPrimaryButton type="button" disabled={!value} $accent={accentColor} onClick={onSubmit}>
+                반영하기
+              </ModalPrimaryButton>
+              <ModalGhostButton type="button" $accent={accentColor} onClick={onClose}>
+                나중에
+              </ModalGhostButton>
+            </ModalButtons>
+            <CloseModalButton type="button" $accent={accentColor} onClick={onClose}>
+              <X size={14} />
+            </CloseModalButton>
+          </ModalCard>
+        </ModalLayer>
+      )}
+    </AnimatePresence>
+  );
+};
+
 const pillStyle = (isPrimary, accentColor) => ({
   minHeight: 28,
   padding: '0 0.72rem',

@@ -7,6 +7,8 @@ public record EegRecognitionRequest(
         String deviceType,
         String measuredAt,
         Integer measurementDurationSec,
+        Integer analysisWindowSec,
+        String analysisMode,
         Integer sampleRateHz,
         Integer sampleCount,
         String dominantBand,

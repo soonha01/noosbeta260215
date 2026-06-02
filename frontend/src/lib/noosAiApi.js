@@ -20,7 +20,7 @@ const parseResponseBody = async (response) => {
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const MIN_JOURNEY_DURATION_SEC = 10;
-const MAX_JOURNEY_DURATION_SEC = 120;
+const MAX_JOURNEY_DURATION_SEC = 600;
 
 const normalizeJourneyDurationSec = (value, fallback = 90) => {
   const numeric = Number(value);
