@@ -19,6 +19,16 @@ const parseResponseBody = async (response) => {
 };
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+const MIN_JOURNEY_DURATION_SEC = 10;
+const MAX_JOURNEY_DURATION_SEC = 120;
+
+const normalizeJourneyDurationSec = (value, fallback = 90) => {
+  const numeric = Number(value);
+  const fallbackNumeric = Number(fallback);
+  const safeValue = Number.isFinite(numeric) ? numeric : fallbackNumeric;
+  const rounded = Math.round(Number.isFinite(safeValue) ? safeValue : 90);
+  return Math.min(MAX_JOURNEY_DURATION_SEC, Math.max(MIN_JOURNEY_DURATION_SEC, rounded));
+};
 
 const createBandMap = (analysis) =>
   Object.fromEntries((analysis?.bandPowers || []).map((band) => [band.key, Number(band.percent || 0) / 100]));
@@ -200,13 +210,14 @@ export const generateJourneyBundle = async ({
   intentContext = null,
   signal,
 }) => {
+  const normalizedDurationSec = normalizeJourneyDurationSec(durationSec);
   const responseBody = await postJson(
     '/api/ai/intervention/music',
     {
       planet,
       currentState,
       recognitionResult,
-      durationSec,
+      durationSec: normalizedDurationSec,
       candidateCountOverride,
       feedbackHistory,
       memoText,
@@ -230,7 +241,7 @@ export const generateJourneyBundle = async ({
     planet,
     currentState,
     recognitionResult,
-    durationSec,
+    durationSec: normalizedDurationSec,
     intentContext,
     signal,
   });

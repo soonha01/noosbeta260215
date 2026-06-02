@@ -302,7 +302,7 @@ public class NoosAiService {
         coachPayload.put("planet", request.planet());
         coachPayload.put("intentText", stringValue(intentContext.get("intentText")));
         coachPayload.put("recommendation", mapValue(intentContext.get("recommendation")));
-        coachPayload.put("recommendedDurationSec", request.durationSec() != null ? request.durationSec() : 90);
+        coachPayload.put("recommendedDurationSec", durationSec);
         Map<String, Object> llmSessionCoach = invokeGemmaTaskSafely("session-coach", coachPayload);
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -628,13 +628,7 @@ public class NoosAiService {
 
     private int normalizeInterventionDuration(Integer requestedDurationSec) {
         int durationSec = requestedDurationSec != null ? requestedDurationSec : DEFAULT_INTERVENTION_DURATION_SEC;
-        if (durationSec < MIN_INTERVENTION_DURATION_SEC || durationSec > MAX_INTERVENTION_DURATION_SEC) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "durationSec must be between " + MIN_INTERVENTION_DURATION_SEC + " and " + MAX_INTERVENTION_DURATION_SEC + " seconds"
-            );
-        }
-        return durationSec;
+        return Math.max(MIN_INTERVENTION_DURATION_SEC, Math.min(MAX_INTERVENTION_DURATION_SEC, durationSec));
     }
 
     private Map<String, Object> maybeStartWizLighting(Map<String, Object> interventionResult) {
