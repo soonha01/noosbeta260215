@@ -1002,6 +1002,7 @@ public class NoosAiService {
             env.put("ACESTEP_PORT", String.valueOf(port));
             env.put("ACESTEP_NO_INIT", "true");
             env.put("ACESTEP_INIT_LLM", "false");
+            env.put("ACESTEP_IDLE_UNLOAD_SEC", "300");
             env.put("TOKENIZERS_PARALLELISM", "false");
             if (isAppleSiliconMac()) {
                 env.putIfAbsent("ACESTEP_LM_BACKEND", "mlx");

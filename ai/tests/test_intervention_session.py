@@ -224,6 +224,7 @@ class InterventionSessionTests(unittest.TestCase):
         command = build_local_server_command()
         self.assertIn("acestep-api", command["command"])
         self.assertIn("ACE-Step-1.5", command["cwd"])
+        self.assertEqual("300", command["env"]["ACESTEP_IDLE_UNLOAD_SEC"])
         if platform.system() == "Darwin" and platform.machine() == "arm64":
             self.assertEqual(command["env"]["ACESTEP_OFFLOAD_TO_CPU"], "false")
             self.assertEqual(command["env"]["ACESTEP_OFFLOAD_DIT_TO_CPU"], "false")

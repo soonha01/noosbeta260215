@@ -1,4 +1,4 @@
-import { buildNoosLiteRtFallbackResponse, runNoosLiteRtTask, warmNoosLiteRtGemma } from './noosLiteRtGemma';
+import { buildNoosLiteRtFallbackResponse, runNoosLiteRtTask } from './noosLiteRtGemma';
 import { API_BASE_URL } from './env';
 
 const parseResponseBody = async (response) => {
@@ -116,30 +116,27 @@ export const stopWizLighting = async ({ signal, keepalive = false } = {}) => {
 };
 
 const runCopilotTask = async ({ task, payload, path, signal, errorMessage }) => {
-  let localError = null;
-
-  try {
-    return await runNoosLiteRtTask(task, payload, { signal });
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw error;
-    }
-    localError = error;
-    console.warn(`[NOOS LiteRT] ${task} local execution failed:`, error);
-  }
-
   try {
     return await postJson(path, payload, signal, errorMessage);
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
     }
-    console.warn(`[NOOS Backend] ${task} fallback failed:`, error);
-    return buildNoosLiteRtFallbackResponse(
-      task,
-      payload,
-      `${localError?.message || 'LiteRT unavailable'} | ${error?.message || 'Backend unavailable'}`
-    );
+    console.warn(`[NOOS Backend] ${task} remote Gemma failed:`, error);
+
+    try {
+      return await runNoosLiteRtTask(task, payload, { signal });
+    } catch (localError) {
+      if (isAbortError(localError)) {
+        throw localError;
+      }
+      console.warn(`[NOOS LiteRT] ${task} browser fallback failed:`, localError);
+      return buildNoosLiteRtFallbackResponse(
+        task,
+        payload,
+        `${error?.message || 'Backend unavailable'} | ${localError?.message || 'LiteRT unavailable'}`
+      );
+    }
   }
 };
 
@@ -377,7 +374,10 @@ export const requestDeviceTroubleshoot = async ({
     errorMessage: 'Device troubleshoot failed',
   });
 
-export const warmNoosLocalCopilot = () => warmNoosLiteRtGemma();
+export const warmNoosLocalCopilot = async () => ({
+  ready: true,
+  engine: 'remote-gemma-backend',
+});
 
 export const buildLightingPreviewFromIntervention = (bundle) => {
   const interventionResult = bundle?.interventionResult || {};

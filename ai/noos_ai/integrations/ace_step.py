@@ -52,6 +52,7 @@ def build_local_server_command(
     repo_root = get_vendor_repo_root()
     env = os.environ.copy()
     env["ACESTEP_NO_INIT"] = "true" if no_init else "false"
+    env.setdefault("ACESTEP_IDLE_UNLOAD_SEC", "300")
     env["TOKENIZERS_PARALLELISM"] = "false"
     if init_llm is not None:
         env["ACESTEP_INIT_LLM"] = "true" if init_llm else "false"

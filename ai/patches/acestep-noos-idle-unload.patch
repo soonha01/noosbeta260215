@@ -1,0 +1,740 @@
+diff --git a/acestep/api/http/model_init_service.py b/acestep/api/http/model_init_service.py
+index 73e1bb8..e26c237 100644
+--- a/acestep/api/http/model_init_service.py
++++ b/acestep/api/http/model_init_service.py
+@@ -106,24 +106,32 @@ def initialize_models_for_request(
+     compile_model = env_bool("ACESTEP_COMPILE_MODEL", False)
+     device = os.getenv("ACESTEP_DEVICE", "auto")
+ 
+-    ensure_model_downloaded(target_model, checkpoint_dir)
+-    ensure_model_downloaded("vae", checkpoint_dir)
+-
+-    status_msg, ok = handler.initialize_service(
+-        project_root=project_root,
+-        config_path=target_model,
+-        device=device,
+-        use_flash_attention=use_flash_attention,
+-        compile_model=compile_model,
+-        offload_to_cpu=offload_to_cpu,
+-        offload_dit_to_cpu=offload_dit_to_cpu,
+-    )
+-    if not ok:
+-        setattr(app_state, error_attr, status_msg)
+-        raise RuntimeError(f"DiT init failed for slot {resolved_slot}: {status_msg}")
++    current_model = get_model_name(current_config or "")
++    target_model_name = get_model_name(target_model) or target_model
++    dit_already_initialized = bool(getattr(app_state, init_attr, False)) and current_model == target_model_name
++
++    if not dit_already_initialized:
++        ensure_model_downloaded(target_model, checkpoint_dir)
++        ensure_model_downloaded("vae", checkpoint_dir)
++
++        status_msg, ok = handler.initialize_service(
++            project_root=project_root,
++            config_path=target_model,
++            device=device,
++            use_flash_attention=use_flash_attention,
++            compile_model=compile_model,
++            offload_to_cpu=offload_to_cpu,
++            offload_dit_to_cpu=offload_dit_to_cpu,
++        )
++        if not ok:
++            setattr(app_state, error_attr, status_msg)
++            raise RuntimeError(f"DiT init failed for slot {resolved_slot}: {status_msg}")
++
++        setattr(app_state, config_attr, target_model)
++        setattr(app_state, init_attr, True)
++    else:
++        target_model = current_model
+ 
+-    setattr(app_state, config_attr, target_model)
+-    setattr(app_state, init_attr, True)
+     setattr(app_state, error_attr, None)
+ 
+     loaded_lm_model: Optional[str] = None
+diff --git a/acestep/api/http/model_init_service_test.py b/acestep/api/http/model_init_service_test.py
+index 199316e..3c595e7 100644
+--- a/acestep/api/http/model_init_service_test.py
++++ b/acestep/api/http/model_init_service_test.py
+@@ -11,9 +11,13 @@ from acestep.api.http.model_init_service import initialize_models_for_request
+ class _FakeHandler:
+     """Fake DiT handler providing initialize_service contract."""
+ 
++    def __init__(self):
++        self.init_calls = 0
++
+     def initialize_service(self, **_kwargs):
+         """Return ``("ok", True)`` to emulate successful DiT initialization."""
+ 
++        self.init_calls += 1
+         return "ok", True
+ 
+ 
+@@ -128,6 +132,40 @@ class ModelInitServiceTests(unittest.TestCase):
+         self.assertFalse(state._llm_initialized)
+         self.assertEqual("llm-failed", state._llm_init_error)
+ 
++    def test_init_llm_skips_reloading_same_initialized_dit(self):
++        """Initializing an LM should not reload an already-active DiT model."""
++
++        handler = _FakeHandler()
++        state = SimpleNamespace(
++            handler=handler,
++            llm_handler=_FakeLlm(),
++            _llm_init_lock=threading.Lock(),
++            _config_path="acestep-v15-turbo",
++            _initialized=True,
++            _init_error="previous",
++            _llm_initialized=False,
++            _llm_init_error=None,
++            _llm_lazy_load_disabled=True,
++        )
++
++        with mock.patch("acestep.api.http.model_init_service.os.makedirs"):
++            result = initialize_models_for_request(
++                app_state=state,
++                model_name="acestep-v15-turbo",
++                init_llm=True,
++                requested_lm_model_path="acestep-5Hz-lm-1.7B",
++                get_project_root=lambda: "/tmp/non-existent",
++                get_model_name=lambda p: str(p).split("/")[-1].split("\\")[-1],
++                ensure_model_downloaded=lambda *_: "",
++                env_bool=lambda *_: False,
++            )
++
++        self.assertEqual(0, handler.init_calls)
++        self.assertEqual("acestep-v15-turbo", result["loaded_model"])
++        self.assertEqual("acestep-5Hz-lm-1.7B", result["loaded_lm_model"])
++        self.assertTrue(state._llm_initialized)
++        self.assertIsNone(state._init_error)
++
+     def test_slot1_default_uses_primary_handler(self):
+         """Slot 1 (default) should initialize the primary handler and set _config_path."""
+ 
+diff --git a/acestep/api/http/model_service_routes.py b/acestep/api/http/model_service_routes.py
+index c61a6a5..121ce96 100644
+--- a/acestep/api/http/model_service_routes.py
++++ b/acestep/api/http/model_service_routes.py
+@@ -11,6 +11,11 @@ from fastapi import Depends, FastAPI
+ from pydantic import BaseModel, Field
+ 
+ from acestep.api.http.model_init_service import initialize_models_for_request
++from acestep.api.model_unload_runtime import (
++    cancel_ace_step_idle_unload,
++    schedule_ace_step_idle_unload,
++    unload_ace_step_models,
++)
+ from acestep.constants import TASK_TYPES_BASE, TASK_TYPES_TURBO
+ 
+ 
+@@ -148,14 +153,16 @@ def register_model_service_routes(
+         """Health check endpoint for service status."""
+ 
+         inventory = _collect_model_inventory(app, get_project_root, get_model_name)
++        models_initialized = bool(getattr(app.state, "_initialized", False))
+         return wrap_response(
+             {
+                 "status": "ok",
+                 "service": "ACE-Step API",
+                 "version": "1.0",
+-                "models_initialized": bool(getattr(app.state, "_initialized", False)),
++                "models_initialized": models_initialized,
++                "model_loaded": models_initialized,
+                 "llm_initialized": inventory["llm_initialized"],
+-                "loaded_model": inventory["default_model"],
++                "loaded_model": inventory["default_model"] if models_initialized else None,
+                 "loaded_lm_model": inventory["loaded_lm_model"],
+             }
+         )
+@@ -192,6 +199,7 @@ def register_model_service_routes(
+     async def init_model(request: InitModelRequest, _: None = Depends(verify_api_key)):
+         """Initialize or switch DiT/LM models on demand."""
+ 
++        await cancel_ace_step_idle_unload(app.state)
+         async with app.state._init_lock:
+             loop = asyncio.get_running_loop()
+ 
+@@ -211,6 +219,7 @@ def register_model_service_routes(
+                     ),
+                 )
+                 inventory = _collect_model_inventory(app, get_project_root, get_model_name)
++                await schedule_ace_step_idle_unload(app.state)
+                 return wrap_response(
+                     {
+                         "message": "Model initialization completed",
+@@ -229,3 +238,21 @@ def register_model_service_routes(
+                 return wrap_response(None, code=500, error=f"Model initialization failed: {msg}")
+             except Exception as exc:
+                 return wrap_response(None, code=500, error=f"Model initialization failed: {str(exc)}")
++
++    @app.post("/v1/unload")
++    async def unload_model(force: bool = False, _: None = Depends(verify_api_key)):
++        """Unload DiT/LM model weights while keeping the API process running."""
++
++        await cancel_ace_step_idle_unload(app.state)
++        async with app.state._init_lock:
++            loop = asyncio.get_running_loop()
++            try:
++                result = await loop.run_in_executor(
++                    app.state.executor,
++                    lambda: unload_ace_step_models(app.state, force=force),
++                )
++                if result.get("reason") == "busy":
++                    return wrap_response(result, code=409, error="ACE-Step is busy")
++                return wrap_response(result)
++            except Exception as exc:
++                return wrap_response(None, code=500, error=f"Model unload failed: {str(exc)}")
+diff --git a/acestep/api/http/model_service_routes_test.py b/acestep/api/http/model_service_routes_test.py
+index f4c746a..023a9ec 100644
+--- a/acestep/api/http/model_service_routes_test.py
++++ b/acestep/api/http/model_service_routes_test.py
+@@ -61,14 +61,32 @@ class ModelServiceRoutesTests(unittest.TestCase):
+         app.state._initialized2 = False
+         app.state._initialized3 = False
+         app.state._llm_initialized = True
+-        app.state.llm_handler = SimpleNamespace(last_init_params={"lm_model_path": "acestep-5Hz-lm-1.7B"})
++        app.state.llm_handler = SimpleNamespace(
++            last_init_params={"lm_model_path": "acestep-5Hz-lm-1.7B"},
++            llm_initialized=True,
++            unload=mock.MagicMock(),
++        )
+         app.state._llm_lazy_load_disabled = False
+         app.state._init_lock = asyncio.Lock()
+         app.state.executor = None
+         app.state.stats_lock = asyncio.Lock()
+         app.state.avg_job_seconds = 3.5
+         app.state.job_queue = queue.Queue()
+-        app.state.handler = SimpleNamespace()
++        app.state.handler = SimpleNamespace(
++            model=object(),
++            config=object(),
++            vae=object(),
++            text_encoder=object(),
++            text_tokenizer=object(),
++            silence_latent=object(),
++            reward_model=object(),
++            lora_loaded=True,
++            use_lora=True,
++            _empty_cache=mock.MagicMock(),
++        )
++        app.state._active_generation_jobs = 0
++        app.state._active_generation_jobs_lock = asyncio.Lock()
++        app.state._ace_idle_unload_task = None
+         app.state._llm_init_lock = mock.MagicMock()
+         register_model_service_routes(
+             app=app,
+@@ -117,6 +135,25 @@ class ModelServiceRoutesTests(unittest.TestCase):
+         self.assertEqual(500, result["code"])
+         self.assertIn("Model initialization failed", result["error"])
+ 
++    def test_unload_route_releases_models_and_keeps_server_state(self):
++        """Unload endpoint should release loaded DiT/LM handles without stopping the API."""
++
++        app = self._build_app()
++        endpoint = _get_endpoint(app, "/v1/unload", "POST")
++
++        result = asyncio.run(endpoint(False, None))
++
++        self.assertEqual(200, result["code"])
++        self.assertTrue(result["data"]["unloaded"])
++        self.assertIn(1, result["data"]["slots"])
++        self.assertFalse(app.state._initialized)
++        self.assertFalse(app.state._llm_initialized)
++        self.assertIsNone(app.state.handler.model)
++        self.assertIsNone(app.state.handler.vae)
++        self.assertFalse(app.state.handler.use_lora)
++        app.state.handler._empty_cache.assert_called_once()
++        app.state.llm_handler.unload.assert_called_once()
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/acestep/api/job_execution_runtime.py b/acestep/api/job_execution_runtime.py
+index ed3d477..026ebf9 100644
+--- a/acestep/api/job_execution_runtime.py
++++ b/acestep/api/job_execution_runtime.py
+@@ -7,6 +7,8 @@ import time
+ import traceback
+ from typing import Any, Awaitable, Callable
+ 
++from acestep.api.model_unload_runtime import mark_ace_step_job_finished, mark_ace_step_job_started
++
+ 
+ async def run_one_job_runtime(
+     *,
+@@ -46,76 +48,81 @@ async def run_one_job_runtime(
+ 
+     job_store = app_state.job_store
+     executor = app_state.executor
++    selected_handler = None
+ 
+-    await ensure_models_initialized_fn(app_state)
+-    job_store.mark_running(job_id)
+-    update_progress_job_cache_fn(
+-        app_state=app_state,
+-        store=store,
+-        job_id=job_id,
+-        progress=0.01,
+-        stage="running",
+-        map_status=map_status,
+-        result_key_prefix=result_key_prefix,
+-        result_expire_seconds=result_expire_seconds,
+-    )
+-
+-    selected_handler, selected_model_name = select_generation_handler_fn(
+-        app_state=app_state,
+-        requested_model=req.model,
+-        get_model_name=get_model_name,
+-        job_id=job_id,
+-        log_fn=log_fn,
+-    )
+-
+-    def _blocking_generate() -> dict[str, Any]:
+-        return build_blocking_result_fn(selected_handler, selected_model_name)
+-
+-    t0 = time.time()
++    await mark_ace_step_job_started(app_state)
+     try:
+-        loop = asyncio.get_running_loop()
+-        result = await loop.run_in_executor(executor, _blocking_generate)
+-        job_store.mark_succeeded(job_id, result)
+-        update_terminal_job_cache_fn(
++        await ensure_models_initialized_fn(app_state)
++        job_store.mark_running(job_id)
++        update_progress_job_cache_fn(
+             app_state=app_state,
+             store=store,
+             job_id=job_id,
+-            result=result,
+-            status="succeeded",
++            progress=0.01,
++            stage="running",
+             map_status=map_status,
+             result_key_prefix=result_key_prefix,
+             result_expire_seconds=result_expire_seconds,
+         )
+-    except Exception as exc:
+-        error_traceback = traceback.format_exc()
+-        log_fn(f"[API Server] Job {job_id} FAILED: {exc}")
+-        log_fn(f"[API Server] Traceback:\n{error_traceback}")
+-        job_store.mark_failed(job_id, error_traceback)
+-        update_terminal_job_cache_fn(
++
++        selected_handler, selected_model_name = select_generation_handler_fn(
+             app_state=app_state,
+-            store=store,
++            requested_model=req.model,
++            get_model_name=get_model_name,
+             job_id=job_id,
+-            result=None,
+-            status="failed",
+-            map_status=map_status,
+-            result_key_prefix=result_key_prefix,
+-            result_expire_seconds=result_expire_seconds,
++            log_fn=log_fn,
+         )
+-    finally:
++
++        def _blocking_generate() -> dict[str, Any]:
++            return build_blocking_result_fn(selected_handler, selected_model_name)
++
++        t0 = time.time()
+         try:
+-            if hasattr(selected_handler, "_empty_cache"):
+-                selected_handler._empty_cache()
+-            else:
+-                import torch
++            loop = asyncio.get_running_loop()
++            result = await loop.run_in_executor(executor, _blocking_generate)
++            job_store.mark_succeeded(job_id, result)
++            update_terminal_job_cache_fn(
++                app_state=app_state,
++                store=store,
++                job_id=job_id,
++                result=result,
++                status="succeeded",
++                map_status=map_status,
++                result_key_prefix=result_key_prefix,
++                result_expire_seconds=result_expire_seconds,
++            )
++        except Exception as exc:
++            error_traceback = traceback.format_exc()
++            log_fn(f"[API Server] Job {job_id} FAILED: {exc}")
++            log_fn(f"[API Server] Traceback:\n{error_traceback}")
++            job_store.mark_failed(job_id, error_traceback)
++            update_terminal_job_cache_fn(
++                app_state=app_state,
++                store=store,
++                job_id=job_id,
++                result=None,
++                status="failed",
++                map_status=map_status,
++                result_key_prefix=result_key_prefix,
++                result_expire_seconds=result_expire_seconds,
++            )
++        finally:
++            try:
++                if selected_handler is not None and hasattr(selected_handler, "_empty_cache"):
++                    selected_handler._empty_cache()
++                else:
++                    import torch
+ 
+-                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+-                    torch.mps.empty_cache()
+-        except Exception:
+-            pass
+-        dt = max(0.0, time.time() - t0)
+-        async with app_state.stats_lock:
+-            app_state.recent_durations.append(dt)
+-            if app_state.recent_durations:
+-                app_state.avg_job_seconds = sum(app_state.recent_durations) / len(
+-                    app_state.recent_durations
+-                )
++                    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
++                        torch.mps.empty_cache()
++            except Exception:
++                pass
++            dt = max(0.0, time.time() - t0)
++            async with app_state.stats_lock:
++                app_state.recent_durations.append(dt)
++                if app_state.recent_durations:
++                    app_state.avg_job_seconds = sum(app_state.recent_durations) / len(
++                        app_state.recent_durations
++                    )
++    finally:
++        await mark_ace_step_job_finished(app_state)
+diff --git a/acestep/api/job_execution_runtime_test.py b/acestep/api/job_execution_runtime_test.py
+index 0ce5e0d..3e263bb 100644
+--- a/acestep/api/job_execution_runtime_test.py
++++ b/acestep/api/job_execution_runtime_test.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import os
+ import unittest
+ from collections import deque
+ from concurrent.futures import ThreadPoolExecutor
+@@ -15,6 +16,13 @@ from acestep.api.job_execution_runtime import run_one_job_runtime
+ class JobExecutionRuntimeTests(unittest.IsolatedAsyncioTestCase):
+     """Behavior tests for queue-worker runtime execution orchestration."""
+ 
++    def setUp(self) -> None:
++        self._env_patch = patch.dict(os.environ, {"ACESTEP_IDLE_UNLOAD_SEC": "0"})
++        self._env_patch.start()
++
++    def tearDown(self) -> None:
++        self._env_patch.stop()
++
+     async def test_run_one_job_runtime_success_updates_terminal_cache(self) -> None:
+         """Success path should mark succeeded and write terminal cache success status."""
+ 
+@@ -62,6 +70,7 @@ class JobExecutionRuntimeTests(unittest.IsolatedAsyncioTestCase):
+         self.assertEqual("succeeded", update_terminal_job_cache_fn.call_args.kwargs["status"])
+         selected_handler._empty_cache.assert_called_once()
+         self.assertGreaterEqual(app_state.avg_job_seconds, 0.0)
++        self.assertEqual(0, app_state._active_generation_jobs)
+ 
+     async def test_run_one_job_runtime_failure_marks_failed_and_updates_cache(self) -> None:
+         """Failure path should mark failed and write terminal cache failed status."""
+@@ -110,6 +119,7 @@ class JobExecutionRuntimeTests(unittest.IsolatedAsyncioTestCase):
+         self.assertEqual("failed", update_terminal_job_cache_fn.call_args.kwargs["status"])
+         selected_handler._empty_cache.assert_called_once()
+         self.assertTrue(any("FAILED" in str(call.args[0]) for call in log_fn.call_args_list))
++        self.assertEqual(0, app_state._active_generation_jobs)
+ 
+     async def test_run_one_job_runtime_integration_uses_real_executor_and_wires_handler(self) -> None:
+         """Integration-style check with real run_in_executor and callback wiring."""
+@@ -161,6 +171,7 @@ class JobExecutionRuntimeTests(unittest.IsolatedAsyncioTestCase):
+             update_progress_job_cache_fn.assert_called_once()
+             update_terminal_job_cache_fn.assert_called_once()
+             selected_handler._empty_cache.assert_called_once()
++            self.assertEqual(0, app_state._active_generation_jobs)
+         finally:
+             executor.shutdown(wait=True, cancel_futures=True)
+ 
+diff --git a/acestep/api/lifespan_runtime.py b/acestep/api/lifespan_runtime.py
+index a987ad9..b5ff18e 100644
+--- a/acestep/api/lifespan_runtime.py
++++ b/acestep/api/lifespan_runtime.py
+@@ -88,6 +88,9 @@ def initialize_lifespan_runtime(
+     app.state._initialized = False
+     app.state._init_error = None
+     app.state._init_lock = init_lock
++    app.state._active_generation_jobs = 0
++    app.state._active_generation_jobs_lock = asyncio.Lock()
++    app.state._ace_idle_unload_task = None
+ 
+     app.state.llm_handler = llm_handler
+     app.state._llm_initialized = False
+diff --git a/acestep/api/lifespan_runtime_test.py b/acestep/api/lifespan_runtime_test.py
+index 68744f7..c13aca1 100644
+--- a/acestep/api/lifespan_runtime_test.py
++++ b/acestep/api/lifespan_runtime_test.py
+@@ -48,6 +48,8 @@ class LifespanRuntimeTests(unittest.TestCase):
+         self.assertEqual("acestep-v15-turbo", app.state._config_path)
+         self.assertIs(app.state.handler, handler)
+         self.assertIs(app.state.llm_handler, llm_handler)
++        self.assertEqual(0, app.state._active_generation_jobs)
++        self.assertIsNone(app.state._ace_idle_unload_task)
+         self.assertIsNone(runtime.handler2)
+         self.assertIsNone(runtime.handler3)
+         training_state_init.assert_called_once_with(app)
+diff --git a/acestep/api_server.py b/acestep/api_server.py
+index f030bd8..f74f407 100644
+--- a/acestep/api_server.py
++++ b/acestep/api_server.py
+@@ -42,6 +42,7 @@ from acestep.api.lifespan_runtime import initialize_lifespan_runtime
+ from acestep.api.job_blocking_generation import run_blocking_generate
+ from acestep.api.job_execution_runtime import run_one_job_runtime
+ from acestep.api.job_model_selection import select_generation_handler
++from acestep.api.model_unload_runtime import schedule_ace_step_idle_unload
+ from acestep.api.job_runtime_state import (
+     cleanup_job_temp_files as _cleanup_job_temp_files_state,
+     ensure_models_initialized as _ensure_models_initialized,
+@@ -303,6 +304,8 @@ def create_app() -> FastAPI:
+             ensure_model_downloaded=_ensure_model_downloaded,
+             env_bool=_env_bool,
+         )
++        if getattr(app.state, "_initialized", False):
++            await schedule_ace_step_idle_unload(app.state)
+         try:
+             yield
+         finally:
+@@ -370,4 +373,3 @@ if __name__ == "__main__":
+ 
+ 
+ 
+-
+diff --git a/acestep/api/model_unload_runtime.py b/acestep/api/model_unload_runtime.py
+new file mode 100644
+index 0000000..7f75781
+--- /dev/null
++++ b/acestep/api/model_unload_runtime.py
+@@ -0,0 +1,226 @@
++"""ACE-Step model unload and idle-release helpers for the API runtime."""
++
++from __future__ import annotations
++
++import asyncio
++import gc
++import os
++from typing import Any
++
++
++def ace_step_idle_unload_seconds() -> int:
++    """Return idle-unload delay in seconds; 0 disables automatic unload."""
++
++    raw_value = os.getenv("ACESTEP_IDLE_UNLOAD_SEC", "300").strip()
++    try:
++        return max(0, int(raw_value))
++    except ValueError:
++        return 300
++
++
++def _queue_size(app_state: Any) -> int:
++    queue_ref = getattr(app_state, "job_queue", None)
++    if queue_ref is None or not hasattr(queue_ref, "qsize"):
++        return 0
++    try:
++        return int(queue_ref.qsize())
++    except Exception:
++        return 0
++
++
++def _active_job_count(app_state: Any) -> int:
++    try:
++        return max(0, int(getattr(app_state, "_active_generation_jobs", 0)))
++    except Exception:
++        return 0
++
++
++def _is_busy(app_state: Any) -> bool:
++    return _active_job_count(app_state) > 0 or _queue_size(app_state) > 0
++
++
++def _clear_accelerator_cache() -> None:
++    gc.collect()
++    try:
++        import torch
++
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
++            torch.cuda.synchronize()
++        elif hasattr(torch, "mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
++            if hasattr(torch.mps, "empty_cache"):
++                torch.mps.empty_cache()
++            if hasattr(torch.mps, "synchronize"):
++                torch.mps.synchronize()
++        elif hasattr(torch, "xpu") and torch.xpu.is_available():
++            torch.xpu.empty_cache()
++            torch.xpu.synchronize()
++    except Exception:
++        pass
++
++
++def _unload_handler(handler: Any) -> bool:
++    if handler is None:
++        return False
++
++    had_model = any(
++        getattr(handler, attr, None) is not None
++        for attr in (
++            "model",
++            "vae",
++            "text_encoder",
++            "text_tokenizer",
++            "silence_latent",
++            "reward_model",
++            "mlx_decoder",
++            "mlx_vae",
++        )
++    )
++
++    for attr in (
++        "model",
++        "config",
++        "vae",
++        "text_encoder",
++        "text_tokenizer",
++        "silence_latent",
++        "reward_model",
++        "last_init_params",
++        "quantization",
++        "_base_decoder",
++        "mlx_decoder",
++        "mlx_vae",
++    ):
++        if hasattr(handler, attr):
++            setattr(handler, attr, None)
++
++    for attr in ("lora_loaded", "use_lora", "use_mlx_dit", "mlx_dit_compiled", "use_mlx_vae", "compiled"):
++        if hasattr(handler, attr):
++            setattr(handler, attr, False)
++
++    if hasattr(handler, "lora_scale"):
++        handler.lora_scale = 1.0
++    if hasattr(handler, "_active_loras"):
++        handler._active_loras = {}
++    if hasattr(handler, "_lora_adapter_registry"):
++        handler._lora_adapter_registry = {}
++    if hasattr(handler, "_lora_active_adapter"):
++        handler._lora_active_adapter = None
++
++    try:
++        if hasattr(handler, "_empty_cache"):
++            handler._empty_cache()
++    except Exception:
++        pass
++
++    return had_model
++
++
++def unload_ace_step_models(app_state: Any, *, force: bool = False) -> dict[str, Any]:
++    """Unload DiT/LM weights while keeping the API process alive."""
++
++    if not force and _is_busy(app_state):
++        return {
++            "unloaded": False,
++            "reason": "busy",
++            "active_jobs": _active_job_count(app_state),
++            "queue_size": _queue_size(app_state),
++        }
++
++    slots: list[int] = []
++    for slot, handler_attr, init_attr, error_attr in (
++        (1, "handler", "_initialized", "_init_error"),
++        (2, "handler2", "_initialized2", "_init_error2"),
++        (3, "handler3", "_initialized3", "_init_error3"),
++    ):
++        handler = getattr(app_state, handler_attr, None)
++        if handler is None:
++            continue
++        if _unload_handler(handler) or bool(getattr(app_state, init_attr, False)):
++            slots.append(slot)
++        setattr(app_state, init_attr, False)
++        setattr(app_state, error_attr, None)
++
++    llm_unloaded = False
++    llm_handler = getattr(app_state, "llm_handler", None)
++    if llm_handler is not None:
++        llm_unloaded = bool(getattr(llm_handler, "llm_initialized", False) or getattr(app_state, "_llm_initialized", False))
++        unload_fn = getattr(llm_handler, "unload", None)
++        if callable(unload_fn):
++            unload_fn()
++    app_state._llm_initialized = False
++    app_state._llm_init_error = None
++    app_state._llm_lazy_load_disabled = False
++
++    _clear_accelerator_cache()
++    return {
++        "unloaded": bool(slots or llm_unloaded),
++        "slots": slots,
++        "llm_unloaded": llm_unloaded,
++        "active_jobs": _active_job_count(app_state),
++        "queue_size": _queue_size(app_state),
++    }
++
++
++async def cancel_ace_step_idle_unload(app_state: Any) -> None:
++    task = getattr(app_state, "_ace_idle_unload_task", None)
++    if task is None or task.done():
++        app_state._ace_idle_unload_task = None
++        return
++    task.cancel()
++    try:
++        await task
++    except asyncio.CancelledError:
++        pass
++    finally:
++        app_state._ace_idle_unload_task = None
++
++
++async def _ensure_active_job_lock(app_state: Any) -> asyncio.Lock:
++    lock = getattr(app_state, "_active_generation_jobs_lock", None)
++    if lock is None:
++        lock = asyncio.Lock()
++        app_state._active_generation_jobs_lock = lock
++    return lock
++
++
++async def mark_ace_step_job_started(app_state: Any) -> None:
++    await cancel_ace_step_idle_unload(app_state)
++    lock = await _ensure_active_job_lock(app_state)
++    async with lock:
++        app_state._active_generation_jobs = _active_job_count(app_state) + 1
++
++
++async def mark_ace_step_job_finished(app_state: Any) -> None:
++    lock = await _ensure_active_job_lock(app_state)
++    async with lock:
++        app_state._active_generation_jobs = max(0, _active_job_count(app_state) - 1)
++    await schedule_ace_step_idle_unload(app_state)
++
++
++async def schedule_ace_step_idle_unload(app_state: Any) -> None:
++    delay_seconds = ace_step_idle_unload_seconds()
++    if delay_seconds <= 0 or _is_busy(app_state):
++        return
++
++    await cancel_ace_step_idle_unload(app_state)
++
++    async def _idle_unload() -> None:
++        try:
++            await asyncio.sleep(delay_seconds)
++            if _is_busy(app_state):
++                return
++            async with app_state._init_lock:
++                if _is_busy(app_state):
++                    return
++                loop = asyncio.get_running_loop()
++                await loop.run_in_executor(app_state.executor, lambda: unload_ace_step_models(app_state))
++        except asyncio.CancelledError:
++            raise
++        except Exception as exc:
++            print(f"[API Server] ACE-Step idle unload failed: {exc}")
++        finally:
++            if getattr(app_state, "_ace_idle_unload_task", None) is asyncio.current_task():
++                app_state._ace_idle_unload_task = None
++
++    app_state._ace_idle_unload_task = asyncio.create_task(_idle_unload())
