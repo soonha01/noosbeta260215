@@ -3,10 +3,12 @@ from __future__ import annotations
 from functools import lru_cache
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import time
 from typing import Any, Mapping
+from urllib.parse import urlparse, urlunparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -19,11 +21,24 @@ DEFAULT_ACE_STEP_HOST = "127.0.0.1"
 DEFAULT_ACE_STEP_PORT = 8011
 DEFAULT_ACE_STEP_BASE_URL = f"http://{DEFAULT_ACE_STEP_HOST}:{DEFAULT_ACE_STEP_PORT}"
 DEFAULT_ACE_STEP_HEALTHCHECK_URL = f"{DEFAULT_ACE_STEP_BASE_URL}/health"
+DEFAULT_GEMMA_UNLOAD_PORT = 8012
+DEFAULT_GEMMA_UNLOAD_PATH = "/v1/unload"
 
 
 @lru_cache(maxsize=1)
 def get_vendor_repo_root() -> Path:
     return Path(__file__).resolve().parents[2] / "vendor" / "ACE-Step-1.5"
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_apple_silicon() -> bool:
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
 def build_local_server_command(
@@ -40,7 +55,7 @@ def build_local_server_command(
     env["TOKENIZERS_PARALLELISM"] = "false"
     if init_llm is not None:
         env["ACESTEP_INIT_LLM"] = "true" if init_llm else "false"
-    if os.uname().sysname == "Darwin" and os.uname().machine == "arm64":
+    if is_apple_silicon():
         env.setdefault("ACESTEP_LM_BACKEND", "mlx")
         env.setdefault("ACESTEP_OFFLOAD_TO_CPU", "false")
         env.setdefault("ACESTEP_OFFLOAD_DIT_TO_CPU", "false")
@@ -109,7 +124,45 @@ class AceStepClient:
             payload["lm_model_path"] = lm_model_path
         return self._request("POST", "/v1/init", payload, timeout_sec=timeout_sec)
 
+    def gemma_unload_url(self) -> str | None:
+        configured_url = os.getenv("NOOS_GEMMA_UNLOAD_URL", "").strip()
+        if configured_url:
+            return configured_url
+
+        parsed = urlparse(self.base_url)
+        if not parsed.scheme or not parsed.hostname:
+            return None
+
+        port = int(os.getenv("NOOS_GEMMA_UNLOAD_PORT", str(DEFAULT_GEMMA_UNLOAD_PORT)))
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return urlunparse((parsed.scheme, f"{host}:{port}", DEFAULT_GEMMA_UNLOAD_PATH, "", "", ""))
+
+    def unload_gemma_before_music(self) -> bool:
+        if not env_bool("NOOS_GEMMA_UNLOAD_BEFORE_MUSIC", True):
+            return False
+
+        unload_url = self.gemma_unload_url()
+        if not unload_url:
+            return False
+
+        timeout_sec = float(os.getenv("NOOS_GEMMA_UNLOAD_TIMEOUT_SEC", "5"))
+        request = Request(
+            unload_url,
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=timeout_sec) as response:
+                response.read()
+            return True
+        except (HTTPError, URLError, OSError, TimeoutError):
+            return False
+
     def release_task(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        self.unload_gemma_before_music()
         return self._request("POST", "/release_task", payload)
 
     def query_result(self, task_ids: list[str]) -> dict[str, Any]:
