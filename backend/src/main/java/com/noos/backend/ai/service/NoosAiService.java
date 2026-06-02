@@ -657,6 +657,11 @@ public class NoosAiService {
         putIntEnv(env, "NOOS_ACE_STEP_REQUEST_DURATION_CAP_SEC", aceStepRequestDurationCapSec, defaultAceStepRequestDurationCapSec());
         putIntEnv(env, "NOOS_ACE_STEP_INFERENCE_STEPS", aceStepInferenceSteps, defaultAceStepInferenceSteps());
         env.put("NOOS_ACE_STEP_ENABLE_LM", aceStepUseEnhancedRequest ? "true" : "false");
+        String gemmaUnloadUrl = gemmaUnloadUrl();
+        if (hasText(gemmaUnloadUrl)) {
+            env.put("NOOS_GEMMA_UNLOAD_URL", gemmaUnloadUrl);
+            env.putIfAbsent("NOOS_GEMMA_UNLOAD_TIMEOUT_SEC", "5");
+        }
         String lmModel = normalizedAceStepLmModel();
         if (!lmModel.isBlank()) {
             env.put("NOOS_ACE_STEP_LM_MODEL", lmModel);
@@ -1109,6 +1114,13 @@ public class NoosAiService {
 
     private URI aceStepBaseUri() {
         return URI.create(aceStepBaseUrl.replaceAll("/$", ""));
+    }
+
+    private String gemmaUnloadUrl() {
+        if (!hasText(gemmaBaseUrl)) {
+            return "";
+        }
+        return gemmaBaseUrl.trim().replaceAll("/$", "") + "/v1/unload";
     }
 
     private boolean shouldAutoStartAceStep() {
