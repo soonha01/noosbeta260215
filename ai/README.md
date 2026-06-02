@@ -458,12 +458,19 @@ mkdir -p vendor
 git clone https://github.com/ace-step/ACE-Step-1.5.git vendor/ACE-Step-1.5
 ```
 
+NOOS용 ACE-Step API 보강 패치는 앱 저장소에 포함되어 있습니다. 시작 스크립트는 자동 적용을 시도하지만, 수동으로 먼저 적용할 수도 있습니다.
+
+```bash
+bash ./scripts/apply_acestep_noos_patch.sh
+```
+
 Windows PowerShell 예시
 
 ```powershell
 cd C:\noosbeta260215\ai
 New-Item -ItemType Directory -Force vendor | Out-Null
 git clone https://github.com/ace-step/ACE-Step-1.5.git vendor/ACE-Step-1.5
+.\scripts\apply_acestep_noos_patch.ps1
 ```
 
 ### 기본 실행 스크립트
@@ -482,6 +489,7 @@ Windows PowerShell 수동 실행 예시
 ```powershell
 cd C:\noosbeta260215\ai\vendor\ACE-Step-1.5
 $env:ACESTEP_NO_INIT="true"
+$env:ACESTEP_IDLE_UNLOAD_SEC="300"
 uv run acestep-api --host 127.0.0.1 --port 8011
 ```
 
@@ -492,9 +500,12 @@ uv run acestep-api --host 127.0.0.1 --port 8011
 - 기본 호스트: `127.0.0.1`
 - 기본 포트: `8011`
 - 기본값으로 `ACESTEP_NO_INIT=true`
+- 기본값으로 `ACESTEP_IDLE_UNLOAD_SEC=300`
 - 즉, 처음에는 “최소 기동” 위주로 서버를 띄웁니다.
 
-실제 생성까지 하려면 모델 초기화가 가능한 상태로 서버를 띄워야 합니다.
+실제 생성 요청이 들어오면 모델을 lazy-load하고, 작업 종료 후 idle 시간이 지나면 `/v1/unload`와 같은 경로로 모델 메모리를 다시 내려놓습니다.
+
+부팅 시 미리 모델을 올리고 싶다면 아래처럼 실행할 수 있습니다. 이 경우에도 idle unload 설정이 켜져 있으면 일정 시간 후 모델은 내려갑니다.
 
 ```bash
 ACESTEP_NO_INIT=false bash ./scripts/start_acestep_api.sh
@@ -505,6 +516,7 @@ Windows PowerShell 예시
 ```powershell
 cd C:\noosbeta260215\ai\vendor\ACE-Step-1.5
 $env:ACESTEP_NO_INIT="false"
+$env:ACESTEP_IDLE_UNLOAD_SEC="300"
 uv run acestep-api --host 127.0.0.1 --port 8011
 ```
 

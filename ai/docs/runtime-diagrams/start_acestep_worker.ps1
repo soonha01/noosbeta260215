@@ -18,6 +18,23 @@ if (-not (Test-Path "pyproject.toml")) {
   exit 1
 }
 
+$patchFile = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "patches\acestep-noos-idle-unload.patch"
+if ((Test-Path ".git") -and (Test-Path $patchFile)) {
+  git apply --check $patchFile 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    git apply $patchFile
+    Write-Host "Applied NOOS ACE-Step patch." -ForegroundColor Green
+  } else {
+    git apply --reverse --check $patchFile 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "NOOS ACE-Step patch is already applied." -ForegroundColor Green
+    } else {
+      Write-Host "NOOS ACE-Step patch cannot be applied cleanly. Check vendor changes before starting." -ForegroundColor Red
+      exit 1
+    }
+  }
+}
+
 $uv = Get-Command uv -ErrorAction SilentlyContinue
 if (-not $uv) {
   Write-Host "uv is not installed. Install it first:" -ForegroundColor Yellow
@@ -41,6 +58,7 @@ try {
 }
 
 $env:ACESTEP_NO_INIT = "true"
+$env:ACESTEP_IDLE_UNLOAD_SEC = if ($env:ACESTEP_IDLE_UNLOAD_SEC) { $env:ACESTEP_IDLE_UNLOAD_SEC } else { "300" }
 $env:TOKENIZERS_PARALLELISM = "false"
 
 if ($EnableLlm) {
@@ -52,4 +70,3 @@ if ($EnableLlm) {
   Write-Host "LM disabled. Running DiT-only default mode." -ForegroundColor Green
   uv run acestep-api --host $HostAddress --port $Port
 }
-

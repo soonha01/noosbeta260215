@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import unittest
 from unittest.mock import patch
 
@@ -223,7 +224,8 @@ class InterventionSessionTests(unittest.TestCase):
         command = build_local_server_command()
         self.assertIn("acestep-api", command["command"])
         self.assertIn("ACE-Step-1.5", command["cwd"])
-        if os.uname().sysname == "Darwin" and os.uname().machine == "arm64":
+        self.assertEqual("300", command["env"]["ACESTEP_IDLE_UNLOAD_SEC"])
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
             self.assertEqual(command["env"]["ACESTEP_OFFLOAD_TO_CPU"], "false")
             self.assertEqual(command["env"]["ACESTEP_OFFLOAD_DIT_TO_CPU"], "false")
 
@@ -245,6 +247,33 @@ class InterventionSessionTests(unittest.TestCase):
         self.assertEqual(len(parsed), 1)
         self.assertEqual(parsed[0]["status"], 1)
         self.assertIn("/v1/audio", parsed[0]["file"])
+
+    def test_ace_step_client_derives_gemma_unload_url_from_worker_host(self) -> None:
+        with patch.dict(os.environ, {"NOOS_GEMMA_UNLOAD_URL": "", "NOOS_GEMMA_UNLOAD_PORT": "8012"}):
+            client = AceStepClient("http://100.120.77.82:8011")
+            self.assertEqual(client.gemma_unload_url(), "http://100.120.77.82:8012/v1/unload")
+
+    def test_release_task_unloads_gemma_before_music_generation(self) -> None:
+        call_order: list[str] = []
+        client = AceStepClient("http://100.120.77.82:8011")
+
+        def unload() -> bool:
+            call_order.append("unload")
+            return True
+
+        def request(method: str, path: str, payload: dict[str, object]) -> dict[str, object]:
+            call_order.append(path)
+            return {"data": {"task_id": "demo-task"}}
+
+        with patch.object(client, "unload_gemma_before_music", side_effect=unload), patch.object(
+            client,
+            "_request",
+            side_effect=request,
+        ):
+            response = client.release_task({"prompt": "deep work ambient"})
+
+        self.assertEqual(response["data"]["task_id"], "demo-task")
+        self.assertEqual(call_order, ["unload", "/release_task"])
 
 
 if __name__ == "__main__":

@@ -1,15 +1,11 @@
 package com.noos.backend.ai.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Map;
+import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class NoosAiServiceTest {
 
@@ -31,30 +27,13 @@ class NoosAiServiceTest {
     );
 
     @Test
-    void generateInterventionRejectsDurationAboveLimitBeforeRunningCli() {
-        InterventionGenerationRequest request = new InterventionGenerationRequest(
-                "Neptune",
-                Map.of(
-                        "focus_readiness", 0.5,
-                        "stress_load", 0.5,
-                        "fatigue_risk", 0.5,
-                        "relaxation_level", 0.5,
-                        "cortical_arousal", 0.5,
-                        "mental_workload", 0.5
-                ),
-                Map.of(),
-                601,
-                1,
-                java.util.List.of(),
-                "",
-                Map.of()
-        );
+    void normalizeInterventionDurationClampsOutOfRangeValues() throws Exception {
+        Method method = NoosAiService.class.getDeclaredMethod("normalizeInterventionDuration", Integer.class);
+        method.setAccessible(true);
 
-        ResponseStatusException error = assertThrows(
-                ResponseStatusException.class,
-                () -> service.generateIntervention(request)
-        );
-
-        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        assertEquals(10, method.invoke(service, 1));
+        assertEquals(90, method.invoke(service, 90));
+        assertEquals(600, method.invoke(service, 900));
+        assertEquals(90, method.invoke(service, new Object[]{null}));
     }
 }

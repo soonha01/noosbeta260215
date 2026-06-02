@@ -1,5 +1,10 @@
 import { API_BASE_URL, EEG_ANALYSIS_ENDPOINT } from './env';
 
+const EEG_CHANNEL_KEYS = ['TP9', 'AF7', 'AF8', 'TP10'];
+const EEG_SESSION_START_ENDPOINT = '/api/eeg/sessions/start';
+const EEG_RAW_CHUNK_ENDPOINT = '/api/eeg/raw/chunks';
+const DEFAULT_RAW_CHUNK_DURATION_SEC = 10;
+
 const roundTo = (value, digits = 6) => {
   if (!Number.isFinite(value)) {
     return 0;
@@ -124,6 +129,30 @@ const createRawChunkPayloads = ({
   return chunks;
 };
 
+export const createRawChunkPayload = ({
+  eegSessionId,
+  rawReadings,
+  sampleRateHz = 256,
+  chunkIndex = 0,
+  baseTimestamp = null,
+}) => {
+  const normalizedReadings = createRawEegReadingsPayload(rawReadings);
+  if (!eegSessionId || !normalizedReadings.length) {
+    return null;
+  }
+
+  const resolvedBaseTimestamp = getFiniteNumber(baseTimestamp) ?? normalizedReadings[0].timestamp ?? 0;
+  const chunkBaseTimestamp = normalizedReadings[0].timestamp ?? resolvedBaseTimestamp;
+
+  return {
+    eegSessionId,
+    sampleRateHz,
+    chunkIndex,
+    startOffsetMs: Math.max(0, Math.round(chunkBaseTimestamp - resolvedBaseTimestamp)),
+    samples: buildChunkSamples(normalizedReadings),
+  };
+};
+
 export const createEegAnalysisPayload = ({
   eegSessionId = null,
   analysis,
@@ -131,6 +160,8 @@ export const createEegAnalysisPayload = ({
   measurementDurationSec,
   sampleRateHz = 256,
   deviceType = 'Muse S Athena',
+  sampleCountOverride = null,
+  surveyContext = null,
 }) => {
   if (!analysis) {
     return null;
@@ -146,13 +177,14 @@ export const createEegAnalysisPayload = ({
     measuredAt,
     measurementDurationSec,
     sampleRateHz,
-    sampleCount: analysis.sampleCount ?? 0,
+    sampleCount: sampleCountOverride ?? analysis.sampleCount ?? 0,
     dominantBand: analysis.dominantBand ?? null,
     delta: bandPercentByKey.delta ?? 0,
     theta: bandPercentByKey.theta ?? 0,
     alpha: bandPercentByKey.alpha ?? 0,
     beta: bandPercentByKey.beta ?? 0,
     gamma: bandPercentByKey.gamma ?? 0,
+    surveyContext,
   };
 };
 
@@ -160,7 +192,7 @@ export const startEegSession = async (
   { deviceType = 'Muse S Athena', measuredAt },
   { signal } = {}
 ) => {
-  const response = await fetch(`${DEFAULT_API_BASE_URL}${DEFAULT_EEG_SESSION_START_ENDPOINT}`, {
+  const response = await fetch(`${API_BASE_URL}${EEG_SESSION_START_ENDPOINT}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -186,6 +218,55 @@ export const startEegSession = async (
   return responseBody;
 };
 
+export const uploadEegRawChunk = async (payload, { signal } = {}) => {
+  if (!payload?.eegSessionId || !Array.isArray(payload.samples) || !payload.samples.length) {
+    return null;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${EEG_RAW_CHUNK_ENDPOINT}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  const responseBody = await parseResponseBody(response);
+  if (!response.ok) {
+    const message =
+      typeof responseBody === 'string'
+        ? responseBody
+        : responseBody?.message || `EEG raw chunk upload failed with status ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return responseBody;
+};
+
+export const uploadEegRawReadingsChunk = async (
+  {
+    eegSessionId,
+    rawReadings,
+    sampleRateHz = 256,
+    chunkIndex = 0,
+    baseTimestamp = null,
+  },
+  { signal } = {}
+) => {
+  const payload = createRawChunkPayload({
+    eegSessionId,
+    rawReadings,
+    sampleRateHz,
+    chunkIndex,
+    baseTimestamp,
+  });
+
+  return uploadEegRawChunk(payload, { signal });
+};
+
 export const uploadEegRawChunks = async (
   {
     eegSessionId,
@@ -207,25 +288,7 @@ export const uploadEegRawChunks = async (
   }
 
   for (const payload of chunkPayloads) {
-    const response = await fetch(`${DEFAULT_API_BASE_URL}${DEFAULT_EEG_RAW_CHUNK_ENDPOINT}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-      signal,
-    });
-
-    const responseBody = await parseResponseBody(response);
-    if (!response.ok) {
-      const message =
-        typeof responseBody === 'string'
-          ? responseBody
-          : responseBody?.message || `EEG raw chunk upload failed with status ${response.status}`;
-
-      throw new Error(message);
-    }
+    await uploadEegRawChunk(payload, { signal });
   }
 
   return {
