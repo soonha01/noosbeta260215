@@ -7,13 +7,14 @@ import TravelGenerationPage from './travel/TravelGenerationPage';
 import TravelPlayerPage from './travel/TravelPlayerPage';
 import TravelDashboardPage from './travel/TravelDashboardPage';
 import TravelProfilePage from './travel/TravelProfilePage';
-import { AiObjetDialog, ExitDialog, FeedbackDialog } from './travel/TravelDialogs';
+import { AiObjetDialog, ExitDialog, FeedbackDialog, LiveFeedbackDialog } from './travel/TravelDialogs';
 import {
   AI_CONTEXT_STORAGE_KEY,
   DEFAULT_PROFILE,
   EXIT_TO_HOME,
   EXIT_TO_PLANETS,
   FEEDBACK_STORAGE_KEY,
+  LIVE_MUSE_SESSION_STORAGE_KEY,
   MEMO_STORAGE_KEY,
   PLANET_MEDIA,
   PROFILE_STORAGE_KEY,
@@ -33,7 +34,16 @@ import {
   parseNaturalLanguageFeedback,
   requestDashboardSummary,
   stopWizLighting,
+  buildFallbackCurrentStateFromBandAnalysis,
 } from '../../../lib/noosAiApi';
+import { createMuseClient } from '../../../lib/muse';
+import { DEFAULT_FFT_SIZE, analyzeEegBands } from '../../../lib/muse/signalProcessing';
+import {
+  createEegAnalysisPayload,
+  startEegSession,
+  submitEegAnalysis,
+  uploadEegRawReadingsChunk,
+} from '../../../lib/eegAnalysisApi';
 import {
   loadStorageJSON,
   readStorageText,
@@ -57,6 +67,18 @@ const GENERATION_STATUS_LINES = [
   'ACE-Step 음악 스펙과 조명 패턴을 동기화하는 중',
   '후보 트랙을 생성하고 최종 세션을 확정하는 중',
 ];
+const EEG_SAMPLE_RATE = 256;
+const LIVE_MUSE_BASELINE_SEC = 60;
+const LIVE_MUSE_ANALYSIS_WINDOW_SEC = 300;
+const LIVE_MUSE_ANALYSIS_INTERVAL_MS = LIVE_MUSE_ANALYSIS_WINDOW_SEC * 1000;
+const LIVE_MUSE_RAW_CHUNK_DURATION_SEC = 10;
+const LIVE_MUSE_RAW_CHUNK_SAMPLE_COUNT = EEG_SAMPLE_RATE * LIVE_MUSE_RAW_CHUNK_DURATION_SEC;
+const LIVE_MUSE_MAX_LOCAL_BUFFER_SEC = LIVE_MUSE_ANALYSIS_WINDOW_SEC + LIVE_MUSE_BASELINE_SEC + 30;
+const LIVE_MUSE_UI_UPDATE_MS = 900;
+const LIVE_MUSE_CROSSFADE_DURATION_SEC = 30;
+const LIVE_MUSE_FEEDBACK_CADENCE_MS = 15 * 60 * 1000;
+const LIVE_MUSE_FEEDBACK_AFTER_ADAPT_MS = 90 * 1000;
+const LIVE_MUSE_MIN_REGEN_INTERVAL_MS = 4 * 60 * 1000;
 const NEUTRAL_CANONICAL_STATE = {
   focus_readiness: 0.5,
   stress_load: 0.5,
@@ -64,6 +86,103 @@ const NEUTRAL_CANONICAL_STATE = {
   relaxation_level: 0.5,
   cortical_arousal: 0.5,
   mental_workload: 0.5,
+};
+
+const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+
+const readLiveMuseSessionPreference = () => {
+  const saved = loadStorageJSON(LIVE_MUSE_SESSION_STORAGE_KEY, null);
+  return saved?.enabled ? saved : null;
+};
+
+const writeLiveMuseSessionPreference = (nextValue) => {
+  saveStorageJSON(LIVE_MUSE_SESSION_STORAGE_KEY, nextValue);
+};
+
+const getPlanetAdaptationMode = (planetSlug) => {
+  if (['venus', 'earth', 'pluto'].includes(planetSlug)) return 'calm';
+  if (['mercury', 'mars', 'jupiter', 'neptune'].includes(planetSlug)) return 'focus';
+  if (planetSlug === 'saturn') return 'deep';
+  return 'balanced';
+};
+
+const buildMusicProfileSnapshot = ({ planetMedia, generatedJourney, volumePercent, adaptiveVolumeScale }) => {
+  const intervention = generatedJourney?.interventionResult || {};
+  const musicSpec = intervention?.music_spec || {};
+  return {
+    trackName: generatedJourney?.trackName || planetMedia?.trackName || null,
+    audioUrl: generatedJourney?.audioUrl || planetMedia?.audio || null,
+    tempo: musicSpec?.bpm_target || musicSpec?.bpm || null,
+    intensity: musicSpec?.intensity ?? intervention?.transition_plan?.transition_intensity ?? null,
+    brightness: musicSpec?.brightness ?? null,
+    density: musicSpec?.density ?? null,
+    volumePercent,
+    adaptiveVolumeScale,
+  };
+};
+
+const resolveAdaptiveMusicAction = ({ currentState, previousState, qualityScore, planetSlug }) => {
+  if (qualityScore > 0 && qualityScore < 0.35) {
+    return {
+      type: 'hold',
+      reason: 'low-signal-quality',
+      label: '신호 품질이 낮아 음악을 유지합니다.',
+      volumeScale: 1,
+    };
+  }
+
+  const previous = previousState || NEUTRAL_CANONICAL_STATE;
+  const focusDelta = clamp01(currentState?.focus_readiness) - clamp01(previous?.focus_readiness);
+  const stressDelta = clamp01(currentState?.stress_load) - clamp01(previous?.stress_load);
+  const fatigueDelta = clamp01(currentState?.fatigue_risk) - clamp01(previous?.fatigue_risk);
+  const relaxationDelta = clamp01(currentState?.relaxation_level) - clamp01(previous?.relaxation_level);
+  const movement =
+    Math.abs(focusDelta) + Math.abs(stressDelta) + Math.abs(fatigueDelta) + Math.abs(relaxationDelta);
+  const mode = getPlanetAdaptationMode(planetSlug);
+  const stress = clamp01(currentState?.stress_load);
+  const fatigue = clamp01(currentState?.fatigue_risk);
+  const focus = clamp01(currentState?.focus_readiness);
+  const relaxation = clamp01(currentState?.relaxation_level);
+
+  if (movement < 0.16) {
+    return {
+      type: 'hold',
+      reason: 'stable-state',
+      label: '상태 변화가 작아 현재 음악을 유지합니다.',
+      volumeScale: 1,
+    };
+  }
+
+  const shouldChangeTrack =
+    movement >= 0.42 ||
+    stress >= 0.72 ||
+    fatigue >= 0.74 ||
+    (mode === 'focus' && focus < 0.38) ||
+    (mode === 'calm' && relaxation < 0.36);
+
+  if (shouldChangeTrack) {
+    const desiredChange =
+      stress >= 0.72 || fatigue >= 0.74 || mode === 'calm'
+        ? 'calmer-crossfade'
+        : 'focus-crossfade';
+    return {
+      type: 'crossfade',
+      reason: desiredChange,
+      label: desiredChange === 'calmer-crossfade'
+        ? '긴장/피로 신호가 커져 더 차분한 음악으로 전환합니다.'
+        : '집중 신호를 보강하기 위해 새 음악으로 전환합니다.',
+      volumeScale: desiredChange === 'calmer-crossfade' ? 0.88 : 1.04,
+    };
+  }
+
+  return {
+    type: 'parameter-adjust',
+    reason: mode === 'calm' || stressDelta > 0.08 ? 'soften-current-track' : 'energize-current-track',
+    label: mode === 'calm' || stressDelta > 0.08
+      ? '현재 트랙을 더 부드럽게 조정합니다.'
+      : '현재 트랙의 에너지를 조금 올립니다.',
+    volumeScale: mode === 'calm' || stressDelta > 0.08 ? 0.92 : 1.06,
+  };
 };
 
 const SpaceTravel = ({
@@ -105,6 +224,7 @@ const SpaceTravel = ({
   const [isPlaying, setIsPlaying] = useState(true);
   const [playheadSec, setPlayheadSec] = useState(0);
   const [volumePercent, setVolumePercent] = useState(72);
+  const [adaptiveVolumeScale, setAdaptiveVolumeScale] = useState(1);
   const [trackDurationSec, setTrackDurationSec] = useState(TRACK_DURATION_SEC);
 
   const [aiConnected, setAiConnected] = useState(false);
@@ -118,6 +238,29 @@ const SpaceTravel = ({
   const [parsedFeedback, setParsedFeedback] = useState(null);
   const [isFeedbackParsing, setIsFeedbackParsing] = useState(false);
   const [isRouteFadingOut, setIsRouteFadingOut] = useState(false);
+  const [liveMuseSession, setLiveMuseSession] = useState(readLiveMuseSessionPreference);
+  const [liveMuseStatus, setLiveMuseStatus] = useState(liveMuseSession ? 'pending' : 'off');
+  const [liveMuseMetrics, setLiveMuseMetrics] = useState({
+    sampleCount: 0,
+    chunkCount: 0,
+    analysisCount: 0,
+    eegSessionId: null,
+    lastAnalyzedAt: null,
+    nextAnalysisAt: null,
+    qualityScore: null,
+    latestValue: null,
+  });
+  const [liveMuseCurrentState, setLiveMuseCurrentState] = useState(null);
+  const [adaptiveMusicState, setAdaptiveMusicState] = useState({
+    type: 'idle',
+    label: liveMuseSession ? 'Muse 연결 대기 중입니다.' : 'Muse live adaptation off',
+    reason: '',
+    isGenerating: false,
+    isCrossfading: false,
+  });
+  const [pendingAdaptiveAudio, setPendingAdaptiveAudio] = useState(null);
+  const [showLiveFeedbackDialog, setShowLiveFeedbackDialog] = useState(false);
+  const [quickFeedbackChoice, setQuickFeedbackChoice] = useState('');
 
   const [stateSnapshot, setStateSnapshot] = useState(() => loadStorageJSON(STATE_STORAGE_KEY, null));
   const [feedbackHistory, setFeedbackHistory] = useState(() => loadStorageJSON(FEEDBACK_STORAGE_KEY, []));
@@ -146,11 +289,34 @@ const SpaceTravel = ({
   const aiTimersRef = useRef([]);
   const routeTimersRef = useRef([]);
   const audioRef = useRef(null);
+  const nextAudioRef = useRef(null);
   const audioPlayRetryRef = useRef(null);
   const audioPlayAttemptsRef = useRef(0);
   const journeyLightingJobRef = useRef(null);
   const lightingRestoreRequestedRef = useRef(false);
   const stateSnapshotRef = useRef(stateSnapshot);
+  const liveMuseSessionRef = useRef(liveMuseSession);
+  const museClientRef = useRef(null);
+  const museSubscriptionRef = useRef(null);
+  const liveEegBufferRef = useRef([]);
+  const liveRawChunkBufferRef = useRef([]);
+  const liveRawChunkIndexRef = useRef(0);
+  const liveRawChunkBaseTimestampRef = useRef(null);
+  const liveRawUploadChainRef = useRef(Promise.resolve());
+  const liveRawUploadFailedRef = useRef(false);
+  const liveEegSessionIdRef = useRef(null);
+  const liveAnalysisTimerRef = useRef(null);
+  const liveCalibrationTimerRef = useRef(null);
+  const liveUiTimerRef = useRef(null);
+  const liveFeedbackTimerRef = useRef(null);
+  const liveLastFeedbackAtRef = useRef(0);
+  const liveLastAdaptiveGenerationAtRef = useRef(0);
+  const livePreviousStateRef = useRef(stateSnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE);
+  const liveAnalysisSequenceRef = useRef(0);
+  const runLiveMuseAnalysisRef = useRef(null);
+  const crossfadeTimerRef = useRef(null);
+  const crossfadeHandoffRef = useRef(null);
+  const adaptiveVolumeScaleRef = useRef(adaptiveVolumeScale);
   const hasRealAudio = Boolean(effectivePlanetMedia?.audio);
 
   const clearAiTimers = useCallback(() => {
@@ -174,6 +340,487 @@ const SpaceTravel = ({
     });
   }, []);
 
+  const clearLiveMuseTimers = useCallback(() => {
+    if (liveAnalysisTimerRef.current) {
+      clearInterval(liveAnalysisTimerRef.current);
+      liveAnalysisTimerRef.current = null;
+    }
+    if (liveCalibrationTimerRef.current) {
+      clearTimeout(liveCalibrationTimerRef.current);
+      liveCalibrationTimerRef.current = null;
+    }
+    if (liveUiTimerRef.current) {
+      clearTimeout(liveUiTimerRef.current);
+      liveUiTimerRef.current = null;
+    }
+    if (liveFeedbackTimerRef.current) {
+      clearTimeout(liveFeedbackTimerRef.current);
+      liveFeedbackTimerRef.current = null;
+    }
+  }, []);
+
+  const queueLiveRawChunkUpload = useCallback((chunkReadings) => {
+    const eegSessionId = liveEegSessionIdRef.current;
+    if (!eegSessionId || liveRawUploadFailedRef.current || !chunkReadings.length) {
+      return;
+    }
+
+    const chunkIndex = liveRawChunkIndexRef.current;
+    liveRawChunkIndexRef.current += 1;
+
+    liveRawUploadChainRef.current = liveRawUploadChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await uploadEegRawReadingsChunk({
+          eegSessionId,
+          rawReadings: chunkReadings,
+          sampleRateHz: EEG_SAMPLE_RATE,
+          chunkIndex,
+          baseTimestamp: liveRawChunkBaseTimestampRef.current,
+        });
+
+        if (response) {
+          setLiveMuseMetrics((prev) => ({
+            ...prev,
+            eegSessionId,
+            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
+          }));
+        }
+      })
+      .catch((error) => {
+        liveRawUploadFailedRef.current = true;
+        console.warn('Failed to upload live Muse EEG raw chunk. Continuing with local summary:', error);
+      });
+  }, []);
+
+  const flushLiveRawChunk = useCallback((force = false) => {
+    const shouldFlush =
+      liveRawChunkBufferRef.current.length >= LIVE_MUSE_RAW_CHUNK_SAMPLE_COUNT ||
+      (force && liveRawChunkBufferRef.current.length > 0);
+
+    if (!shouldFlush) {
+      return;
+    }
+
+    const chunkReadings = liveRawChunkBufferRef.current.splice(0, liveRawChunkBufferRef.current.length);
+    queueLiveRawChunkUpload(chunkReadings);
+  }, [queueLiveRawChunkUpload]);
+
+  const fadeAdaptiveVolumeScaleTo = useCallback((targetScale, durationMs = 18000) => {
+    const from = adaptiveVolumeScaleRef.current;
+    const to = Math.max(0.72, Math.min(1.16, Number(targetScale) || 1));
+    const startedAt = Date.now();
+
+    const step = () => {
+      const progress = Math.min(1, (Date.now() - startedAt) / durationMs);
+      const eased = 1 - ((1 - progress) ** 3);
+      const next = from + ((to - from) * eased);
+      adaptiveVolumeScaleRef.current = next;
+      setAdaptiveVolumeScale(next);
+
+      if (progress < 1) {
+        window.setTimeout(step, 120);
+      }
+    };
+
+    step();
+  }, []);
+
+  const scheduleLiveFeedbackPrompt = useCallback((delayMs = LIVE_MUSE_FEEDBACK_AFTER_ADAPT_MS) => {
+    const now = Date.now();
+    if (now - liveLastFeedbackAtRef.current < LIVE_MUSE_FEEDBACK_CADENCE_MS) {
+      return;
+    }
+    if (liveFeedbackTimerRef.current) {
+      clearTimeout(liveFeedbackTimerRef.current);
+    }
+
+    liveFeedbackTimerRef.current = window.setTimeout(() => {
+      liveFeedbackTimerRef.current = null;
+      liveLastFeedbackAtRef.current = Date.now();
+      setQuickFeedbackChoice('');
+      setShowLiveFeedbackDialog(true);
+    }, delayMs);
+  }, []);
+
+  const startAdaptiveCrossfade = useCallback((bundle, action) => {
+    const nextAudioUrl = bundle?.audioUrl;
+    const currentAudioUrl = effectivePlanetMedia?.audio || null;
+
+    if (!nextAudioUrl || !hasRealAudio || !audioRef.current || nextAudioUrl === currentAudioUrl) {
+      setGeneratedJourney(bundle);
+      setGenerationNotice(action?.label || bundle?.generationWarning || '');
+      setPlayheadSec(0);
+      setIsPlaying(true);
+      return;
+    }
+
+    setPendingAdaptiveAudio({
+      bundle,
+      action,
+      audioUrl: nextAudioUrl,
+      startedAt: new Date().toISOString(),
+    });
+    setAdaptiveMusicState((prev) => ({
+      ...prev,
+      isCrossfading: true,
+      label: action?.label || '새 음악으로 부드럽게 전환합니다.',
+    }));
+  }, [effectivePlanetMedia?.audio, hasRealAudio]);
+
+  const requestAdaptiveJourney = useCallback(async ({ action, nextSnapshot }) => {
+    const now = Date.now();
+    if (now - liveLastAdaptiveGenerationAtRef.current < LIVE_MUSE_MIN_REGEN_INTERVAL_MS) {
+      return;
+    }
+
+    liveLastAdaptiveGenerationAtRef.current = now;
+    setAdaptiveMusicState((prev) => ({ ...prev, isGenerating: true }));
+
+    try {
+      const bundle = await generateJourneyBundle({
+        planet: selectedPlanet,
+        currentState: nextSnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE,
+        recognitionResult: nextSnapshot?.recognitionResult || null,
+        durationSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+        candidateCountOverride: 1,
+        feedbackHistory: feedbackHistory.slice(0, 12),
+        memoText,
+        intentContext: {
+          ...(assistantContext || {}),
+          liveMuse: true,
+          adaptiveAction: action,
+          musicProfile: buildMusicProfileSnapshot({
+            planetMedia,
+            generatedJourney,
+            volumePercent,
+            adaptiveVolumeScale: adaptiveVolumeScaleRef.current,
+          }),
+        },
+      });
+
+      startAdaptiveCrossfade(bundle, action);
+      scheduleLiveFeedbackPrompt();
+    } catch (error) {
+      console.error('Failed to generate adaptive Muse journey:', error);
+      setGenerationNotice('라이브 EEG 기반 새 음악 생성이 지연되어 현재 트랙을 유지합니다.');
+    } finally {
+      setAdaptiveMusicState((prev) => ({ ...prev, isGenerating: false }));
+    }
+  }, [
+    assistantContext,
+    feedbackHistory,
+    generatedJourney,
+    memoText,
+    planetMedia,
+    scheduleLiveFeedbackPrompt,
+    selectedPlanet,
+    startAdaptiveCrossfade,
+    volumePercent,
+  ]);
+
+  const runLiveMuseAnalysis = useCallback(async () => {
+    const windowReadings = liveEegBufferRef.current.slice(-(EEG_SAMPLE_RATE * LIVE_MUSE_ANALYSIS_WINDOW_SEC));
+    if (windowReadings.length < EEG_SAMPLE_RATE * 20) {
+      setAdaptiveMusicState((prev) => ({
+        ...prev,
+        label: '분석에 필요한 Muse 샘플을 더 수집하는 중입니다.',
+      }));
+      return;
+    }
+
+    const measuredAt = new Date().toISOString();
+    const analysis = analyzeEegBands(windowReadings, {
+      sampleRate: EEG_SAMPLE_RATE,
+      fftSize: DEFAULT_FFT_SIZE,
+    });
+    if (!analysis || analysis.sampleCount < 64) {
+      return;
+    }
+
+    liveAnalysisSequenceRef.current += 1;
+    setLiveMuseStatus('analyzing');
+    flushLiveRawChunk(true);
+
+    await liveRawUploadChainRef.current.catch((error) => {
+      console.warn('Live Muse raw upload queue had an error before analysis:', error);
+    });
+
+    const musicProfile = buildMusicProfileSnapshot({
+      planetMedia,
+      generatedJourney,
+      volumePercent,
+      adaptiveVolumeScale: adaptiveVolumeScaleRef.current,
+    });
+    const payload = createEegAnalysisPayload({
+      eegSessionId: liveEegSessionIdRef.current,
+      analysis,
+      measuredAt,
+      measurementDurationSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+      analysisWindowSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+      analysisMode: 'muse-live-window',
+      sampleRateHz: EEG_SAMPLE_RATE,
+      sampleCountOverride: windowReadings.length,
+      surveyContext: {
+        mode: 'muse-live-window',
+        source: 'continuous-muse',
+        targetPlanet: selectedPlanet,
+        adaptiveWindow: {
+          sequence: liveAnalysisSequenceRef.current,
+          windowSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+          analyzedAt: measuredAt,
+        },
+        musicProfile,
+      },
+    });
+
+    let response = null;
+    try {
+      response = payload ? await submitEegAnalysis(payload) : null;
+    } catch (error) {
+      console.warn('Live Muse backend analysis failed. Using local band summary fallback:', error);
+    }
+
+    const fallbackState = buildFallbackCurrentStateFromBandAnalysis(analysis);
+    const recognitionResult = response?.recognitionResult || null;
+    const nextCurrentState = response?.currentState || fallbackState;
+    const qualityScore = Number(recognitionResult?.quality?.score ?? 0.55);
+    const nextSnapshot = {
+      source: 'muse-live',
+      sourceLabel: 'Muse S Athena 실시간 측정',
+      title: recognitionResult?.state_profile?.label || 'Muse Live EEG 상태',
+      summary:
+        recognitionResult?.state_profile?.summary?.join(' · ') ||
+        '최근 5분 EEG 윈도우를 기반으로 음악 세션을 갱신했습니다.',
+      canonicalState: nextCurrentState,
+      dominantState: recognitionResult?.state_profile?.dominant_state || 'live-window',
+      recognitionResult,
+      bands: analysis?.bandPowers || [],
+      liveMuseSession: {
+        ...(liveMuseSessionRef.current || {}),
+        status: 'active',
+        analysisCount: liveAnalysisSequenceRef.current,
+        lastAnalyzedAt: measuredAt,
+      },
+      musicProfile,
+      measuredAt,
+    };
+
+    setStateSnapshot(nextSnapshot);
+    saveStorageJSON(STATE_STORAGE_KEY, nextSnapshot);
+    setLiveMuseCurrentState(nextCurrentState);
+    setLiveMuseMetrics((prev) => ({
+      ...prev,
+      analysisCount: liveAnalysisSequenceRef.current,
+      lastAnalyzedAt: measuredAt,
+      nextAnalysisAt: new Date(Date.now() + LIVE_MUSE_ANALYSIS_INTERVAL_MS).toISOString(),
+      qualityScore,
+    }));
+
+    const action = resolveAdaptiveMusicAction({
+      currentState: nextCurrentState,
+      previousState: livePreviousStateRef.current,
+      qualityScore,
+      planetSlug,
+    });
+    livePreviousStateRef.current = nextCurrentState;
+    fadeAdaptiveVolumeScaleTo(action.volumeScale);
+    setAdaptiveMusicState({
+      type: action.type,
+      label: action.label,
+      reason: action.reason,
+      isGenerating: false,
+      isCrossfading: action.type === 'crossfade',
+    });
+
+    if (action.type === 'crossfade') {
+      await requestAdaptiveJourney({ action, nextSnapshot });
+    } else if (action.type === 'parameter-adjust') {
+      scheduleLiveFeedbackPrompt();
+    }
+
+    setLiveMuseStatus('active');
+  }, [
+    fadeAdaptiveVolumeScaleTo,
+    flushLiveRawChunk,
+    generatedJourney,
+    planetMedia,
+    planetSlug,
+    requestAdaptiveJourney,
+    scheduleLiveFeedbackPrompt,
+    selectedPlanet,
+    volumePercent,
+  ]);
+
+  const stopLiveMuseStream = useCallback(async ({ disablePreference = false } = {}) => {
+    clearLiveMuseTimers();
+    flushLiveRawChunk(true);
+    await liveRawUploadChainRef.current.catch(() => undefined);
+
+    museSubscriptionRef.current?.unsubscribe?.();
+    museSubscriptionRef.current = null;
+
+    const disconnectPromise = museClientRef.current?.disconnect?.();
+    museClientRef.current = null;
+    Promise.resolve(disconnectPromise).catch((error) => {
+      console.warn('Failed to disconnect live Muse stream:', error);
+    });
+
+    liveEegBufferRef.current = [];
+    liveRawChunkBufferRef.current = [];
+    liveRawChunkIndexRef.current = 0;
+    liveRawChunkBaseTimestampRef.current = null;
+    liveRawUploadChainRef.current = Promise.resolve();
+    liveRawUploadFailedRef.current = false;
+    liveEegSessionIdRef.current = null;
+    liveAnalysisSequenceRef.current = 0;
+    setLiveMuseCurrentState(null);
+    setAdaptiveVolumeScale(1);
+    adaptiveVolumeScaleRef.current = 1;
+
+    if (disablePreference) {
+      writeLiveMuseSessionPreference({ enabled: false, disabledAt: new Date().toISOString() });
+      setLiveMuseSession(null);
+      setLiveMuseStatus('off');
+      setAdaptiveMusicState({
+        type: 'off',
+        label: 'Muse live adaptation off',
+        reason: '',
+        isGenerating: false,
+        isCrossfading: false,
+      });
+      return;
+    }
+
+    setLiveMuseStatus(liveMuseSessionRef.current?.enabled ? 'pending' : 'off');
+  }, [clearLiveMuseTimers, flushLiveRawChunk]);
+
+  const handleStartLiveMuse = useCallback(async () => {
+    if (museClientRef.current || liveMuseStatus === 'connecting') {
+      return;
+    }
+
+    const startedAt = new Date().toISOString();
+    const nextSession = {
+      ...(liveMuseSessionRef.current || {}),
+      enabled: true,
+      deviceType: 'Muse S Athena',
+      status: 'connecting',
+      startedAt,
+      baselineDurationSec: LIVE_MUSE_BASELINE_SEC,
+      analysisIntervalSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+      analysisWindowSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+      transitionMode: 'crossfade',
+      crossfadeDurationSec: LIVE_MUSE_CROSSFADE_DURATION_SEC,
+      feedbackCadenceSec: LIVE_MUSE_FEEDBACK_CADENCE_MS / 1000,
+    };
+    setLiveMuseSession(nextSession);
+    writeLiveMuseSessionPreference(nextSession);
+    setLiveMuseStatus('connecting');
+    setAdaptiveMusicState({
+      type: 'connecting',
+      label: 'Muse S Athena 연결을 시작합니다.',
+      reason: '',
+      isGenerating: false,
+      isCrossfading: false,
+    });
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get('muse') === 'mock' ? 'mock' : 'web';
+      const client = await createMuseClient({ mode });
+      museClientRef.current = client;
+
+      await client.connect();
+      await client.start();
+
+      try {
+        const startedSession = await startEegSession({
+          deviceType: 'Muse S Athena',
+          measuredAt: startedAt,
+        });
+        liveEegSessionIdRef.current = startedSession?.eegSessionId || null;
+      } catch (error) {
+        console.warn('Live Muse backend session could not be started. Continuing local live analysis:', error);
+      }
+
+      const maxBufferSize = EEG_SAMPLE_RATE * LIVE_MUSE_MAX_LOCAL_BUFFER_SEC;
+      museSubscriptionRef.current = client.subscribe((reading) => {
+        liveEegBufferRef.current.push(reading);
+        if (liveEegBufferRef.current.length > maxBufferSize) {
+          liveEegBufferRef.current.splice(0, liveEegBufferRef.current.length - maxBufferSize);
+        }
+
+        if (liveRawChunkBaseTimestampRef.current === null) {
+          liveRawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
+            ? Number(reading.timestamp)
+            : Date.now();
+        }
+        liveRawChunkBufferRef.current.push(reading);
+        flushLiveRawChunk(false);
+
+        if (!liveUiTimerRef.current) {
+          liveUiTimerRef.current = window.setTimeout(() => {
+            liveUiTimerRef.current = null;
+            setLiveMuseMetrics((prev) => ({
+              ...prev,
+              eegSessionId: liveEegSessionIdRef.current,
+              sampleCount: liveEegBufferRef.current.length,
+              latestValue: Number(reading?.samples?.[0] ?? reading?.channels?.TP9 ?? 0),
+            }));
+          }, LIVE_MUSE_UI_UPDATE_MS);
+        }
+      });
+
+      setLiveMuseStatus('calibrating');
+      setLiveMuseMetrics((prev) => ({
+        ...prev,
+        eegSessionId: liveEegSessionIdRef.current,
+        nextAnalysisAt: new Date(Date.now() + LIVE_MUSE_ANALYSIS_INTERVAL_MS).toISOString(),
+      }));
+      setAdaptiveMusicState({
+        type: 'calibrating',
+        label: '1분 기준선을 수집한 뒤 5분마다 음악을 조정합니다.',
+        reason: '',
+        isGenerating: false,
+        isCrossfading: false,
+      });
+
+      liveCalibrationTimerRef.current = window.setTimeout(() => {
+        liveCalibrationTimerRef.current = null;
+        setLiveMuseStatus('active');
+        setAdaptiveMusicState((prev) => ({
+          ...prev,
+          type: 'active',
+          label: 'Muse live EEG를 수집 중입니다. 다음 5분 윈도우에서 음악을 갱신합니다.',
+        }));
+      }, LIVE_MUSE_BASELINE_SEC * 1000);
+
+      liveAnalysisTimerRef.current = window.setInterval(() => {
+        runLiveMuseAnalysisRef.current?.();
+      }, LIVE_MUSE_ANALYSIS_INTERVAL_MS);
+    } catch (error) {
+      console.error('Failed to start live Muse session:', error);
+      await stopLiveMuseStream();
+      setLiveMuseStatus('pending');
+      setAdaptiveMusicState({
+        type: 'error',
+        label: 'Muse 연결에 실패했습니다. 다시 연결을 시도할 수 있습니다.',
+        reason: error instanceof Error ? error.message : String(error),
+        isGenerating: false,
+        isCrossfading: false,
+      });
+    }
+  }, [flushLiveRawChunk, liveMuseStatus, runLiveMuseAnalysis, stopLiveMuseStream]);
+
+  const handleStopLiveMuse = useCallback(() => {
+    stopLiveMuseStream({ disablePreference: true });
+  }, [stopLiveMuseStream]);
+
+  useEffect(() => {
+    runLiveMuseAnalysisRef.current = runLiveMuseAnalysis;
+  }, [runLiveMuseAnalysis]);
+
   const goToExplorer = useCallback(() => {
     restoreJourneyLighting('solar-explorer');
     if (typeof onBack === 'function') {
@@ -195,6 +842,14 @@ const SpaceTravel = ({
   useEffect(() => {
     stateSnapshotRef.current = stateSnapshot;
   }, [stateSnapshot]);
+
+  useEffect(() => {
+    liveMuseSessionRef.current = liveMuseSession;
+  }, [liveMuseSession]);
+
+  useEffect(() => {
+    adaptiveVolumeScaleRef.current = adaptiveVolumeScale;
+  }, [adaptiveVolumeScale]);
 
   useEffect(() => {
     clearAiTimers();
@@ -437,8 +1092,8 @@ const SpaceTravel = ({
   useEffect(() => {
     const audio = audioRef.current;
     if (!hasRealAudio || !audio) return;
-    audio.volume = Math.max(0, Math.min(1, volumePercent / 100));
-  }, [hasRealAudio, volumePercent]);
+    audio.volume = Math.max(0, Math.min(1, (volumePercent / 100) * adaptiveVolumeScale));
+  }, [adaptiveVolumeScale, hasRealAudio, volumePercent]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -494,7 +1149,110 @@ const SpaceTravel = ({
   }, [currentStep, hasRealAudio, isPlaying]);
 
   useEffect(() => {
+    if (!pendingAdaptiveAudio?.audioUrl) return undefined;
+
+    const currentAudio = audioRef.current;
+    const nextAudio = nextAudioRef.current;
+    if (!currentAudio || !nextAudio) return undefined;
+
+    let cancelled = false;
+    let intervalId = 0;
+    const durationMs = LIVE_MUSE_CROSSFADE_DURATION_SEC * 1000;
+    const baseVolume = Math.max(0, Math.min(1, (volumePercent / 100) * adaptiveVolumeScaleRef.current));
+
+    const finishCrossfade = () => {
+      if (cancelled) return;
+      const handoffTime = nextAudio.currentTime || 0;
+      crossfadeHandoffRef.current = {
+        audioUrl: pendingAdaptiveAudio.audioUrl,
+        currentTime: handoffTime,
+      };
+
+      currentAudio.pause();
+      currentAudio.volume = baseVolume;
+      nextAudio.pause();
+      nextAudio.volume = 0;
+
+      const bundleDuration = Number(pendingAdaptiveAudio.bundle?.audioDurationSec);
+      setGeneratedJourney(pendingAdaptiveAudio.bundle);
+      setTrackDurationSec(Number.isFinite(bundleDuration) && bundleDuration > 0 ? Math.round(bundleDuration) : LIVE_MUSE_ANALYSIS_WINDOW_SEC);
+      setPlayheadSec(handoffTime);
+      setIsPlaying(true);
+      setGenerationNotice(pendingAdaptiveAudio.action?.label || pendingAdaptiveAudio.bundle?.generationWarning || '');
+      setPendingAdaptiveAudio(null);
+      setAdaptiveMusicState((prev) => ({
+        ...prev,
+        isCrossfading: false,
+        type: 'active',
+      }));
+    };
+
+    const beginCrossfade = async () => {
+      try {
+        nextAudio.pause();
+        nextAudio.currentTime = 0;
+        nextAudio.volume = 0;
+        nextAudio.load();
+        await nextAudio.play();
+
+        const startedAt = Date.now();
+        intervalId = window.setInterval(() => {
+          const progress = Math.min(1, (Date.now() - startedAt) / durationMs);
+          const eased = 1 - ((1 - progress) ** 2);
+
+          currentAudio.volume = baseVolume * (1 - eased);
+          nextAudio.volume = baseVolume * eased;
+
+          if (progress >= 1) {
+            clearInterval(intervalId);
+            intervalId = 0;
+            finishCrossfade();
+          }
+        }, 120);
+      } catch (error) {
+        console.warn('Adaptive crossfade failed. Switching track without overlap:', error);
+        finishCrossfade();
+      }
+    };
+
+    beginCrossfade();
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      nextAudio.pause();
+      nextAudio.volume = 0;
+      currentAudio.volume = baseVolume;
+    };
+  }, [pendingAdaptiveAudio, volumePercent]);
+
+  useEffect(() => {
+    const handoff = crossfadeHandoffRef.current;
     const audio = audioRef.current;
+    if (!handoff || !audio || effectivePlanetMedia?.audio !== handoff.audioUrl) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const baseVolume = Math.max(0, Math.min(1, (volumePercent / 100) * adaptiveVolumeScaleRef.current));
+      audio.currentTime = handoff.currentTime || 0;
+      audio.volume = baseVolume;
+      if (isPlaying) {
+        audio.play().catch((error) => {
+          console.warn('Adaptive crossfade handoff play failed:', error);
+        });
+      }
+      crossfadeHandoffRef.current = null;
+    }, 80);
+
+    return () => clearTimeout(timeoutId);
+  }, [effectivePlanetMedia?.audio, isPlaying, volumePercent]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const nextAudio = nextAudioRef.current;
     return () => {
       clearAiTimers();
       clearRouteTimers();
@@ -502,10 +1260,16 @@ const SpaceTravel = ({
         clearTimeout(audioPlayRetryRef.current);
         audioPlayRetryRef.current = null;
       }
+      if (crossfadeTimerRef.current) {
+        clearInterval(crossfadeTimerRef.current);
+        crossfadeTimerRef.current = null;
+      }
+      stopLiveMuseStream();
       restoreJourneyLighting('unmount');
       audio?.pause();
+      nextAudio?.pause();
     };
-  }, [clearAiTimers, clearRouteTimers, restoreJourneyLighting]);
+  }, [clearAiTimers, clearRouteTimers, restoreJourneyLighting, stopLiveMuseStream]);
 
   const feedbackAverage = useMemo(() => {
     if (!feedbackHistory.length) return null;
@@ -840,6 +1604,79 @@ const SpaceTravel = ({
     stateSnapshot?.title,
   ]);
 
+  const handleSubmitLiveFeedback = useCallback(() => {
+    if (!quickFeedbackChoice) return;
+
+    const ratingByChoice = {
+      good: 5,
+      keep: 4,
+      change: 2,
+    };
+    const labelByChoice = {
+      good: '좋아요',
+      keep: '유지',
+      change: '바꿔줘',
+    };
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      feedbackType: 'live-muse-adaptation',
+      rating: ratingByChoice[quickFeedbackChoice] || 3,
+      feedbackText: labelByChoice[quickFeedbackChoice] || quickFeedbackChoice,
+      desiredChange: quickFeedbackChoice === 'change' ? 'change_music' : 'keep_direction',
+      planet: selectedPlanet,
+      planetSlug,
+      targetState: planetMedia.moodTarget,
+      measuredState: stateSnapshot?.title || 'Muse Live EEG 상태',
+      measuredSource: stateSnapshot?.sourceLabel || 'Muse S Athena 실시간 측정',
+      currentState: liveMuseCurrentState || stateSnapshot?.canonicalState || generatedJourney?.currentState || NEUTRAL_CANONICAL_STATE,
+      musicProfile: buildMusicProfileSnapshot({
+        planetMedia,
+        generatedJourney,
+        volumePercent,
+        adaptiveVolumeScale: adaptiveVolumeScaleRef.current,
+      }),
+      recentAction: adaptiveMusicState,
+      eegQuality: liveMuseMetrics.qualityScore,
+      createdAt: new Date().toISOString(),
+      route: 'live-popup',
+      llm: null,
+    };
+
+    const nextHistory = [entry, ...feedbackHistory].slice(0, 40);
+    setFeedbackHistory(nextHistory);
+    saveStorageJSON(FEEDBACK_STORAGE_KEY, nextHistory);
+    setShowLiveFeedbackDialog(false);
+    setQuickFeedbackChoice('');
+
+    if (quickFeedbackChoice === 'change') {
+      requestAdaptiveJourney({
+        action: {
+          type: 'crossfade',
+          reason: 'user-feedback-change',
+          label: '피드백을 반영해 새 음악으로 전환합니다.',
+          volumeScale: 0.96,
+        },
+        nextSnapshot: stateSnapshot || {
+          canonicalState: liveMuseCurrentState || NEUTRAL_CANONICAL_STATE,
+          recognitionResult: null,
+        },
+      });
+    }
+  }, [
+    adaptiveMusicState,
+    feedbackHistory,
+    generatedJourney,
+    liveMuseCurrentState,
+    liveMuseMetrics.qualityScore,
+    planetMedia,
+    planetSlug,
+    quickFeedbackChoice,
+    requestAdaptiveJourney,
+    selectedPlanet,
+    stateSnapshot,
+    volumePercent,
+  ]);
+
   return (
     <Shell
       $fadeOut={isRouteFadingOut}
@@ -926,6 +1763,11 @@ const SpaceTravel = ({
               hasGeneratedAudio={hasGeneratedJourneyAudio}
               generationNotice={[generationNotice, playbackNotice].filter(Boolean).join(' ')}
               stateSnapshot={stateSnapshot}
+              liveMuseStatus={liveMuseStatus}
+              liveMuseMetrics={liveMuseMetrics}
+              adaptiveMusicState={adaptiveMusicState}
+              onStartLiveMuse={handleStartLiveMuse}
+              onStopLiveMuse={handleStopLiveMuse}
             />
           </StepFrame>
         )}
@@ -976,6 +1818,7 @@ const SpaceTravel = ({
       {!entryOnly && (
         <>
           <audio ref={audioRef} src={effectivePlanetMedia?.audio || undefined} preload="metadata" hidden />
+          <audio ref={nextAudioRef} src={pendingAdaptiveAudio?.audioUrl || undefined} preload="auto" hidden />
           <AiObjetDialog
             stage={aiModalStage}
             onChoose={handleAiChoice}
@@ -1000,6 +1843,15 @@ const SpaceTravel = ({
             onSubmit={persistFeedbackAndNavigate}
             onClose={() => setShowFeedbackDialog(false)}
             accentColor={accentColor}
+          />
+          <LiveFeedbackDialog
+            open={showLiveFeedbackDialog}
+            value={quickFeedbackChoice}
+            onChange={setQuickFeedbackChoice}
+            onSubmit={handleSubmitLiveFeedback}
+            onClose={() => setShowLiveFeedbackDialog(false)}
+            accentColor={accentColor}
+            adaptiveMusicState={adaptiveMusicState}
           />
         </>
       )}

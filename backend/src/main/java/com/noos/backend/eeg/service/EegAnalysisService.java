@@ -62,15 +62,16 @@ public class EegAnalysisService {
         }
 
         EegSession eegSession = resolveAnalysisSession(request, sessionUserId);
+        boolean liveWindowAnalysis = isLiveWindowAnalysis(request);
 
         try {
             eegMapper.updateEegSessionStatus(eegSession.getEegSessionId(), "PROCESSING");
-            List<Map<String, Object>> rawReadings = loadRawReadings(eegSession.getEegSessionId());
+            List<Map<String, Object>> rawReadings = loadRawReadings(eegSession.getEegSessionId(), request);
             Map<String, Object> response = noosAiService.recognize(request, rawReadings);
             EegResult eegResult = createEegResult(eegSession.getEegSessionId(), request, response);
 
             eegMapper.insertEegResult(eegResult);
-            eegMapper.updateEegSessionStatus(eegSession.getEegSessionId(), "COMPLETED");
+            eegMapper.updateEegSessionStatus(eegSession.getEegSessionId(), liveWindowAnalysis ? "COLLECTING" : "COMPLETED");
 
             Map<String, Object> enrichedResponse = new LinkedHashMap<>(response);
             enrichedResponse.put("eegSessionId", eegSession.getEegSessionId());
@@ -78,7 +79,7 @@ public class EegAnalysisService {
             enrichedResponse.put("saved", true);
             return enrichedResponse;
         } catch (RuntimeException error) {
-            markSessionFailed(eegSession.getEegSessionId(), error);
+            markSessionFailed(eegSession.getEegSessionId(), error, liveWindowAnalysis);
             throw error;
         }
     }
@@ -175,7 +176,7 @@ public class EegAnalysisService {
         return LocalDateTime.now();
     }
 
-    private List<Map<String, Object>> loadRawReadings(Long eegSessionId) {
+    private List<Map<String, Object>> loadRawReadings(Long eegSessionId, EegRecognitionRequest request) {
         if (eegSessionId == null || eegSessionId <= 0) {
             return List.of();
         }
@@ -186,13 +187,56 @@ public class EegAnalysisService {
         }
 
         chunks.sort(Comparator.comparing(EegRawChunk::getChunkIndex, Comparator.nullsLast(Integer::compareTo)));
-        chunks = selectAnalysisChunks(chunks);
+        chunks = isLiveWindowAnalysis(request)
+                ? selectLiveWindowChunks(chunks, request.analysisWindowSec())
+                : selectAnalysisChunks(chunks);
 
         List<Map<String, Object>> readings = new ArrayList<>();
         for (EegRawChunk chunk : chunks) {
             readings.addAll(decodeChunkSamples(chunk));
         }
         return readings;
+    }
+
+    private boolean isLiveWindowAnalysis(EegRecognitionRequest request) {
+        if (request == null) {
+            return false;
+        }
+        if (hasText(request.analysisMode()) && "muse-live-window".equalsIgnoreCase(request.analysisMode().trim())) {
+            return true;
+        }
+
+        Map<String, Object> surveyContext = request.surveyContext();
+        Object mode = surveyContext != null ? surveyContext.get("mode") : null;
+        return mode instanceof String modeText && "muse-live-window".equalsIgnoreCase(modeText.trim());
+    }
+
+    private List<EegRawChunk> selectLiveWindowChunks(List<EegRawChunk> chunks, Integer analysisWindowSec) {
+        if (chunks.isEmpty()) {
+            return chunks;
+        }
+
+        int windowSec = analysisWindowSec != null && analysisWindowSec > 0 ? analysisWindowSec : 300;
+        int latestChunkDurationSec = chunks.stream()
+                .filter(chunk -> chunk.getChunkSampleCount() != null && chunk.getSampleRateHz() != null && chunk.getSampleRateHz() > 0)
+                .reduce((first, second) -> second)
+                .map(chunk -> Math.max(1, (int) Math.ceil(chunk.getChunkSampleCount() / (double) chunk.getSampleRateHz())))
+                .orElse(10);
+        int maxChunkCount = Math.max(1, (int) Math.ceil(windowSec / (double) latestChunkDurationSec) + 1);
+        int fromIndex = Math.max(0, chunks.size() - maxChunkCount);
+
+        List<EegRawChunk> selected = new ArrayList<>(chunks.subList(fromIndex, chunks.size()));
+        if (selected.size() > MAX_RAW_ANALYSIS_CHUNKS) {
+            selected = selectAnalysisChunks(selected);
+        }
+
+        logger.info(
+                "Selected {} of {} EEG raw chunks for live recognition window ({} sec).",
+                selected.size(),
+                chunks.size(),
+                windowSec
+        );
+        return selected;
     }
 
     private List<EegRawChunk> selectAnalysisChunks(List<EegRawChunk> chunks) {
@@ -288,11 +332,11 @@ public class EegAnalysisService {
         return roundToThree(clamp01(readNumber(axisPayload.get("score"), 0.0)));
     }
 
-    private void markSessionFailed(Long eegSessionId, RuntimeException error) {
+    private void markSessionFailed(Long eegSessionId, RuntimeException error, boolean liveWindowAnalysis) {
         try {
-            eegMapper.updateEegSessionStatus(eegSessionId, "FAILED");
+            eegMapper.updateEegSessionStatus(eegSessionId, liveWindowAnalysis ? "COLLECTING" : "FAILED");
         } catch (RuntimeException updateError) {
-            logger.error("Failed to mark EEG session {} as FAILED", eegSessionId, updateError);
+            logger.error("Failed to update EEG session {} after analysis failure", eegSessionId, updateError);
         }
 
         logger.error("Failed to analyze or persist EEG session {}", eegSessionId, error);

@@ -1,109 +1,588 @@
-import React from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import {
   Bot,
   LayoutDashboard,
+  Music2,
   Pause,
   Play,
+  RotateCcw,
   SkipBack,
   SkipForward,
   Sparkles,
+  Star,
   UserRound,
   Volume2,
 } from 'lucide-react';
 import TravelLightingPreview from './TravelLightingPreview';
-import {
-  AiConnectedPanel,
-  AiConnectedSub,
-  AiConnectedTitle,
-  AiDisconnectButton,
-  BottomActions,
-  ControlButton,
-  DangerAction,
-  IconActionButton,
-  PlayButton,
-  PlayerCard,
-  PlayerIconActions,
-  PlayerKicker,
-  PlayerMeta,
-  PlayerTitle,
-  ProgressRange,
-  ProgressRow,
-  SecondaryAction,
-  TimeText,
-  TrackDuration,
-  TrackHeader,
-  TrackName,
-  VolumeLabel,
-  VolumeRange,
-  VolumeRow,
-  VolumeValue,
-} from './spaceTravel.styles';
 
-const planetTextureRoll = keyframes`
+const cardIn = keyframes`
   from {
-    background-position-x: 0px;
+    opacity: 0;
+    transform: translate3d(0, 34px, 0) scale(0.985);
   }
   to {
-    background-position-x: -1200px;
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 `;
+
+const KOREAN_FONT = "'Pretendard Variable', 'Pretendard', 'Freesentation', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const DISPLAY_FONT = "'Instrument Serif', 'GowunBatang', 'Pretendard Variable', serif";
+const UI_FONT = KOREAN_FONT;
+const LABEL_FONT = "'Poppins', 'Pretendard Variable', 'Pretendard', 'Freesentation', sans-serif";
+const NUMERIC_FONT = "'Poppins', 'SF Pro Display', 'Pretendard Variable', 'Freesentation', sans-serif";
 
 const Page = styled.div`
+  position: relative;
   min-height: 100%;
   box-sizing: border-box;
-  padding: 0.95rem;
+  padding: clamp(0.8rem, 2vw, 1.6rem);
+  color: #fff;
+  overflow: auto;
+  font-family: ${UI_FONT};
+  word-break: keep-all;
   background:
-    radial-gradient(circle at 14% 10%, rgba(255, 255, 255, 0.06), transparent 32%),
-    radial-gradient(circle at 84% 18%, rgba(255, 255, 255, 0.04), transparent 26%),
-    #000;
-  color: #f5f7ff;
-`;
+    linear-gradient(120deg, rgba(0, 0, 0, 0.84), rgba(0, 0, 0, 0.34) 48%, rgba(0, 0, 0, 0.82)),
+    url(${({ $background }) => $background});
+  background-size: cover;
+  background-position: center;
+  isolation: isolate;
 
-const Frame = styled.div`
-  width: min(100%, 1320px);
-  margin: 0 auto;
-  display: grid;
-  gap: 0.75rem;
-`;
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(circle at 22% 18%, ${({ $accent }) => `${$accent || '#ffffff'}42`}, transparent 30%),
+      radial-gradient(circle at 78% 78%, rgba(255, 255, 255, 0.18), transparent 26%),
+      rgba(0, 0, 0, 0.34);
+    pointer-events: none;
+  }
 
-const HeaderCard = styled(PlayerCard)`
-  padding: 0.9rem 1rem;
-  gap: 0.7rem;
-`;
-
-const HeaderTop = styled.div`
-  display: flex;
-  justify-content: space-between;
-  gap: 0.8rem;
-  align-items: flex-start;
-
-  @media (max-width: 720px) {
-    flex-direction: column;
+  &::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.72)),
+      repeating-linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.025) 0,
+        rgba(255, 255, 255, 0.025) 1px,
+        transparent 1px,
+        transparent 8px
+      );
+    pointer-events: none;
   }
 `;
 
-const HeaderCopy = styled.div`
+const Stage = styled.div`
+  min-height: calc(100vh - clamp(1.6rem, 4vw, 3.2rem));
   display: grid;
-  gap: 0.22rem;
+  place-items: center;
+`;
+
+const GlassCard = styled.section`
+  position: relative;
+  width: min(100%, 1120px);
+  height: min(720px, calc(100vh - 2rem));
+  min-height: min(720px, calc(100vh - 2rem));
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08) 42%, rgba(0, 0, 0, 0.2)),
+    ${({ $accent }) => `${$accent || '#ffffff'}12`};
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.62),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.32);
+  backdrop-filter: blur(18px) saturate(128%);
+  animation: ${cardIn} 0.62s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @media (max-width: 940px) {
+    height: auto;
+    min-height: auto;
+    border-radius: 20px;
+  }
+`;
+
+const GlassNoise = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.64;
+  background:
+    radial-gradient(circle at 20% 28%, rgba(255, 255, 255, 0.08), transparent 28%),
+    radial-gradient(circle at 84% 68%, rgba(255, 255, 255, 0.08), transparent 30%);
+  mix-blend-mode: overlay;
+`;
+
+const GlassSpecular = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.34),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.08);
+`;
+
+const Content = styled.div`
+  position: relative;
+  z-index: 4;
+  height: 100%;
+  min-height: inherit;
+  box-sizing: border-box;
+  padding: clamp(1.15rem, 2.4vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+`;
+
+const TopBar = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+`;
+
+const BrandLockup = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
   min-width: 0;
 `;
 
-const HeaderSummary = styled.p`
-  margin: 0;
-  color: rgba(232, 239, 252, 0.8);
-  font-size: 13px;
-  line-height: 1.72;
-  max-width: 68ch;
+const BrandIcon = styled.span`
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: ${({ $accent }) => `${$accent || '#ffffff'}22`};
+  color: #fff;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}55`};
 `;
 
-const NoticeBanner = styled.div`
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}36`};
-  background: ${({ $accent }) => `${$accent || '#ffffff'}12`};
-  color: rgba(241, 246, 255, 0.9);
-  padding: 0.72rem 0.8rem;
+const BrandText = styled.div`
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+`;
+
+const Kicker = styled.p`
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-family: ${LABEL_FONT};
+`;
+
+const BrandTitle = styled.h2`
+  margin: 0;
+  color: #fff;
+  font-size: clamp(34px, 4.6vw, 54px);
+  font-weight: 400;
+  line-height: 0.9;
+  letter-spacing: 0;
+  font-family: ${DISPLAY_FONT};
+`;
+
+const ActionGroup = styled.div`
+  display: inline-flex;
+  gap: 0.45rem;
+`;
+
+const IconButton = styled.button`
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    background: ${({ $accent }) => `${$accent || '#ffffff'}25`};
+    border-color: ${({ $accent }) => `${$accent || '#ffffff'}82`};
+  }
+`;
+
+const MainGrid = styled.div`
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: clamp(1rem, 2.6vw, 2rem);
+  min-height: 0;
+  flex: 1;
+
+  @media (max-width: 940px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const LeftStack = styled.div`
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+`;
+
+const CoverCard = styled.div`
+  width: min(100%, 312px);
+  margin: 0 auto;
+  padding: 0.76rem;
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18);
+`;
+
+const CoverImage = styled.div`
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.26)),
+    url(${({ $image }) => $image});
+  background-size: cover;
+  background-position: center;
+  box-shadow:
+    0 22px 50px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+`;
+
+const ControlPanel = styled.div`
+  border-radius: 22px;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(18px);
+`;
+
+const TrackCopy = styled.div`
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.9rem;
+`;
+
+const TrackTitle = styled.h3`
+  margin: 0;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
+  font-family: ${DISPLAY_FONT};
+`;
+
+const TrackMeta = styled.p`
+  margin: 0;
+  color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
-  line-height: 1.6;
+  font-weight: 500;
+  line-height: 1.45;
+`;
+
+const ProgressLine = styled.div`
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  margin-bottom: 0.9rem;
+`;
+
+const TimeText = styled.span`
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  font-family: ${NUMERIC_FONT};
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+`;
+
+const Range = styled.input`
+  width: 100%;
+  accent-color: ${({ $accent }) => $accent || '#fff'};
+  cursor: pointer;
+
+  &[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.3);
+    outline: none;
+  }
+
+  &[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 999px;
+    background: #fff;
+    border: 2px solid ${({ $accent }) => $accent || '#fff'};
+    box-shadow: 0 0 14px ${({ $accent }) => `${$accent || '#ffffff'}88`};
+  }
+
+  &[type='range']::-moz-range-thumb {
+    width: 13px;
+    height: 13px;
+    border-radius: 999px;
+    background: #fff;
+    border: 2px solid ${({ $accent }) => $accent || '#fff'};
+  }
+`;
+
+const ControlRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+
+  @media (max-width: 520px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+`;
+
+const PlayerButtons = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.62rem;
+
+  @media (max-width: 520px) {
+    justify-content: center;
+  }
+`;
+
+const SmallButton = styled.button`
+  border: 0;
+  background: transparent;
+  color: #fff;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    transform: scale(1.08);
+    background: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const PlayButton = styled.button`
+  border: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #101010;
+  cursor: pointer;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+  transition: transform 0.2s ease;
+
+  &:hover {
+    transform: scale(1.08);
+  }
+`;
+
+const VolumeControl = styled.div`
+  display: grid;
+  grid-template-columns: auto 86px;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.82);
+
+  @media (max-width: 520px) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+`;
+
+const RightPanel = styled.div`
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+`;
+
+const PanelScroll = styled.div`
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+  display: grid;
+  gap: 0.7rem;
+
+  &::-webkit-scrollbar {
+    width: 0;
+  }
+
+  @media (max-width: 940px) {
+    overflow: visible;
+    padding-right: 0;
+  }
+`;
+
+const GlassPanel = styled.div`
+  border-radius: 18px;
+  padding: 0.84rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.08);
+`;
+
+const PanelHeader = styled.div`
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.65rem;
+`;
+
+const PanelLabel = styled.p`
+  margin: 0;
+  color: ${({ $accent }) => `${$accent || '#ffffff'}d4`};
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-family: ${LABEL_FONT};
+`;
+
+const PanelTitle = styled.h3`
+  margin: 0;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: 0;
+  font-family: ${DISPLAY_FONT};
+`;
+
+const BodyText = styled.p`
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.58;
+`;
+
+const SessionRows = styled.div`
+  display: grid;
+  gap: 0.48rem;
+`;
+
+const SessionRow = styled.div`
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.58rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    transform: translateX(3px);
+    background: rgba(255, 255, 255, 0.12);
+  }
+`;
+
+const RowThumb = styled.div`
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at center, ${({ $accent }) => `${$accent || '#ffffff'}5d`}, transparent 60%),
+    url(${({ $image }) => $image});
+  background-size: cover;
+  background-position: center;
+`;
+
+const RowCopy = styled.div`
+  min-width: 0;
+`;
+
+const RowTitle = styled.p`
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  font-family: ${UI_FONT};
+`;
+
+const RowBody = styled.p`
+  margin: 0.18rem 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const RowTime = styled.span`
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-family: ${NUMERIC_FONT};
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+`;
+
+const MetaGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+
+  @media (max-width: 620px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const MetaCard = styled.div`
+  padding: 0.62rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+`;
+
+const MetaLabel = styled.p`
+  margin: 0;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: ${LABEL_FONT};
+`;
+
+const MetaValue = styled.p`
+  margin: 0.18rem 0 0;
+  color: ${({ $accent }) => $accent || '#fff'};
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  font-family: ${NUMERIC_FONT};
 `;
 
 const ChipRow = styled.div`
@@ -113,290 +592,115 @@ const ChipRow = styled.div`
 `;
 
 const Chip = styled.span`
-  min-height: 26px;
-  padding: 0 0.58rem;
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}52`};
-  background: ${({ $accent }) => `${$accent || '#ffffff'}10`};
-  color: ${({ $accent }) => $accent || '#fff'};
+  min-height: 24px;
+  padding: 0 0.55rem;
   display: inline-flex;
   align-items: center;
+  border-radius: 999px;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}66`};
+  background: ${({ $accent }) => `${$accent || '#ffffff'}14`};
+  color: #fff;
   font-size: 10px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
-`;
-
-const SessionGrid = styled.div`
-  display: grid;
-  grid-template-columns: minmax(0, 1.06fr) minmax(320px, 0.94fr);
-  gap: 0.75rem;
-  align-items: start;
-
-  @media (max-width: 1080px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const Stack = styled.div`
-  display: grid;
-  gap: 0.75rem;
-`;
-
-const PlanetStage = styled(PlayerCard)`
-  position: relative;
-  overflow: hidden;
-  min-height: 420px;
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 0.7rem;
-  background:
-    radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.06), transparent 32%),
-    linear-gradient(180deg, rgba(8, 8, 8, 0.94), rgba(2, 2, 2, 0.96));
-`;
-
-const PlanetAura = styled.div`
-  position: absolute;
-  inset: 50% auto auto 50%;
-  width: clamp(260px, 34vw, 440px);
-  height: clamp(260px, 34vw, 440px);
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  background: radial-gradient(circle, ${({ $accent }) => `${$accent || '#ffffff'}24`}, transparent 68%);
-  filter: blur(26px);
-`;
-
-const PlanetOrb = styled.div`
-  position: relative;
-  z-index: 1;
-  width: clamp(220px, 28vw, 360px);
-  aspect-ratio: 1 / 1;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #060606;
-  background-image: url(${({ $image }) => $image});
-  background-repeat: repeat-x;
-  background-size: auto 100%;
-  background-position: 0 50%;
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}78`};
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 24px 58px rgba(0, 0, 0, 0.58);
-  will-change: background-position;
-  animation: ${planetTextureRoll} ${({ $spinDurationSec = 24 }) => `${$spinDurationSec}s`} linear infinite;
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
-`;
-
-const PlanetLabel = styled.p`
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  color: rgba(214, 224, 246, 0.72);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
-`;
-
-const PlanetTitle = styled.h2`
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  color: ${({ $accent }) => $accent || '#fff'};
-  font-size: clamp(28px, 4vw, 44px);
-  line-height: 0.96;
-  letter-spacing: -0.05em;
-  text-align: center;
-  font-family: 'Freesentation Black', 'Cardinal Fruit', sans-serif;
-`;
-
-const PlanetBody = styled.p`
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  width: min(100%, 36ch);
-  color: rgba(232, 239, 252, 0.82);
-  font-size: 13px;
-  line-height: 1.68;
-  text-align: center;
-`;
-
-const SectionHead = styled.div`
-  display: grid;
-  gap: 0.2rem;
-`;
-
-const SectionLabel = styled.p`
-  margin: 0;
-  color: ${({ $accent }) => `${$accent || '#ffffff'}cc`};
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
-`;
-
-const SectionTitle = styled.h3`
-  margin: 0;
-  color: ${({ $accent }) => $accent || '#fff'};
-  font-size: 22px;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
-  font-family: 'Freesentation Bold', 'Cardinal Fruit', sans-serif;
-`;
-
-const SectionBody = styled.p`
-  margin: 0;
-  color: rgba(226, 236, 255, 0.82);
-  font-size: 13px;
-  line-height: 1.65;
-`;
-
-const MetaGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem;
-
-  @media (max-width: 720px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const MetaCard = styled.div`
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}2c`};
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.72rem 0.76rem;
-  display: grid;
-  gap: 0.14rem;
-`;
-
-const MetaLabel = styled.p`
-  margin: 0;
-  color: rgba(205, 217, 241, 0.66);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
-`;
-
-const MetaValue = styled.p`
-  margin: 0;
-  color: ${({ $accent }) => $accent || '#fff'};
-  font-size: 20px;
-  line-height: 1;
-  letter-spacing: -0.05em;
-  font-family: 'Freesentation Black', 'Cardinal Fruit', sans-serif;
-`;
-
-const MetaBody = styled.p`
-  margin: 0.14rem 0 0;
-  color: rgba(223, 232, 248, 0.74);
-  font-size: 12px;
-  line-height: 1.55;
+  font-family: ${LABEL_FONT};
 `;
 
 const InsightList = styled.div`
   display: grid;
-  gap: 0.4rem;
+  gap: 0.42rem;
 `;
 
 const InsightItem = styled.div`
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}24`};
-  background: rgba(255, 255, 255, 0.025);
-  padding: 0.58rem 0.62rem;
-  color: rgba(232, 239, 252, 0.82);
+  padding: 0.58rem 0.64rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.76);
   font-size: 12px;
-  line-height: 1.58;
+  font-weight: 500;
+  line-height: 1.5;
 `;
 
-const PriorityRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.36rem;
+const AiPanel = styled(GlassPanel)`
+  border-color: ${({ $accent }) => `${$accent || '#ffffff'}4d`};
+  background: ${({ $accent }) => `${$accent || '#ffffff'}16`};
 `;
 
-const PriorityChip = styled.span`
-  min-height: 24px;
-  padding: 0 0.5rem;
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}55`};
-  background: ${({ $accent }) => `${$accent || '#ffffff'}12`};
-  color: ${({ $accent }) => $accent || '#fff'};
+const ActionButton = styled.button`
+  min-height: 40px;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}62`};
+  border-radius: 14px;
+  background: ${({ $danger, $accent }) => ($danger ? 'rgba(255, 84, 84, 0.14)' : `${$accent || '#ffffff'}1c`)};
+  color: #fff;
   display: inline-flex;
   align-items: center;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-family: 'Cardinal Fruit', 'SF Pro Bold', sans-serif;
-`;
-
-const PhaseList = styled.div`
-  display: grid;
-  gap: 0.38rem;
-`;
-
-const PhaseCard = styled.div`
-  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}24`};
-  background: rgba(255, 255, 255, 0.025);
-  padding: 0.62rem;
-  display: grid;
-  gap: 0.2rem;
-`;
-
-const PhaseTop = styled.div`
-  display: flex;
-  justify-content: space-between;
-  gap: 0.6rem;
-  align-items: center;
-`;
-
-const PhaseTitle = styled.p`
-  margin: 0;
-  color: ${({ $accent }) => $accent || '#fff'};
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.8rem;
   font-size: 12px;
-  font-family: 'Freesentation Bold', 'Cardinal Fruit', sans-serif;
+  font-family: ${UI_FONT};
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    background: ${({ $danger, $accent }) => ($danger ? 'rgba(255, 84, 84, 0.22)' : `${$accent || '#ffffff'}2c`)};
+  }
 `;
 
-const PhaseMeta = styled.p`
-  margin: 0;
-  color: rgba(212, 224, 245, 0.72);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+const BottomActionRow = styled.div`
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+
+  @media (max-width: 520px) {
+    ${ActionButton} {
+      flex: 1 1 100%;
+    }
+  }
 `;
 
-const PhaseBody = styled.p`
-  margin: 0;
-  color: rgba(223, 232, 248, 0.78);
-  font-size: 11px;
-  line-height: 1.55;
-`;
-
-const RightActions = styled.div`
-  display: grid;
-  gap: 0.75rem;
+const Notice = styled.div`
+  padding: 0.62rem 0.72rem;
+  border-radius: 14px;
+  border: 1px solid ${({ $accent }) => `${$accent || '#ffffff'}44`};
+  background: ${({ $accent }) => `${$accent || '#ffffff'}14`};
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
 `;
 
 const AXIS_LABELS = {
-  focus_readiness: 'Focus readiness',
-  stress_load: 'Stress load',
-  fatigue_risk: 'Fatigue risk',
-  relaxation_level: 'Relaxation',
+  focus_readiness: 'Focus',
+  stress_load: 'Stress',
+  fatigue_risk: 'Fatigue',
+  relaxation_level: 'Relax',
   cortical_arousal: 'Arousal',
-  mental_workload: 'Mental workload',
+  mental_workload: 'Workload',
 };
 
 const AXIS_EXPLANATIONS = {
-  focus_readiness: '몰입으로 진입할 준비 정도',
-  stress_load: '우선 완화가 필요한 긴장량',
-  fatigue_risk: '세션 지속을 방해할 수 있는 피로 신호',
+  focus_readiness: '몰입 진입 준비',
+  stress_load: '완화할 긴장량',
+  fatigue_risk: '지속 방해 피로',
+};
+
+const LIVE_MUSE_STATUS_LABELS = {
+  off: 'Muse live off',
+  pending: 'Muse 연결 대기',
+  connecting: 'Muse 연결 중',
+  calibrating: '기준선 수집 중',
+  active: 'Muse live active',
+  analyzing: '최근 5분 분석 중',
+  error: 'Muse 연결 오류',
 };
 
 const getPlanetSpinDurationSec = (planetTitle) => {
-  const key = String(planetTitle || '')
-    .trim()
-    .toLowerCase();
+  const key = String(planetTitle || '').trim().toLowerCase();
 
   switch (key) {
     case 'mercury':
@@ -429,6 +733,24 @@ const formatPhaseGoals = (phase) => {
   return goals.join(' · ') || '세션 목표를 정렬하는 중입니다.';
 };
 
+const buildFallbackPhases = (planetMedia, durationSec) => [
+  {
+    name: 'Entry',
+    duration_sec: Math.round((durationSec || 90) * 0.28),
+    goals: [`${planetMedia.title} 목표 상태로 진입`],
+  },
+  {
+    name: 'Immersion',
+    duration_sec: Math.round((durationSec || 90) * 0.44),
+    goals: [planetMedia.moodTarget],
+  },
+  {
+    name: 'Return',
+    duration_sec: Math.round((durationSec || 90) * 0.28),
+    goals: ['감각 안정화'],
+  },
+];
+
 const TravelPlayerPage = ({
   planetMedia,
   accentColor,
@@ -453,7 +775,14 @@ const TravelPlayerPage = ({
   hasGeneratedAudio = false,
   generationNotice,
   stateSnapshot,
+  liveMuseStatus = 'off',
+  liveMuseMetrics = {},
+  adaptiveMusicState = null,
+  onStartLiveMuse,
+  onStopLiveMuse,
 }) => {
+  const cardRef = useRef(null);
+  const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
   const interventionResult = generatedJourney?.interventionResult || {};
   const transitionPlan = interventionResult?.transition_plan || {};
   const currentStateAxes =
@@ -467,301 +796,365 @@ const TravelPlayerPage = ({
   const llmExplanation = generatedJourney?.llmStateExplanation?.output || null;
   const llmCoach = generatedJourney?.llmSessionCoach?.output || null;
   const sessionNotice = generationNotice || generatedJourney?.generationWarning || '';
+  const playerMax = Math.max(durationSec || 0, 1);
+  const planetSpinDurationSec = getPlanetSpinDurationSec(planetMedia?.title);
+  const backgroundImage = planetMedia?.backgroundImage || planetMedia?.image;
+  const sessionStatus = hasGeneratedAudio ? 'AI audio generated' : generatedJourney ? 'AI plan synced' : 'planet preset';
+  const liveMuseStatusLabel = LIVE_MUSE_STATUS_LABELS[liveMuseStatus] || liveMuseStatus;
+  const liveMuseQualityLabel = Number.isFinite(Number(liveMuseMetrics?.qualityScore))
+    ? `${Math.round(Number(liveMuseMetrics.qualityScore) * 100)}%`
+    : '대기';
+  const liveMuseNextLabel = liveMuseMetrics?.nextAnalysisAt
+    ? new Date(liveMuseMetrics.nextAnalysisAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '대기';
+  const canStartLiveMuse = ['off', 'pending', 'error'].includes(liveMuseStatus);
+  const canStopLiveMuse = ['connecting', 'calibrating', 'active', 'analyzing'].includes(liveMuseStatus);
+
   const currentStateCards = ['focus_readiness', 'stress_load', 'fatigue_risk'].map((key) => ({
     key,
     label: formatAxisName(key),
     value: toPercent(currentStateAxes?.[key]),
     body: AXIS_EXPLANATIONS[key],
   }));
-  const playerMax = Math.max(durationSec || 0, 1);
-  const planetSpinDurationSec = getPlanetSpinDurationSec(planetMedia?.title);
+
+  const targetStateCards = ['focus_readiness', 'relaxation_level', 'cortical_arousal'].map((key) => ({
+    key,
+    label: formatAxisName(key),
+    value: toPercent(targetStateAxes?.[key]),
+  }));
+
+  const sessionRows = useMemo(() => {
+    const phases = transitionPhases.length ? transitionPhases : buildFallbackPhases(planetMedia, durationSec);
+    return phases.map((phase, index) => ({
+      id: `${phase.name}-${index}`,
+      title: phase.name || `Phase ${index + 1}`,
+      body: formatPhaseGoals(phase),
+      duration: `${Math.round(Number(phase.duration_sec || 0))}s`,
+    }));
+  }, [durationSec, planetMedia, transitionPhases]);
+
+  const handleMouseMove = (event) => {
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setMousePos({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+  };
 
   return (
-    <Page>
-      <Frame>
-        <HeaderCard $accent={accentColor}>
-          <HeaderTop>
-            <HeaderCopy>
-              <PlayerKicker>NOOS immersive playback</PlayerKicker>
-              <PlayerTitle $accent={accentColor}>{planetMedia.title}</PlayerTitle>
-              <PlayerMeta $accent={accentColor}>{planetMedia.moodTarget}</PlayerMeta>
-            </HeaderCopy>
+    <Page $background={backgroundImage} $accent={accentColor}>
+      <Stage>
+        <GlassCard ref={cardRef} $accent={accentColor} onMouseMove={handleMouseMove}>
+          <GlassNoise aria-hidden="true" />
+          <GlassSpecular
+            aria-hidden="true"
+            style={{
+              background: `radial-gradient(circle at ${mousePos.x}px ${mousePos.y}px, rgba(255,255,255,0.18), rgba(255,255,255,0.05) 32%, transparent 62%)`,
+            }}
+          />
 
-            <PlayerIconActions>
-              <IconActionButton type="button" onClick={onOpenDashboard} $accent={accentColor} title="Dashboard">
-                <LayoutDashboard size={15} />
-              </IconActionButton>
-              <IconActionButton type="button" onClick={onOpenProfile} $accent={accentColor} title="Profile">
-                <UserRound size={15} />
-              </IconActionButton>
-            </PlayerIconActions>
-          </HeaderTop>
+          <Content>
+            <TopBar>
+              <BrandLockup>
+                <BrandIcon $accent={accentColor}>
+                  <Music2 size={21} />
+                </BrandIcon>
+                <BrandText>
+                  <Kicker>NOOS immersive playback</Kicker>
+                  <BrandTitle>{planetMedia.title}</BrandTitle>
+                </BrandText>
+              </BrandLockup>
 
-          <HeaderSummary>
-            {hasGeneratedAudio
-              ? `${planetMedia.title} 세션이 현재 상태와 목표 상태의 차이를 기준으로 다시 조합되었습니다. 음악과 조명은 같은 리듬으로 움직이도록 동기화되어 있습니다.`
-              : generatedJourney
-              ? `${planetMedia.title} 세션 개입 계획은 현재 상태와 목표 상태의 차이를 기준으로 다시 조합되었습니다. 조명과 상태 벡터는 개인화되었지만, 오디오 생성이 연결되지 않아 현재는 기본 플레이어 경로를 유지하고 있습니다.`
-              : `${planetMedia.title} 행성 기본 세션을 재생 중입니다. AI 생성 세션이 연결되면 이 영역에 개인화 개입 정보가 반영됩니다.`}
-          </HeaderSummary>
+              <ActionGroup>
+                <IconButton type="button" onClick={onOpenProfile} $accent={accentColor} title="Profile">
+                  <UserRound size={17} />
+                </IconButton>
+              </ActionGroup>
+            </TopBar>
 
-          {sessionNotice ? <NoticeBanner $accent={accentColor}>{sessionNotice}</NoticeBanner> : null}
+            <MainGrid>
+              <LeftStack>
+                <CoverCard>
+                  <CoverImage $image={backgroundImage} />
+                </CoverCard>
 
-          <ChipRow>
-            <Chip $accent={accentColor}>track {planetMedia.trackName}</Chip>
-            <Chip $accent={accentColor}>
-              session {hasGeneratedAudio ? 'ai audio generated' : generatedJourney ? 'ai plan synced' : 'planet preset'}
-            </Chip>
-            <Chip $accent={accentColor}>source {stateSnapshot?.sourceLabel || 'NOOS baseline'}</Chip>
-          </ChipRow>
-        </HeaderCard>
+                <ControlPanel>
+                  <TrackCopy>
+                    <TrackTitle>{planetMedia.trackName}</TrackTitle>
+                    <TrackMeta>
+                      {hasGeneratedAudio
+                        ? `${formatClock(durationSec)} 동안 현재 상태에서 목표 상태 방향으로 이동하도록 설계된 세션`
+                        : generatedJourney
+                        ? `${formatClock(durationSec)} 동안 AI 개입 벡터와 조명 계획을 유지하는 플레이어`
+                        : `${formatClock(durationSec)} 기본 행성 트랙`}
+                    </TrackMeta>
+                  </TrackCopy>
 
-        <SessionGrid>
-          <Stack>
-            <PlanetStage $accent={accentColor}>
-              <PlanetAura $accent={accentColor} aria-hidden="true" />
-              <PlanetLabel>{planetMedia.title} environment</PlanetLabel>
-              <PlanetOrb
-                $image={planetMedia.image}
-                $accent={accentColor}
-                $spinDurationSec={planetSpinDurationSec}
-              />
-              <PlanetTitle $accent={accentColor}>{planetMedia.trackName}</PlanetTitle>
-              <PlanetBody>{planetMedia.description}</PlanetBody>
-            </PlanetStage>
+                  <ProgressLine>
+                    <TimeText>{formatClock(playheadSec)}</TimeText>
+                    <Range
+                      type="range"
+                      min={0}
+                      max={playerMax}
+                      value={Math.min(playheadSec, playerMax)}
+                      onChange={(event) => onSeek(Number(event.target.value))}
+                      $accent={accentColor}
+                    />
+                    <TimeText>{formatClock(remainingSec)}</TimeText>
+                  </ProgressLine>
 
-            <PlayerCard $accent={accentColor}>
-              <TrackHeader>
-                <div>
-                  <TrackName $accent={accentColor}>{planetMedia.trackName}</TrackName>
-                  <SectionBody>
-                    {hasGeneratedAudio
-                      ? `${formatClock(durationSec)} 동안 현재 상태에서 목표 상태 방향으로 이동하도록 설계된 세션`
-                      : generatedJourney
-                      ? `${formatClock(durationSec)} 동안 AI 개입 벡터와 조명 계획을 유지하는 플레이어`
-                      : `${formatClock(durationSec)} 기본 행성 트랙`}
-                  </SectionBody>
-                </div>
-                <TrackDuration>{formatClock(durationSec)}</TrackDuration>
-              </TrackHeader>
+                  <ControlRow>
+                    <PlayerButtons>
+                      <SmallButton type="button" title="Favorite session">
+                        <Star size={18} />
+                      </SmallButton>
+                      <SmallButton type="button" onClick={onRewind} title="Rewind">
+                        <SkipBack size={18} />
+                      </SmallButton>
+                      <PlayButton type="button" onClick={onTogglePlay} title={isPlaying ? 'Pause' : 'Play'}>
+                        {isPlaying ? <Pause size={20} /> : <Play size={20} />}
+                      </PlayButton>
+                      <SmallButton type="button" onClick={onForward} title="Forward">
+                        <SkipForward size={18} />
+                      </SmallButton>
+                      <SmallButton type="button" title="Session loop">
+                        <RotateCcw size={17} />
+                      </SmallButton>
+                    </PlayerButtons>
 
-              <ProgressRow>
-                <TimeText>{formatClock(playheadSec)}</TimeText>
-                <ProgressRange
-                  type="range"
-                  min={0}
-                  max={playerMax}
-                  value={Math.min(playheadSec, playerMax)}
-                  onChange={(event) => onSeek(Number(event.target.value))}
-                  $accent={accentColor}
-                />
-                <TimeText>{formatClock(remainingSec)}</TimeText>
-              </ProgressRow>
+                    <VolumeControl>
+                      <Volume2 size={16} />
+                      <Range
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={volumePercent}
+                        onChange={(event) => onVolumeChange(Number(event.target.value))}
+                        $accent={accentColor}
+                      />
+                    </VolumeControl>
+                  </ControlRow>
+                </ControlPanel>
 
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '0.65rem',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div style={{ display: 'inline-flex', gap: '0.6rem', alignItems: 'center' }}>
-                  <ControlButton type="button" onClick={onRewind} $accent={accentColor}>
-                    <SkipBack size={14} />
-                  </ControlButton>
-                  <PlayButton type="button" onClick={onTogglePlay} $accent={accentColor}>
-                    {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-                    {isPlaying ? 'Pause' : 'Play'}
-                  </PlayButton>
-                  <ControlButton type="button" onClick={onForward} $accent={accentColor}>
-                    <SkipForward size={14} />
-                  </ControlButton>
-                </div>
+                <BottomActionRow>
+                  <ActionButton type="button" onClick={onAskAiObjet} $accent={accentColor}>
+                    <Bot size={14} />
+                    AI Objet 연결
+                  </ActionButton>
+                  <ActionButton type="button" onClick={onExitIntent} $accent={accentColor} $danger>
+                    <Sparkles size={14} />
+                    여정 종료
+                  </ActionButton>
+                  <ActionButton type="button" onClick={onOpenDashboard} $accent={accentColor}>
+                    <LayoutDashboard size={14} />
+                    대시보드
+                  </ActionButton>
+                </BottomActionRow>
+              </LeftStack>
 
-                <VolumeRow>
-                  <VolumeLabel $accent={accentColor}>
-                    <Volume2 size={13} />
-                  </VolumeLabel>
-                  <VolumeRange
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={volumePercent}
-                    onChange={(event) => onVolumeChange(Number(event.target.value))}
-                    $accent={accentColor}
-                  />
-                  <VolumeValue>{volumePercent}%</VolumeValue>
-                </VolumeRow>
-              </div>
-            </PlayerCard>
+              <RightPanel>
+                <PanelScroll>
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>Session queue</PanelLabel>
+                      <PanelTitle>{transitionPlan?.transition_mode || `${planetMedia.moodTarget} flow`}</PanelTitle>
+                      <BodyText>
+                        {generatedJourney
+                          ? '오른쪽 영역은 노래 목록 대신 현재 세션의 페이즈와 상태 개입 정보를 보여줍니다.'
+                          : 'AI 생성 정보가 없을 때는 행성 기본 세션 흐름을 기준으로 표시됩니다.'}
+                      </BodyText>
+                    </PanelHeader>
 
-            <PlayerCard $accent={accentColor}>
-              <SectionHead>
-                <SectionLabel $accent={accentColor}>Current state snapshot</SectionLabel>
-                <SectionTitle $accent={accentColor}>Session vectors</SectionTitle>
-                <SectionBody>재생 직전 기준으로 NOOS가 읽은 핵심 축을 정리한 상태 카드입니다.</SectionBody>
-              </SectionHead>
-
-              <MetaGrid>
-                {currentStateCards.map((card) => (
-                  <MetaCard key={card.key} $accent={accentColor}>
-                    <MetaLabel>{card.label}</MetaLabel>
-                    <MetaValue $accent={accentColor}>{card.value}</MetaValue>
-                    <MetaBody>{card.body}</MetaBody>
-                  </MetaCard>
-                ))}
-              </MetaGrid>
-
-              {llmExplanation && (
-                <>
-                  <SectionLabel $accent={accentColor}>NOOS brief</SectionLabel>
-                  <SectionBody>{llmExplanation.summary}</SectionBody>
-                  {!!llmExplanation.why_now?.length && (
-                    <InsightList>
-                      {llmExplanation.why_now.map((item) => (
-                        <InsightItem key={item} $accent={accentColor}>
-                          {item}
-                        </InsightItem>
+                    <SessionRows>
+                      {sessionRows.map((row) => (
+                        <SessionRow key={row.id}>
+                          <RowThumb $image={planetMedia.image} $accent={accentColor} />
+                          <RowCopy>
+                            <RowTitle>{row.title}</RowTitle>
+                            <RowBody>{row.body}</RowBody>
+                          </RowCopy>
+                          <RowTime>{row.duration}</RowTime>
+                        </SessionRow>
                       ))}
-                    </InsightList>
-                  )}
-                </>
-              )}
-            </PlayerCard>
+                    </SessionRows>
+                  </GlassPanel>
 
-            <PlayerCard $accent={accentColor}>
-              <SectionHead>
-                <SectionLabel $accent={accentColor}>AI intervention</SectionLabel>
-                <SectionTitle $accent={accentColor}>{transitionPlan?.transition_mode || 'Planetary preset'}</SectionTitle>
-                <SectionBody>
-                  {generatedJourney
-                    ? '생성 엔진은 현재 상태와 목표 행성 사이의 차이를 계산해 세션 강도와 페이즈를 정렬했습니다.'
-                    : '아직 AI 생성 결과가 없어서 행성 기본 처방을 재생하고 있습니다.'}
-                </SectionBody>
-              </SectionHead>
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>Current state</PanelLabel>
+                      <PanelTitle>Session vectors</PanelTitle>
+                    </PanelHeader>
 
-              <MetaGrid>
-                <MetaCard $accent={accentColor}>
-                  <MetaLabel>Transition intensity</MetaLabel>
-                  <MetaValue $accent={accentColor}>{Math.round(transitionIntensity * 100)}%</MetaValue>
-                  <MetaBody>상태를 얼마나 크게 움직이려는지에 대한 개입 강도</MetaBody>
-                </MetaCard>
-                <MetaCard $accent={accentColor}>
-                  <MetaLabel>Reliability</MetaLabel>
-                  <MetaValue $accent={accentColor}>{Math.round(transitionReliability * 100)}%</MetaValue>
-                  <MetaBody>현재 입력 품질과 상태 해석을 바탕으로 계산한 신뢰도</MetaBody>
-                </MetaCard>
-                <MetaCard $accent={accentColor}>
-                  <MetaLabel>Input quality</MetaLabel>
-                  <MetaValue $accent={accentColor}>{Math.round(qualityScore * 100)}%</MetaValue>
-                  <MetaBody>측정 또는 설문 입력의 안정성 수준</MetaBody>
-                </MetaCard>
-              </MetaGrid>
+                    <MetaGrid>
+                      {currentStateCards.map((card) => (
+                        <MetaCard key={card.key}>
+                          <MetaLabel>{card.label}</MetaLabel>
+                          <MetaValue $accent={accentColor}>{card.value}</MetaValue>
+                          <BodyText>{card.body}</BodyText>
+                        </MetaCard>
+                      ))}
+                    </MetaGrid>
+                  </GlassPanel>
 
-              {priorityAxes.length > 0 && (
-                <>
-                  <SectionLabel $accent={accentColor}>Change priority</SectionLabel>
-                  <PriorityRow>
-                    {priorityAxes.map((axis) => (
-                      <PriorityChip key={axis} $accent={accentColor}>
-                        {formatAxisName(axis)}
-                      </PriorityChip>
-                    ))}
-                  </PriorityRow>
-                </>
-              )}
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>Muse live adaptation</PanelLabel>
+                      <PanelTitle>{liveMuseStatusLabel}</PanelTitle>
+                      <BodyText>
+                        {adaptiveMusicState?.label ||
+                          'Muse가 연결되면 최근 5분 EEG를 기준으로 유지, 약한 조정, 크로스페이드 전환을 선택합니다.'}
+                      </BodyText>
+                    </PanelHeader>
 
-              {transitionPhases.length > 0 && (
-                <>
-                  <SectionLabel $accent={accentColor}>Session flow</SectionLabel>
-                  <PhaseList>
-                    {transitionPhases.map((phase) => (
-                      <PhaseCard key={`${phase.name}-${phase.duration_sec}`} $accent={accentColor}>
-                        <PhaseTop>
-                          <PhaseTitle $accent={accentColor}>{phase.name}</PhaseTitle>
-                          <PhaseMeta>{Math.round(Number(phase.duration_sec || 0))} sec</PhaseMeta>
-                        </PhaseTop>
-                        <PhaseBody>{formatPhaseGoals(phase)}</PhaseBody>
-                      </PhaseCard>
-                    ))}
-                  </PhaseList>
-                </>
-              )}
-            </PlayerCard>
+                    <MetaGrid>
+                      <MetaCard>
+                        <MetaLabel>Samples</MetaLabel>
+                        <MetaValue $accent={accentColor}>{Math.round(Number(liveMuseMetrics?.sampleCount || 0))}</MetaValue>
+                        <BodyText>최근 로컬 버퍼</BodyText>
+                      </MetaCard>
+                      <MetaCard>
+                        <MetaLabel>Quality</MetaLabel>
+                        <MetaValue $accent={accentColor}>{liveMuseQualityLabel}</MetaValue>
+                        <BodyText>마지막 분석</BodyText>
+                      </MetaCard>
+                      <MetaCard>
+                        <MetaLabel>Next</MetaLabel>
+                        <MetaValue $accent={accentColor} style={{ fontSize: 18 }}>{liveMuseNextLabel}</MetaValue>
+                        <BodyText>5분 윈도우</BodyText>
+                      </MetaCard>
+                    </MetaGrid>
 
-            {llmCoach && (
-              <PlayerCard $accent={accentColor}>
-                <SectionHead>
-                  <SectionLabel $accent={accentColor}>Session coach</SectionLabel>
-                  <SectionTitle $accent={accentColor}>{llmCoach.session_prompt || '세션 준비 가이드'}</SectionTitle>
-                  <SectionBody>{llmCoach.focus_frame || llmCoach.success_signal}</SectionBody>
-                </SectionHead>
+                    <ChipRow style={{ marginTop: '0.65rem' }}>
+                      <Chip $accent={accentColor}>baseline 1m</Chip>
+                      <Chip $accent={accentColor}>analysis 5m</Chip>
+                      <Chip $accent={accentColor}>crossfade 30s</Chip>
+                      {adaptiveMusicState?.reason ? <Chip $accent={accentColor}>{adaptiveMusicState.reason}</Chip> : null}
+                    </ChipRow>
 
-                {!!llmCoach.setup_steps?.length && (
-                  <InsightList>
-                    {llmCoach.setup_steps.map((step) => (
-                      <InsightItem key={step} $accent={accentColor}>
-                        {step}
-                      </InsightItem>
-                    ))}
-                  </InsightList>
-                )}
-              </PlayerCard>
-            )}
-          </Stack>
+                    <BottomActionRow style={{ marginTop: '0.72rem' }}>
+                      {canStartLiveMuse ? (
+                        <ActionButton type="button" $accent={accentColor} onClick={onStartLiveMuse}>
+                          Muse 연결
+                        </ActionButton>
+                      ) : null}
+                      {canStopLiveMuse ? (
+                        <ActionButton type="button" $accent={accentColor} onClick={onStopLiveMuse}>
+                          Muse 중지
+                        </ActionButton>
+                      ) : null}
+                    </BottomActionRow>
+                  </GlassPanel>
 
-          <RightActions>
-            <TravelLightingPreview preview={planetMedia.lightingPreview} accentColor={accentColor} compact />
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>Target state</PanelLabel>
+                      <PanelTitle>{interventionResult?.planet_profile?.goal_label || planetMedia.moodTarget}</PanelTitle>
+                      <BodyText>
+                        {interventionResult?.planet_profile?.user_description || planetMedia.description}
+                      </BodyText>
+                    </PanelHeader>
 
-            <PlayerCard $accent={accentColor}>
-              <SectionHead>
-                <SectionLabel $accent={accentColor}>Target state</SectionLabel>
-                <SectionTitle $accent={accentColor}>
-                  {interventionResult?.planet_profile?.goal_label || planetMedia.moodTarget}
-                </SectionTitle>
-                <SectionBody>
-                  {interventionResult?.planet_profile?.user_description || planetMedia.description}
-                </SectionBody>
-              </SectionHead>
+                    <MetaGrid>
+                      {targetStateCards.map((card) => (
+                        <MetaCard key={card.key}>
+                          <MetaLabel>{card.label}</MetaLabel>
+                          <MetaValue $accent={accentColor}>{card.value}</MetaValue>
+                        </MetaCard>
+                      ))}
+                    </MetaGrid>
+                  </GlassPanel>
 
-              <MetaGrid>
-                {['focus_readiness', 'relaxation_level', 'cortical_arousal'].map((key) => (
-                  <MetaCard key={key} $accent={accentColor}>
-                    <MetaLabel>{formatAxisName(key)}</MetaLabel>
-                    <MetaValue $accent={accentColor}>{toPercent(targetStateAxes?.[key])}</MetaValue>
-                    <MetaBody>목표 행성이 지향하는 상태 축의 기준값</MetaBody>
-                  </MetaCard>
-                ))}
-              </MetaGrid>
-            </PlayerCard>
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>AI intervention</PanelLabel>
+                      <PanelTitle>
+                        {Math.round(transitionIntensity * 100)}% intensity · {Math.round(transitionReliability * 100)}%
+                        reliability
+                      </PanelTitle>
+                      <BodyText>
+                        입력 품질 {Math.round(qualityScore * 100)}% 기준으로 음악, 조명, 페이즈가 정렬됩니다.
+                      </BodyText>
+                    </PanelHeader>
 
-            {aiConnected && (
-              <AiConnectedPanel $accent={accentColor}>
-                <AiConnectedTitle $accent={accentColor}>AI Objet connected</AiConnectedTitle>
-                <AiConnectedSub>
-                  현재 세션 제어 채널이 열려 있습니다. 필요하면 연결을 해제하고 행성 플레이어만 유지할 수 있습니다.
-                </AiConnectedSub>
-                <AiDisconnectButton type="button" $accent={accentColor} onClick={onDisconnectAiObjet}>
-                  Disconnect
-                </AiDisconnectButton>
-              </AiConnectedPanel>
-            )}
+                    <ChipRow>
+                      <Chip $accent={accentColor}>track {planetMedia.trackName}</Chip>
+                      <Chip $accent={accentColor}>{sessionStatus}</Chip>
+                      <Chip $accent={accentColor}>source {stateSnapshot?.sourceLabel || 'NOOS baseline'}</Chip>
+                      {priorityAxes.map((axis) => (
+                        <Chip key={axis} $accent={accentColor}>
+                          {formatAxisName(axis)}
+                        </Chip>
+                      ))}
+                    </ChipRow>
+                  </GlassPanel>
 
-            <BottomActions>
-              <SecondaryAction type="button" onClick={onAskAiObjet} $accent={accentColor}>
-                <Bot size={13} />
-                AI Objet 연결
-              </SecondaryAction>
-              <DangerAction type="button" onClick={onExitIntent} $accent={accentColor}>
-                <Sparkles size={13} />
-                여행 종료
-              </DangerAction>
-            </BottomActions>
-          </RightActions>
-        </SessionGrid>
-      </Frame>
+                  {sessionNotice ? <Notice $accent={accentColor}>{sessionNotice}</Notice> : null}
+
+                  {llmExplanation ? (
+                    <GlassPanel>
+                      <PanelHeader>
+                        <PanelLabel $accent={accentColor}>NOOS brief</PanelLabel>
+                        <PanelTitle>{llmExplanation.summary}</PanelTitle>
+                      </PanelHeader>
+                      {!!llmExplanation.why_now?.length && (
+                        <InsightList>
+                          {llmExplanation.why_now.map((item) => (
+                            <InsightItem key={item}>{item}</InsightItem>
+                          ))}
+                        </InsightList>
+                      )}
+                    </GlassPanel>
+                  ) : null}
+
+                  {llmCoach ? (
+                    <GlassPanel>
+                      <PanelHeader>
+                        <PanelLabel $accent={accentColor}>Session coach</PanelLabel>
+                        <PanelTitle>{llmCoach.session_prompt || '세션 준비 가이드'}</PanelTitle>
+                        <BodyText>{llmCoach.focus_frame || llmCoach.success_signal}</BodyText>
+                      </PanelHeader>
+                      {!!llmCoach.setup_steps?.length && (
+                        <InsightList>
+                          {llmCoach.setup_steps.map((step) => (
+                            <InsightItem key={step}>{step}</InsightItem>
+                          ))}
+                        </InsightList>
+                      )}
+                    </GlassPanel>
+                  ) : null}
+
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>Lighting</PanelLabel>
+                      <PanelTitle>{planetMedia.title} light pattern</PanelTitle>
+                    </PanelHeader>
+                    <TravelLightingPreview preview={planetMedia.lightingPreview} accentColor={accentColor} compact />
+                  </GlassPanel>
+
+                  {aiConnected ? (
+                    <AiPanel $accent={accentColor}>
+                      <PanelHeader>
+                        <PanelLabel $accent={accentColor}>AI Objet connected</PanelLabel>
+                        <PanelTitle>Control channel is open</PanelTitle>
+                        <BodyText>
+                          현재 세션 제어 채널이 열려 있습니다. 필요하면 연결을 해제하고 행성 플레이어만 유지할 수 있습니다.
+                        </BodyText>
+                      </PanelHeader>
+                      <ActionButton type="button" $accent={accentColor} onClick={onDisconnectAiObjet}>
+                        Disconnect
+                      </ActionButton>
+                    </AiPanel>
+                  ) : null}
+
+                </PanelScroll>
+              </RightPanel>
+            </MainGrid>
+          </Content>
+
+        </GlassCard>
+      </Stage>
     </Page>
   );
 };
