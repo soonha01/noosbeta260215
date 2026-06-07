@@ -44,41 +44,6 @@
         WHERE eeg_session_id = #{eegSessionId}
     </update>
 
-    <insert id="insertEegRawChunk" useGeneratedKeys="true" keyProperty="eegRawChunkId">
-        INSERT INTO eeg_raw_chunks (
-            eeg_session_id,
-            chunk_index,
-            sample_rate_hz,
-            start_offset_ms,
-            chunk_sample_count,
-            samples_json,
-            created_at
-        ) VALUES (
-            #{eegSessionId},
-            #{chunkIndex},
-            #{sampleRateHz},
-            #{startOffsetMs},
-            #{chunkSampleCount},
-            #{samplesJson},
-            NOW()
-        )
-    </insert>
-
-    <select id="selectEegRawChunksBySessionId" resultType="com.noos.backend.eeg.dto.EegRawChunk">
-        SELECT
-            eeg_raw_chunk_id AS eegRawChunkId,
-            eeg_session_id AS eegSessionId,
-            chunk_index AS chunkIndex,
-            sample_rate_hz AS sampleRateHz,
-            start_offset_ms AS startOffsetMs,
-            chunk_sample_count AS chunkSampleCount,
-            samples_json AS samplesJson,
-            created_at AS createdAt
-        FROM eeg_raw_chunks
-        WHERE eeg_session_id = #{eegSessionId}
-        ORDER BY chunk_index ASC
-    </select>
-
     <insert id="insertEegResult" useGeneratedKeys="true" keyProperty="eegResultId">
         INSERT INTO eeg_results (
             eeg_session_id,
@@ -104,6 +69,68 @@
             created_at
         ) VALUES (
             #{eegSessionId},
+            #{delta},
+            #{theta},
+            #{alpha},
+            #{beta},
+            #{gamma},
+            #{dominantBand},
+            #{stateKey},
+            #{stateLabel},
+            #{confidence},
+            #{qualityScore},
+            #{featureSource},
+            #{focusScore},
+            #{relaxScore},
+            #{stressScore},
+            #{mentalWorkloadScore},
+            #{fatigueRiskScore},
+            #{corticalArousalScore},
+            #{analysisVersion},
+            #{rawAiResponseJson},
+            NOW()
+        )
+    </insert>
+
+    <insert id="insertEegWindowResult" useGeneratedKeys="true" keyProperty="eegWindowResultId">
+        INSERT INTO eeg_window_results (
+            eeg_session_id,
+            window_index,
+            window_start_at,
+            window_end_at,
+            window_duration_sec,
+            sample_count,
+            sample_rate_hz,
+            analysis_mode,
+            delta,
+            theta,
+            alpha,
+            beta,
+            gamma,
+            dominant_band,
+            state_key,
+            state_label,
+            confidence,
+            quality_score,
+            feature_source,
+            focus_score,
+            relax_score,
+            stress_score,
+            mental_workload_score,
+            fatigue_risk_score,
+            cortical_arousal_score,
+            analysis_version,
+            raw_ai_response_json,
+            created_at
+        ) VALUES (
+            #{eegSessionId},
+            #{windowIndex},
+            #{windowStartAt},
+            #{windowEndAt},
+            #{windowDurationSec},
+            #{sampleCount},
+            #{sampleRateHz},
+            #{analysisMode},
             #{delta},
             #{theta},
             #{alpha},

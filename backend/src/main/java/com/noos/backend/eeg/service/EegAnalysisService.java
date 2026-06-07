@@ -1,15 +1,18 @@
 package com.noos.backend.eeg.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.service.NoosAiService;
-import com.noos.backend.eeg.dto.EegRawChunk;
+import com.noos.backend.eeg.dto.EegAnalysisRequest;
+import com.noos.backend.eeg.dto.EegAnalysisResponse;
+import com.noos.backend.eeg.dto.EegCurrentState;
+import com.noos.backend.eeg.dto.EegRecognitionResult;
 import com.noos.backend.eeg.dto.EegResult;
 import com.noos.backend.eeg.dto.EegSession;
 import com.noos.backend.eeg.dto.EegSessionStartRequest;
 import com.noos.backend.eeg.dto.EegSessionStartResponse;
+import com.noos.backend.eeg.dto.EegSurveyContext;
+import com.noos.backend.eeg.dto.EegWindowResult;
 import com.noos.backend.eeg.mapper.EegMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,18 +24,13 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class EegAnalysisService {
 
     private static final Logger logger = LoggerFactory.getLogger(EegAnalysisService.class);
     private static final String ANALYSIS_VERSION = "recognition-v1";
-    private static final int MAX_RAW_ANALYSIS_CHUNKS = 48;
     private static final List<String> CONFIDENCE_AXES = List.of(
             "focus_readiness",
             "stress_load",
@@ -42,42 +40,39 @@ public class EegAnalysisService {
     private final NoosAiService noosAiService;
     private final EegMapper eegMapper;
     private final ObjectMapper objectMapper;
-    private final EegRawChunkService eegRawChunkService;
 
     public EegAnalysisService(
             NoosAiService noosAiService,
             EegMapper eegMapper,
-            ObjectMapper objectMapper,
-            EegRawChunkService eegRawChunkService
+            ObjectMapper objectMapper
     ) {
         this.noosAiService = noosAiService;
         this.eegMapper = eegMapper;
         this.objectMapper = objectMapper;
-        this.eegRawChunkService = eegRawChunkService;
     }
 
-    public Map<String, Object> analyzeAndPersist(EegRecognitionRequest request, Long sessionUserId) {
-        if (sessionUserId == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login session is required for EEG save.");
-        }
-
+    public EegAnalysisResponse analyzeAndPersist(EegAnalysisRequest request, Long sessionUserId) {
         EegSession eegSession = resolveAnalysisSession(request, sessionUserId);
         boolean liveWindowAnalysis = isLiveWindowAnalysis(request);
 
         try {
             eegMapper.updateEegSessionStatus(eegSession.getEegSessionId(), "PROCESSING");
-            List<Map<String, Object>> rawReadings = loadRawReadings(eegSession.getEegSessionId(), request);
-            Map<String, Object> response = noosAiService.recognize(request, rawReadings);
-            EegResult eegResult = createEegResult(eegSession.getEegSessionId(), request, response);
 
-            eegMapper.insertEegResult(eegResult);
+            EegAnalysisResponse response = noosAiService.recognize(request);
+            if (liveWindowAnalysis) {
+                EegWindowResult eegWindowResult = createEegWindowResult(eegSession.getEegSessionId(), request, response);
+                eegMapper.insertEegWindowResult(eegWindowResult);
+                response.setEegWindowResultId(eegWindowResult.getEegWindowResultId());
+            } else {
+                EegResult eegResult = createEegResult(eegSession.getEegSessionId(), request, response);
+                eegMapper.insertEegResult(eegResult);
+                response.setEegResultId(eegResult.getEegResultId());
+            }
+
             eegMapper.updateEegSessionStatus(eegSession.getEegSessionId(), liveWindowAnalysis ? "COLLECTING" : "COMPLETED");
-
-            Map<String, Object> enrichedResponse = new LinkedHashMap<>(response);
-            enrichedResponse.put("eegSessionId", eegSession.getEegSessionId());
-            enrichedResponse.put("eegResultId", eegResult.getEegResultId());
-            enrichedResponse.put("saved", true);
-            return enrichedResponse;
+            response.setEegSessionId(eegSession.getEegSessionId());
+            response.setSaved(true);
+            return response;
         } catch (RuntimeException error) {
             markSessionFailed(eegSession.getEegSessionId(), error, liveWindowAnalysis);
             throw error;
@@ -85,10 +80,6 @@ public class EegAnalysisService {
     }
 
     public EegSessionStartResponse startSession(EegSessionStartRequest request, Long sessionUserId) {
-        if (sessionUserId == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login session is required for EEG session start.");
-        }
-
         EegSession eegSession = new EegSession();
         eegSession.setUserId(sessionUserId);
         eegSession.setDeviceType(hasText(request.deviceType()) ? request.deviceType().trim() : "Muse S Athena");
@@ -99,13 +90,13 @@ public class EegAnalysisService {
         return new EegSessionStartResponse(eegSession.getEegSessionId(), eegSession.getStatus(), true);
     }
 
-    private EegSession resolveAnalysisSession(EegRecognitionRequest request, Long sessionUserId) {
+    private EegSession resolveAnalysisSession(EegAnalysisRequest request, Long sessionUserId) {
         if (request.eegSessionId() != null) {
             EegSession existing = eegMapper.selectEegSessionById(request.eegSessionId());
             if (existing == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "EEG session was not found.");
             }
-            if (existing.getUserId() == null || !existing.getUserId().equals(sessionUserId)) {
+            if (existing.getUserId() != null && !existing.getUserId().equals(sessionUserId)) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "EEG session does not belong to the current user.");
             }
             return existing;
@@ -116,7 +107,7 @@ public class EegAnalysisService {
         return eegSession;
     }
 
-    private EegSession createEegSession(EegRecognitionRequest request, Long sessionUserId) {
+    private EegSession createEegSession(EegAnalysisRequest request, Long sessionUserId) {
         EegSession eegSession = new EegSession();
         eegSession.setUserId(sessionUserId);
         eegSession.setDeviceType(hasText(request.deviceType()) ? request.deviceType().trim() : "Muse S Athena");
@@ -125,26 +116,21 @@ public class EegAnalysisService {
         return eegSession;
     }
 
-    private EegResult createEegResult(Long eegSessionId, EegRecognitionRequest request, Map<String, Object> response) {
-        Map<String, Object> recognitionResult = mapValue(response.get("recognitionResult"));
-        Map<String, Object> currentState = mapValue(response.get("currentState"));
-        Map<String, Object> stateProfile = mapValue(recognitionResult.get("state_profile"));
-        Map<String, Object> quality = mapValue(recognitionResult.get("quality"));
-        Map<String, Object> inputSummary = mapValue(recognitionResult.get("input_summary"));
+    private EegResult createEegResult(Long eegSessionId, EegAnalysisRequest request, EegAnalysisResponse response) {
+        EegRecognitionResult recognitionResult = safeRecognitionResult(response);
+        EegCurrentState currentState = safeCurrentState(response);
+        EegRecognitionResult.StateProfile stateProfile = safeStateProfile(recognitionResult);
+        EegRecognitionResult.Quality quality = safeQuality(recognitionResult);
+        EegRecognitionResult.InputSummary inputSummary = safeInputSummary(recognitionResult);
 
         EegResult eegResult = new EegResult();
         eegResult.setEegSessionId(eegSessionId);
-        eegResult.setDelta(safeNumber(request.delta()));
-        eegResult.setTheta(safeNumber(request.theta()));
-        eegResult.setAlpha(safeNumber(request.alpha()));
-        eegResult.setBeta(safeNumber(request.beta()));
-        eegResult.setGamma(safeNumber(request.gamma()));
-        eegResult.setDominantBand(hasText(request.dominantBand()) ? request.dominantBand().trim() : null);
-        eegResult.setStateKey(stringValue(stateProfile.get("dominant_state")));
-        eegResult.setStateLabel(firstText(response.get("stateLabel"), nestedText(recognitionResult, "state_profile", "label")));
+        applyBandSummary(eegResult, request);
+        eegResult.setStateKey(stateProfile.getDominantState());
+        eegResult.setStateLabel(firstText(response.getStateLabel(), stateProfile.getLabel()));
         eegResult.setConfidence(resolveOverallConfidence(recognitionResult));
-        eegResult.setQualityScore(roundToThree(clamp01(readNumber(quality.get("score"), 0.0))));
-        eegResult.setFeatureSource(stringValue(inputSummary.get("feature_source")));
+        eegResult.setQualityScore(roundToThree(clamp01(numberValue(quality.getScore(), 0.0))));
+        eegResult.setFeatureSource(inputSummary.getFeatureSource());
         eegResult.setFocusScore(resolveAxisScore("focus_readiness", currentState, recognitionResult));
         eegResult.setRelaxScore(resolveAxisScore("relaxation_level", currentState, recognitionResult));
         eegResult.setStressScore(resolveAxisScore("stress_load", currentState, recognitionResult));
@@ -154,6 +140,121 @@ public class EegAnalysisService {
         eegResult.setAnalysisVersion(ANALYSIS_VERSION);
         eegResult.setRawAiResponseJson(toJson(response));
         return eegResult;
+    }
+
+    private EegWindowResult createEegWindowResult(Long eegSessionId, EegAnalysisRequest request, EegAnalysisResponse response) {
+        EegRecognitionResult recognitionResult = safeRecognitionResult(response);
+        EegCurrentState currentState = safeCurrentState(response);
+        EegRecognitionResult.StateProfile stateProfile = safeStateProfile(recognitionResult);
+        EegRecognitionResult.Quality quality = safeQuality(recognitionResult);
+        EegRecognitionResult.InputSummary inputSummary = safeInputSummary(recognitionResult);
+
+        int windowSec = resolveWindowDurationSec(request);
+        LocalDateTime windowEndAt = parseMeasuredAt(request.measuredAt());
+        LocalDateTime windowStartAt = windowSec > 0 ? windowEndAt.minusSeconds(windowSec) : windowEndAt;
+
+        EegWindowResult eegWindowResult = new EegWindowResult();
+        eegWindowResult.setEegSessionId(eegSessionId);
+        eegWindowResult.setWindowIndex(resolveWindowIndex(request));
+        eegWindowResult.setWindowStartAt(windowStartAt);
+        eegWindowResult.setWindowEndAt(windowEndAt);
+        eegWindowResult.setWindowDurationSec(windowSec);
+        eegWindowResult.setSampleCount(request.sampleCount() != null ? request.sampleCount() : 0);
+        eegWindowResult.setSampleRateHz(request.sampleRateHz() != null ? request.sampleRateHz() : 256);
+        eegWindowResult.setAnalysisMode(hasText(request.analysisMode()) ? request.analysisMode().trim() : "muse-live-window");
+        applyBandSummary(eegWindowResult, request);
+        eegWindowResult.setStateKey(stateProfile.getDominantState());
+        eegWindowResult.setStateLabel(firstText(response.getStateLabel(), stateProfile.getLabel()));
+        eegWindowResult.setConfidence(resolveOverallConfidence(recognitionResult));
+        eegWindowResult.setQualityScore(roundToThree(clamp01(numberValue(quality.getScore(), 0.0))));
+        eegWindowResult.setFeatureSource(inputSummary.getFeatureSource());
+        eegWindowResult.setFocusScore(resolveAxisScore("focus_readiness", currentState, recognitionResult));
+        eegWindowResult.setRelaxScore(resolveAxisScore("relaxation_level", currentState, recognitionResult));
+        eegWindowResult.setStressScore(resolveAxisScore("stress_load", currentState, recognitionResult));
+        eegWindowResult.setMentalWorkloadScore(resolveAxisScore("mental_workload", currentState, recognitionResult));
+        eegWindowResult.setFatigueRiskScore(resolveAxisScore("fatigue_risk", currentState, recognitionResult));
+        eegWindowResult.setCorticalArousalScore(resolveAxisScore("cortical_arousal", currentState, recognitionResult));
+        eegWindowResult.setAnalysisVersion(ANALYSIS_VERSION);
+        eegWindowResult.setRawAiResponseJson(toJson(response));
+        return eegWindowResult;
+    }
+
+    private void applyBandSummary(EegResult eegResult, EegAnalysisRequest request) {
+        eegResult.setDelta(safeNumber(request.delta()));
+        eegResult.setTheta(safeNumber(request.theta()));
+        eegResult.setAlpha(safeNumber(request.alpha()));
+        eegResult.setBeta(safeNumber(request.beta()));
+        eegResult.setGamma(safeNumber(request.gamma()));
+        eegResult.setDominantBand(hasText(request.dominantBand()) ? request.dominantBand().trim() : null);
+    }
+
+    private void applyBandSummary(EegWindowResult eegWindowResult, EegAnalysisRequest request) {
+        eegWindowResult.setDelta(safeNumber(request.delta()));
+        eegWindowResult.setTheta(safeNumber(request.theta()));
+        eegWindowResult.setAlpha(safeNumber(request.alpha()));
+        eegWindowResult.setBeta(safeNumber(request.beta()));
+        eegWindowResult.setGamma(safeNumber(request.gamma()));
+        eegWindowResult.setDominantBand(hasText(request.dominantBand()) ? request.dominantBand().trim() : null);
+    }
+
+    private Integer resolveWindowIndex(EegAnalysisRequest request) {
+        EegSurveyContext.AdaptiveWindow adaptiveWindow =
+                request.surveyContext() != null ? request.surveyContext().getAdaptiveWindow() : null;
+        return adaptiveWindow != null ? adaptiveWindow.getSequence() : null;
+    }
+
+    private int resolveWindowDurationSec(EegAnalysisRequest request) {
+        if (request.analysisWindowSec() != null && request.analysisWindowSec() > 0) {
+            return request.analysisWindowSec();
+        }
+        if (request.measurementDurationSec() != null && request.measurementDurationSec() > 0) {
+            return request.measurementDurationSec();
+        }
+        return 0;
+    }
+
+    private boolean isLiveWindowAnalysis(EegAnalysisRequest request) {
+        if (request == null) {
+            return false;
+        }
+        if (hasText(request.analysisMode()) && "muse-live-window".equalsIgnoreCase(request.analysisMode().trim())) {
+            return true;
+        }
+
+        String mode = request.surveyContext() != null ? request.surveyContext().getMode() : null;
+        return "muse-live-window".equalsIgnoreCase(mode);
+    }
+
+    private Double resolveOverallConfidence(EegRecognitionResult recognitionResult) {
+        double qualityScore = numberValue(safeQuality(recognitionResult).getScore(), 0.0);
+        EegRecognitionResult.StateDimensions dimensions = safeDimensions(recognitionResult);
+
+        double confidenceSum = 0.0;
+        int confidenceCount = 0;
+        for (String axis : CONFIDENCE_AXES) {
+            EegRecognitionResult.AxisScore axisScore = dimensions.axis(axis);
+            if (axisScore != null && axisScore.getConfidence() != null) {
+                confidenceSum += axisScore.getConfidence();
+                confidenceCount += 1;
+            }
+        }
+
+        double axisConfidence = confidenceCount > 0 ? confidenceSum / confidenceCount : 0.0;
+        double resolved = qualityScore > 0 && axisConfidence > 0
+                ? (qualityScore + axisConfidence) / 2.0
+                : Math.max(qualityScore, axisConfidence);
+
+        return roundToThree(clamp01(resolved));
+    }
+
+    private Double resolveAxisScore(String axisKey, EegCurrentState currentState, EegRecognitionResult recognitionResult) {
+        Double currentScore = currentState.score(axisKey);
+        if (currentScore != null) {
+            return roundToThree(clamp01(currentScore));
+        }
+
+        EegRecognitionResult.AxisScore axisScore = safeDimensions(recognitionResult).axis(axisKey);
+        return roundToThree(clamp01(axisScore != null ? numberValue(axisScore.getScore(), 0.0) : 0.0));
     }
 
     private LocalDateTime parseMeasuredAt(String measuredAt) {
@@ -176,162 +277,6 @@ public class EegAnalysisService {
         return LocalDateTime.now();
     }
 
-    private List<Map<String, Object>> loadRawReadings(Long eegSessionId, EegRecognitionRequest request) {
-        if (eegSessionId == null || eegSessionId <= 0) {
-            return List.of();
-        }
-
-        List<EegRawChunk> chunks = new ArrayList<>(eegRawChunkService.findChunks(eegSessionId));
-        if (chunks.isEmpty()) {
-            return List.of();
-        }
-
-        chunks.sort(Comparator.comparing(EegRawChunk::getChunkIndex, Comparator.nullsLast(Integer::compareTo)));
-        chunks = isLiveWindowAnalysis(request)
-                ? selectLiveWindowChunks(chunks, request.analysisWindowSec())
-                : selectAnalysisChunks(chunks);
-
-        List<Map<String, Object>> readings = new ArrayList<>();
-        for (EegRawChunk chunk : chunks) {
-            readings.addAll(decodeChunkSamples(chunk));
-        }
-        return readings;
-    }
-
-    private boolean isLiveWindowAnalysis(EegRecognitionRequest request) {
-        if (request == null) {
-            return false;
-        }
-        if (hasText(request.analysisMode()) && "muse-live-window".equalsIgnoreCase(request.analysisMode().trim())) {
-            return true;
-        }
-
-        Map<String, Object> surveyContext = request.surveyContext();
-        Object mode = surveyContext != null ? surveyContext.get("mode") : null;
-        return mode instanceof String modeText && "muse-live-window".equalsIgnoreCase(modeText.trim());
-    }
-
-    private List<EegRawChunk> selectLiveWindowChunks(List<EegRawChunk> chunks, Integer analysisWindowSec) {
-        if (chunks.isEmpty()) {
-            return chunks;
-        }
-
-        int windowSec = analysisWindowSec != null && analysisWindowSec > 0 ? analysisWindowSec : 300;
-        int latestChunkDurationSec = chunks.stream()
-                .filter(chunk -> chunk.getChunkSampleCount() != null && chunk.getSampleRateHz() != null && chunk.getSampleRateHz() > 0)
-                .reduce((first, second) -> second)
-                .map(chunk -> Math.max(1, (int) Math.ceil(chunk.getChunkSampleCount() / (double) chunk.getSampleRateHz())))
-                .orElse(10);
-        int maxChunkCount = Math.max(1, (int) Math.ceil(windowSec / (double) latestChunkDurationSec) + 1);
-        int fromIndex = Math.max(0, chunks.size() - maxChunkCount);
-
-        List<EegRawChunk> selected = new ArrayList<>(chunks.subList(fromIndex, chunks.size()));
-        if (selected.size() > MAX_RAW_ANALYSIS_CHUNKS) {
-            selected = selectAnalysisChunks(selected);
-        }
-
-        logger.info(
-                "Selected {} of {} EEG raw chunks for live recognition window ({} sec).",
-                selected.size(),
-                chunks.size(),
-                windowSec
-        );
-        return selected;
-    }
-
-    private List<EegRawChunk> selectAnalysisChunks(List<EegRawChunk> chunks) {
-        if (chunks.size() <= MAX_RAW_ANALYSIS_CHUNKS) {
-            return chunks;
-        }
-
-        List<EegRawChunk> selected = new ArrayList<>();
-        for (int index = 0; index < MAX_RAW_ANALYSIS_CHUNKS; index += 1) {
-            int chunkIndex = (int) Math.floor(index * (chunks.size() - 1.0) / (MAX_RAW_ANALYSIS_CHUNKS - 1.0));
-            selected.add(chunks.get(chunkIndex));
-        }
-        logger.info(
-                "Selected {} of {} EEG raw chunks for recognition payload.",
-                selected.size(),
-                chunks.size()
-        );
-        return selected;
-    }
-
-    private List<Map<String, Object>> decodeChunkSamples(EegRawChunk chunk) {
-        try {
-            List<List<Double>> samples = objectMapper.readValue(
-                    chunk.getSamplesJson(),
-                    new TypeReference<List<List<Double>>>() {}
-            );
-
-            List<Map<String, Object>> readings = new ArrayList<>();
-            long startOffsetMs = chunk.getStartOffsetMs() != null ? chunk.getStartOffsetMs() : 0L;
-            for (List<Double> sample : samples) {
-                if (sample == null || sample.size() < 5) {
-                    continue;
-                }
-
-                Double localOffsetMs = sample.get(0);
-                Double tp9 = sample.get(1);
-                Double af7 = sample.get(2);
-                Double af8 = sample.get(3);
-                Double tp10 = sample.get(4);
-
-                if (localOffsetMs == null || tp9 == null || af7 == null || af8 == null || tp10 == null) {
-                    continue;
-                }
-
-                Map<String, Object> reading = new LinkedHashMap<>();
-                reading.put("timestamp", startOffsetMs + localOffsetMs);
-                reading.put("source", "backend-eeg-raw-chunk");
-                reading.put("channels", Map.of(
-                        "TP9", tp9,
-                        "AF7", af7,
-                        "AF8", af8,
-                        "TP10", tp10
-                ));
-                readings.add(reading);
-            }
-            return readings;
-        } catch (JsonProcessingException error) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to decode EEG raw chunks.", error);
-        }
-    }
-
-    private Double resolveOverallConfidence(Map<String, Object> recognitionResult) {
-        double qualityScore = readNumber(mapValue(recognitionResult.get("quality")).get("score"), 0.0);
-        Map<String, Object> dimensions = mapValue(mapValue(recognitionResult.get("state_profile")).get("dimensions"));
-
-        double confidenceSum = 0.0;
-        int confidenceCount = 0;
-        for (String axis : CONFIDENCE_AXES) {
-            Map<String, Object> axisPayload = mapValue(dimensions.get(axis));
-            Object confidence = axisPayload.get("confidence");
-            if (confidence instanceof Number number) {
-                confidenceSum += number.doubleValue();
-                confidenceCount += 1;
-            }
-        }
-
-        double axisConfidence = confidenceCount > 0 ? confidenceSum / confidenceCount : 0.0;
-        double resolved = qualityScore > 0 && axisConfidence > 0
-                ? (qualityScore + axisConfidence) / 2.0
-                : Math.max(qualityScore, axisConfidence);
-
-        return roundToThree(clamp01(resolved));
-    }
-
-    private Double resolveAxisScore(String axisKey, Map<String, Object> currentState, Map<String, Object> recognitionResult) {
-        Object currentStateValue = currentState.get(axisKey);
-        if (currentStateValue instanceof Number number) {
-            return roundToThree(clamp01(number.doubleValue()));
-        }
-
-        Map<String, Object> dimensions = mapValue(mapValue(recognitionResult.get("state_profile")).get("dimensions"));
-        Map<String, Object> axisPayload = mapValue(dimensions.get(axisKey));
-        return roundToThree(clamp01(readNumber(axisPayload.get("score"), 0.0)));
-    }
-
     private void markSessionFailed(Long eegSessionId, RuntimeException error, boolean liveWindowAnalysis) {
         try {
             eegMapper.updateEegSessionStatus(eegSessionId, liveWindowAnalysis ? "COLLECTING" : "FAILED");
@@ -342,47 +287,56 @@ public class EegAnalysisService {
         logger.error("Failed to analyze or persist EEG session {}", eegSessionId, error);
     }
 
-    private String toJson(Map<String, Object> payload) {
+    private String toJson(EegAnalysisResponse response) {
         try {
-            return objectMapper.writeValueAsString(payload);
+            return objectMapper.writeValueAsString(response);
         } catch (JsonProcessingException error) {
             logger.warn("Failed to serialize EEG AI response for persistence", error);
             return null;
         }
     }
 
-    private Map<String, Object> mapValue(Object value) {
-        if (value instanceof Map<?, ?> rawMap) {
-            Map<String, Object> next = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-                if (entry.getKey() instanceof String key) {
-                    next.put(key, entry.getValue());
-                }
-            }
-            return next;
-        }
-        return Map.of();
+    private EegRecognitionResult safeRecognitionResult(EegAnalysisResponse response) {
+        return response.getRecognitionResult() != null ? response.getRecognitionResult() : new EegRecognitionResult();
     }
 
-    private String nestedText(Map<String, Object> root, String outerKey, String innerKey) {
-        return stringValue(mapValue(root.get(outerKey)).get(innerKey));
+    private EegCurrentState safeCurrentState(EegAnalysisResponse response) {
+        return response.getCurrentState() != null ? response.getCurrentState() : new EegCurrentState();
     }
 
-    private String firstText(Object preferred, String fallback) {
-        String preferredText = stringValue(preferred);
-        return hasText(preferredText) ? preferredText : fallback;
+    private EegRecognitionResult.StateProfile safeStateProfile(EegRecognitionResult recognitionResult) {
+        return recognitionResult.getStateProfile() != null
+                ? recognitionResult.getStateProfile()
+                : new EegRecognitionResult.StateProfile();
     }
 
-    private String stringValue(Object value) {
-        return value instanceof String string && hasText(string) ? string.trim() : null;
+    private EegRecognitionResult.StateDimensions safeDimensions(EegRecognitionResult recognitionResult) {
+        EegRecognitionResult.StateProfile stateProfile = safeStateProfile(recognitionResult);
+        return stateProfile.getDimensions() != null
+                ? stateProfile.getDimensions()
+                : new EegRecognitionResult.StateDimensions();
     }
 
-    private double readNumber(Object value, double fallback) {
-        return value instanceof Number number ? number.doubleValue() : fallback;
+    private EegRecognitionResult.Quality safeQuality(EegRecognitionResult recognitionResult) {
+        return recognitionResult.getQuality() != null ? recognitionResult.getQuality() : new EegRecognitionResult.Quality();
+    }
+
+    private EegRecognitionResult.InputSummary safeInputSummary(EegRecognitionResult recognitionResult) {
+        return recognitionResult.getInputSummary() != null
+                ? recognitionResult.getInputSummary()
+                : new EegRecognitionResult.InputSummary();
     }
 
     private Double safeNumber(Double value) {
         return value != null ? roundToThree(value) : 0.0;
+    }
+
+    private double numberValue(Double value, double fallback) {
+        return value != null ? value : fallback;
+    }
+
+    private String firstText(String preferred, String fallback) {
+        return hasText(preferred) ? preferred.trim() : fallback;
     }
 
     private boolean hasText(String value) {

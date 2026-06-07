@@ -23,7 +23,6 @@ import {
   createEegAnalysisPayload,
   startEegSession,
   submitEegAnalysis,
-  uploadEegRawReadingsChunk,
 } from '../../../lib/eegAnalysisApi';
 import { LIVE_MUSE_SESSION_STORAGE_KEY } from '../solar/travel/constants';
 import {
@@ -63,13 +62,13 @@ const WARP_SCENE_FADE_IN_DURATION_SEC = 1.5;
 const WARP_STAR_COUNT = 120;
 const EEG_SAMPLE_RATE = 256;
 const MAX_LOCAL_EEG_ANALYSIS_BUFFER_SEC = 600;
-const RAW_EEG_CHUNK_DURATION_SEC = 10;
-const RAW_EEG_CHUNK_SAMPLE_COUNT = EEG_SAMPLE_RATE * RAW_EEG_CHUNK_DURATION_SEC;
 const EEG_UI_WINDOW_SEC = 12;
 const MAX_EEG_UI_BUFFER_SIZE = EEG_SAMPLE_RATE * EEG_UI_WINDOW_SEC;
 const EEG_UI_FLUSH_INTERVAL_MS = 50;
 const LIVE_MUSE_BASELINE_DURATION_SEC = 60;
 const LIVE_MUSE_ANALYSIS_INTERVAL_SEC = 300;
+const LIVE_MUSE_CSV_TEST_BASELINE_SEC = 5;
+const LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC = 30;
 const LIVE_MUSE_CROSSFADE_DURATION_SEC = 30;
 const LIVE_MUSE_FEEDBACK_CADENCE_SEC = 900;
 const NOOP_PLANET_SELECT = () => {};
@@ -128,7 +127,6 @@ const createLiveMuseSessionPayload = (createdAt, overrides = {}) => ({
   baselineDurationSec: LIVE_MUSE_BASELINE_DURATION_SEC,
   analysisIntervalSec: LIVE_MUSE_ANALYSIS_INTERVAL_SEC,
   analysisWindowSec: LIVE_MUSE_ANALYSIS_INTERVAL_SEC,
-  rawChunkDurationSec: RAW_EEG_CHUNK_DURATION_SEC,
   transitionMode: 'crossfade',
   crossfadeDurationSec: LIVE_MUSE_CROSSFADE_DURATION_SEC,
   feedbackCadenceSec: LIVE_MUSE_FEEDBACK_CADENCE_SEC,
@@ -313,7 +311,7 @@ const MuseConnectionNotice = ({
             {connected ? 'Muse S Athena 연결됨' : 'Muse S Athena 연결 중'}
           </p>
           <p className="muse-notice-meta">
-            {connected ? '실시간 EEG 스트리밍을 유지합니다.' : 'Bluetooth 페어링과 스트림 초기화를 진행 중입니다.'}
+          {connected ? '실시간 EEG 스트리밍을 유지합니다.' : 'Bluetooth 페어링과 스트림 초기화를 진행 중입니다.'}
           </p>
         </div>
         <span className="muse-notice-pulse" />
@@ -321,7 +319,6 @@ const MuseConnectionNotice = ({
       {connected && (
         <div className="muse-notice-stats">
           <span className="muse-notice-chip">{formattedValue}</span>
-          <span className="muse-notice-chip">{uploadStats?.chunkCount || 0} chunks</span>
           <span className="muse-notice-chip">{sampleCount || uploadStats?.sampleCount || 0} samples</span>
         </div>
       )}
@@ -566,7 +563,6 @@ const Login = ({ onBack }) => {
   const [measurementCompletedAt, setMeasurementCompletedAt] = useState(null);
   const [eegUploadStats, setEegUploadStats] = useState({
     eegSessionId: null,
-    chunkCount: 0,
     sampleCount: 0,
     failed: false,
   });
@@ -581,6 +577,7 @@ const Login = ({ onBack }) => {
   const [liveMuseConnectionStatus, setLiveMuseConnectionStatus] = useState('idle');
   const [liveMuseConnectionError, setLiveMuseConnectionError] = useState('');
   const [liveMuseConnectedAt, setLiveMuseConnectedAt] = useState(null);
+  const [liveMuseConnectionMode, setLiveMuseConnectionMode] = useState('web');
 
   const warpExitTimerRef = useRef(null);
   const museClientRef = useRef(null);
@@ -588,12 +585,7 @@ const Login = ({ onBack }) => {
   const eegBufferRef = useRef([]);
   const eegSessionIdRef = useRef(null);
   const eegSessionMeasuredAtRef = useRef(null);
-  const rawChunkBufferRef = useRef([]);
-  const rawChunkIndexRef = useRef(0);
-  const rawChunkBaseTimestampRef = useRef(null);
   const collectedSampleCountRef = useRef(0);
-  const rawUploadChainRef = useRef(Promise.resolve());
-  const rawUploadFailedRef = useRef(false);
   const eegFlushTimerRef = useRef(null);
   const eegAnalysisRequestKeyRef = useRef(null);
 
@@ -692,7 +684,6 @@ const Login = ({ onBack }) => {
 
       timeoutIds.push(
         setTimeout(() => {
-          flushRawEegChunk(true);
           const frozenReadings = [...eegBufferRef.current];
           const measuredAt = new Date().toISOString();
 
@@ -796,13 +787,6 @@ const Login = ({ onBack }) => {
     const controller = new AbortController();
 
     (async () => {
-      flushRawEegChunk(true);
-      await rawUploadChainRef.current.catch((uploadError) => {
-        if (!controller.signal.aborted) {
-          console.warn('EEG raw upload queue finished with an error. Continuing hybrid summary analysis:', uploadError);
-        }
-      });
-
       const eegSessionId = eegSessionIdRef.current;
 
       return submitEegAnalysis(
@@ -1044,55 +1028,6 @@ const handleSkipLoginForTesting = () => {
     }, EEG_UI_FLUSH_INTERVAL_MS);
   };
 
-  const queueRawEegChunkUpload = (chunkReadings) => {
-    const eegSessionId = eegSessionIdRef.current;
-    if (!eegSessionId || rawUploadFailedRef.current || !chunkReadings.length) {
-      return;
-    }
-
-    const chunkIndex = rawChunkIndexRef.current;
-    rawChunkIndexRef.current += 1;
-
-    rawUploadChainRef.current = rawUploadChainRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const response = await uploadEegRawReadingsChunk({
-          eegSessionId,
-          rawReadings: chunkReadings,
-          sampleRateHz: EEG_SAMPLE_RATE,
-          chunkIndex,
-          baseTimestamp: rawChunkBaseTimestampRef.current,
-        });
-
-        if (response) {
-          setEegUploadStats((prev) => ({
-            ...prev,
-            eegSessionId,
-            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
-            sampleCount: prev.sampleCount + (response.savedCount || chunkReadings.length),
-          }));
-        }
-      })
-      .catch((error) => {
-        rawUploadFailedRef.current = true;
-        setEegUploadStats((prev) => ({ ...prev, failed: true }));
-        console.warn('Failed to upload EEG raw chunk. Hybrid analysis will use summary fallback if needed:', error);
-      });
-  };
-
-  const flushRawEegChunk = (force = false) => {
-    const shouldFlush =
-      rawChunkBufferRef.current.length >= RAW_EEG_CHUNK_SAMPLE_COUNT ||
-      (force && rawChunkBufferRef.current.length > 0);
-
-    if (!shouldFlush) {
-      return;
-    }
-
-    const chunkReadings = rawChunkBufferRef.current.splice(0, rawChunkBufferRef.current.length);
-    queueRawEegChunkUpload(chunkReadings);
-  };
-
   const resetMuseStream = () => {
     museSubscriptionRef.current?.unsubscribe?.();
     museSubscriptionRef.current = null;
@@ -1101,12 +1036,7 @@ const handleSkipLoginForTesting = () => {
     eegBufferRef.current = [];
     eegSessionIdRef.current = null;
     eegSessionMeasuredAtRef.current = null;
-    rawChunkBufferRef.current = [];
-    rawChunkIndexRef.current = 0;
-    rawChunkBaseTimestampRef.current = null;
     collectedSampleCountRef.current = 0;
-    rawUploadChainRef.current = Promise.resolve();
-    rawUploadFailedRef.current = false;
     eegAnalysisRequestKeyRef.current = null;
     setEegData([]);
     setMeasuredEegData([]);
@@ -1114,7 +1044,6 @@ const handleSkipLoginForTesting = () => {
     setMeasurementCompletedAt(null);
     setEegUploadStats({
       eegSessionId: null,
-      chunkCount: 0,
       sampleCount: 0,
       failed: false,
     });
@@ -1160,7 +1089,7 @@ const handleSkipLoginForTesting = () => {
           eegSessionId,
         }));
       } catch (sessionError) {
-        console.warn('Failed to start EEG raw upload session. Continuing with local band summary:', sessionError);
+        console.warn('Failed to start EEG session. Continuing with local band summary:', sessionError);
       }
 
       const maxEegBufferSize = getMaxLocalEegBufferSize(selectedMeasurementDurationSec);
@@ -1170,15 +1099,6 @@ const handleSkipLoginForTesting = () => {
         //나중에 Spring Boot 웹소켓으로 쏨
         collectedSampleCountRef.current += 1;
         eegBufferRef.current.push(reading);
-
-        if (rawChunkBaseTimestampRef.current === null) {
-          rawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
-            ? Number(reading.timestamp)
-            : Date.now();
-        }
-
-        rawChunkBufferRef.current.push(reading);
-        flushRawEegChunk(false);
 
         if (eegBufferRef.current.length > maxEegBufferSize) {
           eegBufferRef.current.splice(0, eegBufferRef.current.length - maxEegBufferSize);
@@ -1199,20 +1119,25 @@ const handleSkipLoginForTesting = () => {
     }
   };
 
-  const startLiveMuseConnection = async () => {
+  const startLiveMuseConnection = async (options = {}) => {
     if (isTransitioning || liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected') {
       return;
     }
 
+    const params = new URLSearchParams(window.location.search);
+    const mode = options?.modeOverride || (params.get('muse') === 'mock' ? 'mock' : 'web');
+    const isCsvTest = mode === 'mock';
+    const deviceType = isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena';
+    const baselineDurationSec = isCsvTest ? LIVE_MUSE_CSV_TEST_BASELINE_SEC : LIVE_MUSE_BASELINE_DURATION_SEC;
+    const analysisIntervalSec = isCsvTest ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC : LIVE_MUSE_ANALYSIS_INTERVAL_SEC;
+
     resetMuseStream();
     setLiveMuseConnectionError('');
+    setLiveMuseConnectionMode(mode);
     setLiveMuseConnectionStatus('connecting');
 
     try {
-      const params = new URLSearchParams(window.location.search);
-      const client = await createMuseClient({
-        mode: params.get('muse') === 'mock' ? 'mock' : 'web',
-      });
+      const client = await createMuseClient({ mode });
       museClientRef.current = client;
 
       await client.connect();
@@ -1224,7 +1149,7 @@ const handleSkipLoginForTesting = () => {
 
       try {
         const startedSession = await startEegSession({
-          deviceType: 'Muse S Athena',
+          deviceType,
           measuredAt: connectedAt,
         });
         const eegSessionId = startedSession?.eegSessionId ?? null;
@@ -1234,25 +1159,14 @@ const handleSkipLoginForTesting = () => {
           eegSessionId,
         }));
       } catch (sessionError) {
-        console.warn('Failed to start live Muse EEG upload session. Continuing with local stream:', sessionError);
+        console.warn('Failed to start live Muse EEG session. Continuing with local stream:', sessionError);
       }
 
-      const maxEegBufferSize = getMaxLocalEegBufferSize(
-        LIVE_MUSE_BASELINE_DURATION_SEC + LIVE_MUSE_ANALYSIS_INTERVAL_SEC
-      );
+      const maxEegBufferSize = getMaxLocalEegBufferSize(baselineDurationSec + analysisIntervalSec);
 
       museSubscriptionRef.current = client.subscribe((reading) => {
         collectedSampleCountRef.current += 1;
         eegBufferRef.current.push(reading);
-
-        if (rawChunkBaseTimestampRef.current === null) {
-          rawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
-            ? Number(reading.timestamp)
-            : Date.now();
-        }
-
-        rawChunkBufferRef.current.push(reading);
-        flushRawEegChunk(false);
 
         if (eegBufferRef.current.length > maxEegBufferSize) {
           eegBufferRef.current.splice(0, eegBufferRef.current.length - maxEegBufferSize);
@@ -1262,9 +1176,15 @@ const handleSkipLoginForTesting = () => {
       });
 
       const liveMuseSession = createLiveMuseSessionPayload(connectedAt, {
+        deviceType,
         status: 'connected',
         connectedAt,
         eegSessionId: eegSessionIdRef.current,
+        streamMode: mode,
+        testMode: isCsvTest ? 'csv-mock' : null,
+        baselineDurationSec,
+        analysisIntervalSec,
+        analysisWindowSec: analysisIntervalSec,
       });
       saveLiveMuseSessionPreference(liveMuseSession);
       setLiveMuseConnectionStatus('connected');
@@ -1280,6 +1200,10 @@ const handleSkipLoginForTesting = () => {
     }
   };
 
+  const startLiveMuseCsvTestConnection = () => {
+    startLiveMuseConnection({ modeOverride: 'mock' });
+  };
+
   const handleMuseChoice = async(choice) => {
     if (isTransitioning) return;
 
@@ -1289,6 +1213,7 @@ const handleSkipLoginForTesting = () => {
       setLiveMuseConnectionStatus('idle');
       setLiveMuseConnectionError('');
       setLiveMuseConnectedAt(null);
+      setLiveMuseConnectionMode('web');
       setSurveyAiExplanation(null);
       window.setTimeout(() => {
         setAuthStage('device-live-ready');
@@ -1352,18 +1277,26 @@ const handleSkipLoginForTesting = () => {
         return;
       }
 
-      flushRawEegChunk(true);
+      const isCsvTest = liveMuseConnectionMode === 'mock';
+      const deviceType = isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena';
+      const baselineDurationSec = isCsvTest ? LIVE_MUSE_CSV_TEST_BASELINE_SEC : LIVE_MUSE_BASELINE_DURATION_SEC;
+      const analysisIntervalSec = isCsvTest ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC : LIVE_MUSE_ANALYSIS_INTERVAL_SEC;
       const liveMuseSession = createLiveMuseSessionPayload(liveMuseConnectedAt || now, {
+        deviceType,
         status: 'connected',
         connectedAt: liveMuseConnectedAt || now,
         eegSessionId: eegSessionIdRef.current,
         sampleCount: collectedSampleCountRef.current,
-        chunkCount: eegUploadStats.chunkCount,
+        streamMode: liveMuseConnectionMode,
+        testMode: isCsvTest ? 'csv-mock' : null,
+        baselineDurationSec,
+        analysisIntervalSec,
+        analysisWindowSec: analysisIntervalSec,
       });
       saveLiveMuseSessionPreference(liveMuseSession);
       saveCurrentStateSnapshot({
-        source: 'muse-live',
-        sourceLabel: 'Muse S Athena 실시간 측정',
+        source: isCsvTest ? 'csv-mock-live' : 'muse-live',
+        sourceLabel: isCsvTest ? 'CSV mock EEG test stream' : 'Muse S Athena 실시간 측정',
         title: DEVICE_CONNECTION_RESULT.title,
         summary: DEVICE_CONNECTION_RESULT.summary,
         conclusion: '음악 세션 중 최근 5분 EEG 윈도우를 반복 분석해 음악 전환에 반영합니다.',
@@ -1419,6 +1352,8 @@ const handleSkipLoginForTesting = () => {
       warpExitTimerRef.current = null;
     }, WARP_EXIT_FADE_DURATION_MS);
   };
+
+  const isLiveMuseCsvTest = liveMuseConnectionMode === 'mock';
 
   const liveMuseNotice = (
     <MuseConnectionNotice
@@ -1830,9 +1765,11 @@ const handleSkipLoginForTesting = () => {
                         <span className="connection-complete-dot" />
                         <span className="connection-complete-label">
                           {liveMuseConnectionStatus === 'connected'
-                            ? `connected · ${latestEegValue !== null ? `${latestEegValue.toFixed(1)}uV` : 'streaming'}`
+                            ? `${isLiveMuseCsvTest ? 'CSV test connected' : 'connected'} · ${latestEegValue !== null ? `${latestEegValue.toFixed(1)}uV` : 'streaming'}`
                             : liveMuseConnectionStatus === 'connecting'
-                            ? 'bluetooth pairing · stream sync'
+                            ? isLiveMuseCsvTest
+                              ? 'CSV mock loading · stream sync'
+                              : 'bluetooth pairing · stream sync'
                             : 'baseline 01:00 · analysis 05:00 · crossfade 00:30'}
                         </span>
                       </div>
@@ -1841,7 +1778,7 @@ const handleSkipLoginForTesting = () => {
                           {liveMuseConnectionError}
                         </p>
                       )}
-                      <div className="binary-actions" style={{ gridTemplateColumns: '1fr' }}>
+                      <div className="binary-actions" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.72rem' }}>
                         <button
                           type="button"
                           className={`option-button ${liveMuseConnectionStatus === 'connected' ? 'option-yes' : ''}`}
@@ -1853,6 +1790,14 @@ const handleSkipLoginForTesting = () => {
                             : liveMuseConnectionStatus === 'connecting'
                             ? 'Muse 연결 중...'
                             : 'Muse Bluetooth 연결'}
+                        </button>
+                        <button
+                          type="button"
+                          className="option-button option-blue"
+                          onClick={startLiveMuseCsvTestConnection}
+                          disabled={liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected'}
+                        >
+                          CSV 테스트
                         </button>
                       </div>
                       <div className="binary-actions">
@@ -2919,6 +2864,18 @@ const StyledWrapper = styled.div`
   .flow-card-device .option-yes:hover {
     background: rgba(255, 255, 255, 0.92);
     border-color: rgba(255, 255, 255, 0.95);
+  }
+
+  .flow-card-device .option-blue {
+    border-color: rgba(74, 144, 255, 0.85);
+    background: linear-gradient(135deg, rgba(52, 128, 255, 0.92), rgba(24, 83, 214, 0.76));
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(32, 105, 235, 0.22);
+  }
+
+  .flow-card-device .option-blue:hover {
+    background: linear-gradient(135deg, rgba(78, 156, 255, 0.98), rgba(36, 101, 232, 0.84));
+    border-color: rgba(125, 180, 255, 0.95);
   }
 
   .flow-card-device .option-no {

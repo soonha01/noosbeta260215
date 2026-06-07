@@ -42,7 +42,6 @@ import {
   createEegAnalysisPayload,
   startEegSession,
   submitEegAnalysis,
-  uploadEegRawReadingsChunk,
 } from '../../../lib/eegAnalysisApi';
 import {
   loadStorageJSON,
@@ -71,8 +70,8 @@ const EEG_SAMPLE_RATE = 256;
 const LIVE_MUSE_BASELINE_SEC = 60;
 const LIVE_MUSE_ANALYSIS_WINDOW_SEC = 300;
 const LIVE_MUSE_ANALYSIS_INTERVAL_MS = LIVE_MUSE_ANALYSIS_WINDOW_SEC * 1000;
-const LIVE_MUSE_RAW_CHUNK_DURATION_SEC = 10;
-const LIVE_MUSE_RAW_CHUNK_SAMPLE_COUNT = EEG_SAMPLE_RATE * LIVE_MUSE_RAW_CHUNK_DURATION_SEC;
+const LIVE_MUSE_CSV_TEST_BASELINE_SEC = 5;
+const LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS = 30 * 1000;
 const LIVE_MUSE_MAX_LOCAL_BUFFER_SEC = LIVE_MUSE_ANALYSIS_WINDOW_SEC + LIVE_MUSE_BASELINE_SEC + 30;
 const LIVE_MUSE_UI_UPDATE_MS = 900;
 const LIVE_MUSE_CROSSFADE_DURATION_SEC = 30;
@@ -98,6 +97,9 @@ const readLiveMuseSessionPreference = () => {
 const writeLiveMuseSessionPreference = (nextValue) => {
   saveStorageJSON(LIVE_MUSE_SESSION_STORAGE_KEY, nextValue);
 };
+
+const resolveLiveMuseAnalysisIntervalMs = (session) =>
+  session?.testMode === 'csv-mock' ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS : LIVE_MUSE_ANALYSIS_INTERVAL_MS;
 
 const getPlanetAdaptationMode = (planetSlug) => {
   if (['venus', 'earth', 'pluto'].includes(planetSlug)) return 'calm';
@@ -242,7 +244,6 @@ const SpaceTravel = ({
   const [liveMuseStatus, setLiveMuseStatus] = useState(liveMuseSession ? 'pending' : 'off');
   const [liveMuseMetrics, setLiveMuseMetrics] = useState({
     sampleCount: 0,
-    chunkCount: 0,
     analysisCount: 0,
     eegSessionId: null,
     lastAnalyzedAt: null,
@@ -299,11 +300,6 @@ const SpaceTravel = ({
   const museClientRef = useRef(null);
   const museSubscriptionRef = useRef(null);
   const liveEegBufferRef = useRef([]);
-  const liveRawChunkBufferRef = useRef([]);
-  const liveRawChunkIndexRef = useRef(0);
-  const liveRawChunkBaseTimestampRef = useRef(null);
-  const liveRawUploadChainRef = useRef(Promise.resolve());
-  const liveRawUploadFailedRef = useRef(false);
   const liveEegSessionIdRef = useRef(null);
   const liveAnalysisTimerRef = useRef(null);
   const liveCalibrationTimerRef = useRef(null);
@@ -314,6 +310,7 @@ const SpaceTravel = ({
   const livePreviousStateRef = useRef(stateSnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE);
   const liveAnalysisSequenceRef = useRef(0);
   const runLiveMuseAnalysisRef = useRef(null);
+  const liveMuseCsvAutoStartRef = useRef(false);
   const crossfadeTimerRef = useRef(null);
   const crossfadeHandoffRef = useRef(null);
   const adaptiveVolumeScaleRef = useRef(adaptiveVolumeScale);
@@ -358,53 +355,6 @@ const SpaceTravel = ({
       liveFeedbackTimerRef.current = null;
     }
   }, []);
-
-  const queueLiveRawChunkUpload = useCallback((chunkReadings) => {
-    const eegSessionId = liveEegSessionIdRef.current;
-    if (!eegSessionId || liveRawUploadFailedRef.current || !chunkReadings.length) {
-      return;
-    }
-
-    const chunkIndex = liveRawChunkIndexRef.current;
-    liveRawChunkIndexRef.current += 1;
-
-    liveRawUploadChainRef.current = liveRawUploadChainRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const response = await uploadEegRawReadingsChunk({
-          eegSessionId,
-          rawReadings: chunkReadings,
-          sampleRateHz: EEG_SAMPLE_RATE,
-          chunkIndex,
-          baseTimestamp: liveRawChunkBaseTimestampRef.current,
-        });
-
-        if (response) {
-          setLiveMuseMetrics((prev) => ({
-            ...prev,
-            eegSessionId,
-            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
-          }));
-        }
-      })
-      .catch((error) => {
-        liveRawUploadFailedRef.current = true;
-        console.warn('Failed to upload live Muse EEG raw chunk. Continuing with local summary:', error);
-      });
-  }, []);
-
-  const flushLiveRawChunk = useCallback((force = false) => {
-    const shouldFlush =
-      liveRawChunkBufferRef.current.length >= LIVE_MUSE_RAW_CHUNK_SAMPLE_COUNT ||
-      (force && liveRawChunkBufferRef.current.length > 0);
-
-    if (!shouldFlush) {
-      return;
-    }
-
-    const chunkReadings = liveRawChunkBufferRef.current.splice(0, liveRawChunkBufferRef.current.length);
-    queueLiveRawChunkUpload(chunkReadings);
-  }, [queueLiveRawChunkUpload]);
 
   const fadeAdaptiveVolumeScaleTo = useCallback((targetScale, durationMs = 18000) => {
     const from = adaptiveVolumeScaleRef.current;
@@ -529,6 +479,15 @@ const SpaceTravel = ({
       return;
     }
 
+    const liveSession = liveMuseSessionRef.current || {};
+    const isCsvTest = liveSession.testMode === 'csv-mock';
+    const analysisIntervalMs = resolveLiveMuseAnalysisIntervalMs(liveSession);
+    const activeAnalysisWindowSec = isCsvTest
+      ? Math.min(
+          LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+          Math.max(20, Math.round(windowReadings.length / EEG_SAMPLE_RATE)),
+        )
+      : LIVE_MUSE_ANALYSIS_WINDOW_SEC;
     const measuredAt = new Date().toISOString();
     const analysis = analyzeEegBands(windowReadings, {
       sampleRate: EEG_SAMPLE_RATE,
@@ -540,11 +499,6 @@ const SpaceTravel = ({
 
     liveAnalysisSequenceRef.current += 1;
     setLiveMuseStatus('analyzing');
-    flushLiveRawChunk(true);
-
-    await liveRawUploadChainRef.current.catch((error) => {
-      console.warn('Live Muse raw upload queue had an error before analysis:', error);
-    });
 
     const musicProfile = buildMusicProfileSnapshot({
       planetMedia,
@@ -556,18 +510,18 @@ const SpaceTravel = ({
       eegSessionId: liveEegSessionIdRef.current,
       analysis,
       measuredAt,
-      measurementDurationSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
-      analysisWindowSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+      measurementDurationSec: activeAnalysisWindowSec,
+      analysisWindowSec: activeAnalysisWindowSec,
       analysisMode: 'muse-live-window',
       sampleRateHz: EEG_SAMPLE_RATE,
       sampleCountOverride: windowReadings.length,
       surveyContext: {
         mode: 'muse-live-window',
-        source: 'continuous-muse',
+        source: isCsvTest ? 'csv-mock' : 'continuous-muse',
         targetPlanet: selectedPlanet,
         adaptiveWindow: {
           sequence: liveAnalysisSequenceRef.current,
-          windowSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+          windowSec: activeAnalysisWindowSec,
           analyzedAt: measuredAt,
         },
         musicProfile,
@@ -586,8 +540,8 @@ const SpaceTravel = ({
     const nextCurrentState = response?.currentState || fallbackState;
     const qualityScore = Number(recognitionResult?.quality?.score ?? 0.55);
     const nextSnapshot = {
-      source: 'muse-live',
-      sourceLabel: 'Muse S Athena 실시간 측정',
+      source: isCsvTest ? 'csv-mock-live' : 'muse-live',
+      sourceLabel: isCsvTest ? 'CSV mock EEG test stream' : 'Muse S Athena 실시간 측정',
       title: recognitionResult?.state_profile?.label || 'Muse Live EEG 상태',
       summary:
         recognitionResult?.state_profile?.summary?.join(' · ') ||
@@ -613,8 +567,10 @@ const SpaceTravel = ({
       ...prev,
       analysisCount: liveAnalysisSequenceRef.current,
       lastAnalyzedAt: measuredAt,
-      nextAnalysisAt: new Date(Date.now() + LIVE_MUSE_ANALYSIS_INTERVAL_MS).toISOString(),
+      nextAnalysisAt: new Date(Date.now() + analysisIntervalMs).toISOString(),
       qualityScore,
+      testMode: isCsvTest ? 'csv-mock' : null,
+      analysisIntervalSec: Math.round(analysisIntervalMs / 1000),
     }));
 
     const action = resolveAdaptiveMusicAction({
@@ -642,7 +598,6 @@ const SpaceTravel = ({
     setLiveMuseStatus('active');
   }, [
     fadeAdaptiveVolumeScaleTo,
-    flushLiveRawChunk,
     generatedJourney,
     planetMedia,
     planetSlug,
@@ -654,8 +609,6 @@ const SpaceTravel = ({
 
   const stopLiveMuseStream = useCallback(async ({ disablePreference = false } = {}) => {
     clearLiveMuseTimers();
-    flushLiveRawChunk(true);
-    await liveRawUploadChainRef.current.catch(() => undefined);
 
     museSubscriptionRef.current?.unsubscribe?.();
     museSubscriptionRef.current = null;
@@ -667,11 +620,6 @@ const SpaceTravel = ({
     });
 
     liveEegBufferRef.current = [];
-    liveRawChunkBufferRef.current = [];
-    liveRawChunkIndexRef.current = 0;
-    liveRawChunkBaseTimestampRef.current = null;
-    liveRawUploadChainRef.current = Promise.resolve();
-    liveRawUploadFailedRef.current = false;
     liveEegSessionIdRef.current = null;
     liveAnalysisSequenceRef.current = 0;
     setLiveMuseCurrentState(null);
@@ -693,23 +641,38 @@ const SpaceTravel = ({
     }
 
     setLiveMuseStatus(liveMuseSessionRef.current?.enabled ? 'pending' : 'off');
-  }, [clearLiveMuseTimers, flushLiveRawChunk]);
+  }, [clearLiveMuseTimers]);
 
-  const handleStartLiveMuse = useCallback(async () => {
+  const handleStartLiveMuse = useCallback(async (options = {}) => {
     if (museClientRef.current || liveMuseStatus === 'connecting') {
       return;
     }
 
+    const params = new URLSearchParams(window.location.search);
+    const urlMode = params.get('muse') === 'mock' ? 'mock' : null;
+    const savedMode =
+      liveMuseSessionRef.current?.streamMode ||
+      (liveMuseSessionRef.current?.testMode === 'csv-mock' ? 'mock' : null);
+    const mode = options?.modeOverride || urlMode || savedMode || 'web';
+    const isCsvTest = mode === 'mock';
+    const baselineDurationSec = isCsvTest ? LIVE_MUSE_CSV_TEST_BASELINE_SEC : LIVE_MUSE_BASELINE_SEC;
+    const analysisIntervalMs = isCsvTest ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS : LIVE_MUSE_ANALYSIS_INTERVAL_MS;
+    const analysisWindowSec = isCsvTest ? Math.round(analysisIntervalMs / 1000) : LIVE_MUSE_ANALYSIS_WINDOW_SEC;
+    const savedEegSessionId = Number(liveMuseSessionRef.current?.eegSessionId) || null;
+    liveEegSessionIdRef.current = savedEegSessionId;
     const startedAt = new Date().toISOString();
     const nextSession = {
       ...(liveMuseSessionRef.current || {}),
       enabled: true,
-      deviceType: 'Muse S Athena',
+      deviceType: isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena',
       status: 'connecting',
       startedAt,
-      baselineDurationSec: LIVE_MUSE_BASELINE_SEC,
-      analysisIntervalSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
-      analysisWindowSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+      eegSessionId: savedEegSessionId,
+      baselineDurationSec,
+      analysisIntervalSec: Math.round(analysisIntervalMs / 1000),
+      analysisWindowSec,
+      streamMode: mode,
+      testMode: isCsvTest ? 'csv-mock' : null,
       transitionMode: 'crossfade',
       crossfadeDurationSec: LIVE_MUSE_CROSSFADE_DURATION_SEC,
       feedbackCadenceSec: LIVE_MUSE_FEEDBACK_CADENCE_MS / 1000,
@@ -719,15 +682,13 @@ const SpaceTravel = ({
     setLiveMuseStatus('connecting');
     setAdaptiveMusicState({
       type: 'connecting',
-      label: 'Muse S Athena 연결을 시작합니다.',
+      label: isCsvTest ? 'CSV EEG 테스트 스트림을 시작합니다.' : 'Muse S Athena 연결을 시작합니다.',
       reason: '',
       isGenerating: false,
       isCrossfading: false,
     });
 
     try {
-      const params = new URLSearchParams(window.location.search);
-      const mode = params.get('muse') === 'mock' ? 'mock' : 'web';
       const client = await createMuseClient({ mode });
       museClientRef.current = client;
 
@@ -735,11 +696,23 @@ const SpaceTravel = ({
       await client.start();
 
       try {
-        const startedSession = await startEegSession({
-          deviceType: 'Muse S Athena',
-          measuredAt: startedAt,
-        });
-        liveEegSessionIdRef.current = startedSession?.eegSessionId || null;
+        if (!liveEegSessionIdRef.current) {
+          const startedSession = await startEegSession({
+            deviceType: isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena',
+            measuredAt: startedAt,
+          });
+          liveEegSessionIdRef.current = startedSession?.eegSessionId || null;
+        }
+        if (liveEegSessionIdRef.current) {
+          setLiveMuseSession((prev) => {
+            const updatedSession = {
+              ...(prev || nextSession),
+              eegSessionId: liveEegSessionIdRef.current,
+            };
+            writeLiveMuseSessionPreference(updatedSession);
+            return updatedSession;
+          });
+        }
       } catch (error) {
         console.warn('Live Muse backend session could not be started. Continuing local live analysis:', error);
       }
@@ -750,14 +723,6 @@ const SpaceTravel = ({
         if (liveEegBufferRef.current.length > maxBufferSize) {
           liveEegBufferRef.current.splice(0, liveEegBufferRef.current.length - maxBufferSize);
         }
-
-        if (liveRawChunkBaseTimestampRef.current === null) {
-          liveRawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
-            ? Number(reading.timestamp)
-            : Date.now();
-        }
-        liveRawChunkBufferRef.current.push(reading);
-        flushLiveRawChunk(false);
 
         if (!liveUiTimerRef.current) {
           liveUiTimerRef.current = window.setTimeout(() => {
@@ -776,11 +741,15 @@ const SpaceTravel = ({
       setLiveMuseMetrics((prev) => ({
         ...prev,
         eegSessionId: liveEegSessionIdRef.current,
-        nextAnalysisAt: new Date(Date.now() + LIVE_MUSE_ANALYSIS_INTERVAL_MS).toISOString(),
+        nextAnalysisAt: new Date(Date.now() + analysisIntervalMs).toISOString(),
+        testMode: isCsvTest ? 'csv-mock' : null,
+        analysisIntervalSec: Math.round(analysisIntervalMs / 1000),
       }));
       setAdaptiveMusicState({
         type: 'calibrating',
-        label: '1분 기준선을 수집한 뒤 5분마다 음악을 조정합니다.',
+        label: isCsvTest
+          ? 'CSV 테스트 데이터를 수집합니다. 30초마다 동적 분석을 저장합니다.'
+          : '1분 기준선을 수집한 뒤 5분마다 음악을 조정합니다.',
         reason: '',
         isGenerating: false,
         isCrossfading: false,
@@ -792,13 +761,15 @@ const SpaceTravel = ({
         setAdaptiveMusicState((prev) => ({
           ...prev,
           type: 'active',
-          label: 'Muse live EEG를 수집 중입니다. 다음 5분 윈도우에서 음악을 갱신합니다.',
+          label: isCsvTest
+            ? 'CSV EEG 테스트 스트림을 수집 중입니다. 다음 30초 분석에서 DB 저장을 확인할 수 있습니다.'
+            : 'Muse live EEG를 수집 중입니다. 다음 5분 윈도우에서 음악을 갱신합니다.',
         }));
-      }, LIVE_MUSE_BASELINE_SEC * 1000);
+      }, baselineDurationSec * 1000);
 
       liveAnalysisTimerRef.current = window.setInterval(() => {
         runLiveMuseAnalysisRef.current?.();
-      }, LIVE_MUSE_ANALYSIS_INTERVAL_MS);
+      }, analysisIntervalMs);
     } catch (error) {
       console.error('Failed to start live Muse session:', error);
       await stopLiveMuseStream();
@@ -811,11 +782,22 @@ const SpaceTravel = ({
         isCrossfading: false,
       });
     }
-  }, [flushLiveRawChunk, liveMuseStatus, runLiveMuseAnalysis, stopLiveMuseStream]);
+  }, [liveMuseStatus, runLiveMuseAnalysis, stopLiveMuseStream]);
 
   const handleStopLiveMuse = useCallback(() => {
     stopLiveMuseStream({ disablePreference: true });
   }, [stopLiveMuseStream]);
+
+  useEffect(() => {
+    const session = liveMuseSessionRef.current || {};
+    const isCsvTest = session.streamMode === 'mock' || session.testMode === 'csv-mock';
+    if (liveMuseCsvAutoStartRef.current || liveMuseStatus !== 'pending' || !isCsvTest) {
+      return;
+    }
+
+    liveMuseCsvAutoStartRef.current = true;
+    handleStartLiveMuse({ modeOverride: 'mock' });
+  }, [handleStartLiveMuse, liveMuseStatus]);
 
   useEffect(() => {
     runLiveMuseAnalysisRef.current = runLiveMuseAnalysis;
