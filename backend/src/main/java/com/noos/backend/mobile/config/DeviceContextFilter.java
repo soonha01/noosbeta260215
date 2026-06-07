@@ -17,13 +17,14 @@ public class DeviceContextFilter extends OncePerRequestFilter {
     private static final String HEALTH_PATH = "/api/mobile/health";
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return HEALTH_PATH.equals(path) || !path.startsWith("/api/mobile/");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        if (HEALTH_PATH.equals(request.getRequestURI())) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         String deviceId = request.getHeader(DEVICE_ID_HEADER);
         if (deviceId == null || deviceId.isBlank()) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
