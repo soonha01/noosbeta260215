@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Apple, Chrome, Github } from 'lucide-react';
+import { Activity, Apple, BluetoothConnected, Chrome, Github } from 'lucide-react';
 import Grainient from '../../ui/effects/Grainient';
 import Stepper, { Step } from './Stepper';
 import BackButton from '../../ui/buttons/BackButton';
@@ -23,8 +23,9 @@ import {
   createEegAnalysisPayload,
   startEegSession,
   submitEegAnalysis,
-  uploadEegRawChunks,
+  uploadEegRawReadingsChunk,
 } from '../../../lib/eegAnalysisApi';
+import { LIVE_MUSE_SESSION_STORAGE_KEY } from '../solar/travel/constants';
 import {
   buildFallbackCurrentStateFromBandAnalysis,
   requestDeviceTroubleshoot,
@@ -40,13 +41,18 @@ const RESULT_NEXT_STEP_MESSAGE =
   '원하시는 집중이나 감정상태를 행성을 선택하여 보다 나은 환경을 만들어보세요.';
 const CURRENT_STATE_STORAGE_KEY = 'noos_current_state';
 const DEVICE_CONNECTION_RESULT = {
-  title: 'Muse S Athena 연결 완료',
-  summary: '디바이스 연결 및 신호 확인이 완료되었습니다. Solar Explorer 진입 준비가 끝났습니다.',
+  title: 'Muse S Athena Live 준비 완료',
+  summary: '음악 세션에서 Muse EEG를 계속 측정하고 5분마다 음악 조정에 반영합니다.',
 };
 const AUTH_TO_WARP_FADE_DURATION_SEC = 1.95;
 const DEVICE_NO_TO_SURVEY_FADE_OUT_MS = 760;
-const MEASUREMENT_DURATION_SEC = 60;
-const DEVICE_MEASUREMENT_STAGE_DURATION_MS = MEASUREMENT_DURATION_SEC * 1000;
+const DEFAULT_MEASUREMENT_DURATION_SEC = 60;
+const MEASUREMENT_DURATION_OPTIONS = [
+  { value: 60, label: '1분', title: 'Quick Check', eegWeight: 35 },
+  { value: 600, label: '10분', title: 'Standard', eegWeight: 55 },
+  { value: 1800, label: '30분', title: 'Deep Session', eegWeight: 70 },
+  { value: 3600, label: '1시간', title: 'Long Baseline', eegWeight: 80 },
+];
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
 const WARP_EXIT_FADE_DURATION_MS = 2300;
@@ -56,10 +62,16 @@ const SOLAR_ENTRY_WARP_OVERLAY_DURATION_MS = 2200;
 const WARP_SCENE_FADE_IN_DURATION_SEC = 1.5;
 const WARP_STAR_COUNT = 120;
 const EEG_SAMPLE_RATE = 256;
-const MAX_EEG_BUFFER_SIZE = EEG_SAMPLE_RATE * MEASUREMENT_DURATION_SEC + 512;
+const MAX_LOCAL_EEG_ANALYSIS_BUFFER_SEC = 600;
+const RAW_EEG_CHUNK_DURATION_SEC = 10;
+const RAW_EEG_CHUNK_SAMPLE_COUNT = EEG_SAMPLE_RATE * RAW_EEG_CHUNK_DURATION_SEC;
 const EEG_UI_WINDOW_SEC = 12;
 const MAX_EEG_UI_BUFFER_SIZE = EEG_SAMPLE_RATE * EEG_UI_WINDOW_SEC;
 const EEG_UI_FLUSH_INTERVAL_MS = 50;
+const LIVE_MUSE_BASELINE_DURATION_SEC = 60;
+const LIVE_MUSE_ANALYSIS_INTERVAL_SEC = 300;
+const LIVE_MUSE_CROSSFADE_DURATION_SEC = 30;
+const LIVE_MUSE_FEEDBACK_CADENCE_SEC = 900;
 const NOOP_PLANET_SELECT = () => {};
 const formatMeasurementClock = (seconds) => {
   const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -82,6 +94,53 @@ const formatMeasurementDurationText = (seconds) => {
   }
 
   return `${remainder}초`;
+};
+
+const getMaxLocalEegBufferSize = (durationSec) =>
+  EEG_SAMPLE_RATE * Math.min(durationSec, MAX_LOCAL_EEG_ANALYSIS_BUFFER_SEC) + 512;
+
+const createSurveyContextPayload = (surveyResult, surveyAnswers, mode = 'survey') => ({
+  mode,
+  source: 'state-survey',
+  answers: surveyAnswers,
+  title: surveyResult?.title || null,
+  summary: surveyResult?.summary || null,
+  conclusion: surveyResult?.conclusion || null,
+  dimensions: surveyResult?.dimensions || [],
+  keyIndicators: surveyResult?.keyIndicators || [],
+  canonicalState: surveyResult?.canonicalState || null,
+});
+
+const LIVE_MUSE_NEUTRAL_STATE = Object.freeze({
+  focus_readiness: 0.5,
+  stress_load: 0.45,
+  fatigue_risk: 0.35,
+  relaxation_level: 0.5,
+  cortical_arousal: 0.5,
+  mental_workload: 0.45,
+});
+
+const createLiveMuseSessionPayload = (createdAt, overrides = {}) => ({
+  enabled: true,
+  deviceType: 'Muse S Athena',
+  status: 'pending_player_connection',
+  createdAt,
+  baselineDurationSec: LIVE_MUSE_BASELINE_DURATION_SEC,
+  analysisIntervalSec: LIVE_MUSE_ANALYSIS_INTERVAL_SEC,
+  analysisWindowSec: LIVE_MUSE_ANALYSIS_INTERVAL_SEC,
+  rawChunkDurationSec: RAW_EEG_CHUNK_DURATION_SEC,
+  transitionMode: 'crossfade',
+  crossfadeDurationSec: LIVE_MUSE_CROSSFADE_DURATION_SEC,
+  feedbackCadenceSec: LIVE_MUSE_FEEDBACK_CADENCE_SEC,
+  ...overrides,
+});
+
+const saveLiveMuseSessionPreference = (payload) => {
+  try {
+    window.localStorage.setItem(LIVE_MUSE_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error('Failed to save live Muse session preference:', error);
+  }
 };
 
 const saveCurrentStateSnapshot = (payload) => {
@@ -129,6 +188,146 @@ const DeviceHelpTextarea = styled.textarea`
   line-height: 1.6;
   color: rgba(0, 0, 0, 0.92);
 `;
+
+const MuseLiveNotice = styled.div`
+  position: fixed;
+  left: 1.35rem;
+  top: ${({ $hasBack }) => ($hasBack ? '6.65rem' : '1.35rem')};
+  z-index: 13000;
+  min-width: min(320px, calc(100vw - 2.7rem));
+  max-width: min(380px, calc(100vw - 2.7rem));
+  padding: 0.86rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid ${({ $connected }) => ($connected ? 'rgba(126, 255, 199, 0.42)' : 'rgba(255, 255, 255, 0.2)')};
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.82), rgba(18, 22, 20, 0.72)),
+    ${({ $connected }) => ($connected ? 'rgba(28, 226, 154, 0.08)' : 'rgba(255, 255, 255, 0.06)')};
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px) saturate(130%);
+  display: grid;
+  gap: 0.42rem;
+  pointer-events: none;
+
+  .muse-notice-main {
+    display: flex;
+    align-items: center;
+    gap: 0.58rem;
+    min-width: 0;
+  }
+
+  .muse-notice-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    background: ${({ $connected }) => ($connected ? 'rgba(126, 255, 199, 0.16)' : 'rgba(255,255,255,0.1)')};
+    color: ${({ $connected }) => ($connected ? '#7effc7' : '#ffffff')};
+    box-shadow: ${({ $connected }) => ($connected ? '0 0 24px rgba(126,255,199,0.22)' : 'none')};
+  }
+
+  .muse-notice-copy {
+    min-width: 0;
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .muse-notice-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  .muse-notice-meta {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .muse-notice-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: ${({ $connected }) => ($connected ? '#7effc7' : '#ffffff')};
+    box-shadow: ${({ $connected }) => ($connected ? '0 0 16px rgba(126,255,199,0.85)' : '0 0 12px rgba(255,255,255,0.45)')};
+    animation: musePulse 1.3s ease-in-out infinite;
+  }
+
+  .muse-notice-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .muse-notice-chip {
+    min-height: 22px;
+    padding: 0 0.48rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  @keyframes musePulse {
+    0%, 100% {
+      transform: scale(0.9);
+      opacity: 0.72;
+    }
+    50% {
+      transform: scale(1.12);
+      opacity: 1;
+    }
+  }
+`;
+
+const MuseConnectionNotice = ({
+  status,
+  latestValue,
+  uploadStats,
+  sampleCount = 0,
+  hasBack = false,
+}) => {
+  const visible = status === 'connecting' || status === 'connected';
+  if (!visible) return null;
+
+  const connected = status === 'connected';
+  const formattedValue = Number.isFinite(latestValue) ? `${latestValue.toFixed(1)}uV` : 'stream 대기';
+
+  return (
+    <MuseLiveNotice $connected={connected} $hasBack={hasBack}>
+      <div className="muse-notice-main">
+        <span className="muse-notice-icon">
+          {connected ? <BluetoothConnected size={16} /> : <Activity size={16} />}
+        </span>
+        <div className="muse-notice-copy">
+          <p className="muse-notice-title">
+            {connected ? 'Muse S Athena 연결됨' : 'Muse S Athena 연결 중'}
+          </p>
+          <p className="muse-notice-meta">
+            {connected ? '실시간 EEG 스트리밍을 유지합니다.' : 'Bluetooth 페어링과 스트림 초기화를 진행 중입니다.'}
+          </p>
+        </div>
+        <span className="muse-notice-pulse" />
+      </div>
+      {connected && (
+        <div className="muse-notice-stats">
+          <span className="muse-notice-chip">{formattedValue}</span>
+          <span className="muse-notice-chip">{uploadStats?.chunkCount || 0} chunks</span>
+          <span className="muse-notice-chip">{sampleCount || uploadStats?.sampleCount || 0} samples</span>
+        </div>
+      )}
+    </MuseLiveNotice>
+  );
+};
 const SURVEY_ITEMS = STATE_SURVEY_SECTIONS.flatMap((section) =>
   section.questions.map((question) => ({
     ...question,
@@ -362,8 +561,15 @@ const Login = ({ onBack }) => {
   //뇌파 데이터
   const [eegData, setEegData] = useState([]);
   const [measuredEegData, setMeasuredEegData] = useState([]);
+  const [selectedMeasurementDurationSec, setSelectedMeasurementDurationSec] = useState(DEFAULT_MEASUREMENT_DURATION_SEC);
   const [measurementProgressPercent, setMeasurementProgressPercent] = useState(0);
   const [measurementCompletedAt, setMeasurementCompletedAt] = useState(null);
+  const [eegUploadStats, setEegUploadStats] = useState({
+    eegSessionId: null,
+    chunkCount: 0,
+    sampleCount: 0,
+    failed: false,
+  });
   const [museRecognitionResult, setMuseRecognitionResult] = useState(null);
   const [museCurrentState, setMuseCurrentState] = useState(null);
   const [surveyAiExplanation, setSurveyAiExplanation] = useState(null);
@@ -372,11 +578,22 @@ const Login = ({ onBack }) => {
   const [deviceHelpText, setDeviceHelpText] = useState('');
   const [deviceHelpResponse, setDeviceHelpResponse] = useState(null);
   const [isDeviceHelpLoading, setIsDeviceHelpLoading] = useState(false);
+  const [liveMuseConnectionStatus, setLiveMuseConnectionStatus] = useState('idle');
+  const [liveMuseConnectionError, setLiveMuseConnectionError] = useState('');
+  const [liveMuseConnectedAt, setLiveMuseConnectedAt] = useState(null);
 
   const warpExitTimerRef = useRef(null);
   const museClientRef = useRef(null);
   const museSubscriptionRef = useRef(null);
   const eegBufferRef = useRef([]);
+  const eegSessionIdRef = useRef(null);
+  const eegSessionMeasuredAtRef = useRef(null);
+  const rawChunkBufferRef = useRef([]);
+  const rawChunkIndexRef = useRef(0);
+  const rawChunkBaseTimestampRef = useRef(null);
+  const collectedSampleCountRef = useRef(0);
+  const rawUploadChainRef = useRef(Promise.resolve());
+  const rawUploadFailedRef = useRef(false);
   const eegFlushTimerRef = useRef(null);
   const eegAnalysisRequestKeyRef = useRef(null);
 
@@ -408,11 +625,17 @@ const Login = ({ onBack }) => {
   const latestEegReading = eegData.length ? eegData[eegData.length - 1] : null;
   const latestEegValue = latestEegReading?.samples?.[0] ?? null;
   const resultEegData = measuredEegData.length ? measuredEegData : eegData;
-  const measuredDurationLabel = formatMeasurementClock(
-    Math.round((measurementProgressPercent / 100) * MEASUREMENT_DURATION_SEC)
+  const selectedMeasurementOption = useMemo(
+    () =>
+      MEASUREMENT_DURATION_OPTIONS.find((option) => option.value === selectedMeasurementDurationSec) ||
+      MEASUREMENT_DURATION_OPTIONS[0],
+    [selectedMeasurementDurationSec]
   );
-  const totalMeasurementDurationLabel = formatMeasurementClock(MEASUREMENT_DURATION_SEC);
-  const totalMeasurementDurationText = formatMeasurementDurationText(MEASUREMENT_DURATION_SEC);
+  const measuredDurationLabel = formatMeasurementClock(
+    Math.round((measurementProgressPercent / 100) * selectedMeasurementDurationSec)
+  );
+  const totalMeasurementDurationLabel = formatMeasurementClock(selectedMeasurementDurationSec);
+  const totalMeasurementDurationText = formatMeasurementDurationText(selectedMeasurementDurationSec);
 
   const surveyResult = useMemo(
     () => buildStateSurveyAnalysis(surveyAnswers),
@@ -455,19 +678,21 @@ const Login = ({ onBack }) => {
 
     if (authStage === 'device-complete') {
       const measurementStartedAt = Date.now();
+      const measurementStageDurationMs = selectedMeasurementDurationSec * 1000;
 
       setMeasurementProgressPercent(0);
       measurementProgressTimerId = window.setInterval(() => {
         const elapsedMs = Date.now() - measurementStartedAt;
         const nextProgress = Math.min(
           100,
-          Math.round((elapsedMs / DEVICE_MEASUREMENT_STAGE_DURATION_MS) * 100)
+          Math.round((elapsedMs / measurementStageDurationMs) * 100)
         );
         setMeasurementProgressPercent(nextProgress);
       }, 100);
 
       timeoutIds.push(
         setTimeout(() => {
+          flushRawEegChunk(true);
           const frozenReadings = [...eegBufferRef.current];
           const measuredAt = new Date().toISOString();
 
@@ -485,8 +710,10 @@ const Login = ({ onBack }) => {
             console.error('Failed to disconnect Muse client after measurement:', error);
           });
 
-          setAuthStage('device-success');
-        }, DEVICE_MEASUREMENT_STAGE_DURATION_MS)
+          setSurveyAnswers(createInitialStateSurveyAnswers());
+          setSurveyStepIndex(0);
+          setAuthStage('muse-survey');
+        }, measurementStageDurationMs)
       );
     }
 
@@ -508,7 +735,7 @@ const Login = ({ onBack }) => {
         warpExitTimerRef.current = null;
       }
     };
-  }, [authStage]);
+  }, [authStage, selectedMeasurementDurationSec]);
 
   useEffect(() => {
     return () => {
@@ -549,11 +776,15 @@ const Login = ({ onBack }) => {
       return undefined;
     }
 
+    const surveyContext = createSurveyContextPayload(surveyResult, surveyAnswers, 'muse-hybrid');
     const basePayload = createEegAnalysisPayload({
+      eegSessionId: eegSessionIdRef.current,
       analysis: museFftAnalysis,
       measuredAt: measurementCompletedAt,
-      measurementDurationSec: MEASUREMENT_DURATION_SEC,
+      measurementDurationSec: selectedMeasurementDurationSec,
       sampleRateHz: EEG_SAMPLE_RATE,
+      sampleCountOverride: collectedSampleCountRef.current || measuredEegData.length,
+      surveyContext,
     });
 
     if (!basePayload) {
@@ -565,39 +796,14 @@ const Login = ({ onBack }) => {
     const controller = new AbortController();
 
     (async () => {
-      let eegSessionId = null;
-
-      try {
-        const startedSession = await startEegSession(
-          {
-            deviceType: 'Muse S Athena',
-            measuredAt: measurementCompletedAt,
-          },
-          { signal: controller.signal }
-        );
-        eegSessionId = startedSession?.eegSessionId ?? null;
-
-        if (!eegSessionId) {
-          throw new Error('EEG session start did not return eegSessionId.');
-        }
-
-        const rawUpload = await uploadEegRawChunks(
-          {
-            eegSessionId,
-            rawReadings: measuredEegData,
-            sampleRateHz: EEG_SAMPLE_RATE,
-          },
-          { signal: controller.signal }
-        );
-        eegSessionId = rawUpload?.eegSessionId ?? eegSessionId;
-      } catch (uploadError) {
+      flushRawEegChunk(true);
+      await rawUploadChainRef.current.catch((uploadError) => {
         if (!controller.signal.aborted) {
-          console.warn(
-            'Failed to start EEG session or upload raw EEG chunks. Falling back to summary-only analysis:',
-            uploadError
-          );
+          console.warn('EEG raw upload queue finished with an error. Continuing hybrid summary analysis:', uploadError);
         }
-      }
+      });
+
+      const eegSessionId = eegSessionIdRef.current;
 
       return submitEegAnalysis(
         {
@@ -629,7 +835,15 @@ const Login = ({ onBack }) => {
       });
 
     return () => controller.abort();
-  }, [authStage, email, measuredEegData, measurementCompletedAt, museFftAnalysis]);
+  }, [
+    authStage,
+    measuredEegData,
+    measurementCompletedAt,
+    museFftAnalysis,
+    selectedMeasurementDurationSec,
+    surveyAnswers,
+    surveyResult,
+  ]);
 
   useEffect(() => {
     if (authStage !== 'analysis-result' || !surveyResult?.canonicalState) {
@@ -830,17 +1044,80 @@ const handleSkipLoginForTesting = () => {
     }, EEG_UI_FLUSH_INTERVAL_MS);
   };
 
+  const queueRawEegChunkUpload = (chunkReadings) => {
+    const eegSessionId = eegSessionIdRef.current;
+    if (!eegSessionId || rawUploadFailedRef.current || !chunkReadings.length) {
+      return;
+    }
+
+    const chunkIndex = rawChunkIndexRef.current;
+    rawChunkIndexRef.current += 1;
+
+    rawUploadChainRef.current = rawUploadChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await uploadEegRawReadingsChunk({
+          eegSessionId,
+          rawReadings: chunkReadings,
+          sampleRateHz: EEG_SAMPLE_RATE,
+          chunkIndex,
+          baseTimestamp: rawChunkBaseTimestampRef.current,
+        });
+
+        if (response) {
+          setEegUploadStats((prev) => ({
+            ...prev,
+            eegSessionId,
+            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
+            sampleCount: prev.sampleCount + (response.savedCount || chunkReadings.length),
+          }));
+        }
+      })
+      .catch((error) => {
+        rawUploadFailedRef.current = true;
+        setEegUploadStats((prev) => ({ ...prev, failed: true }));
+        console.warn('Failed to upload EEG raw chunk. Hybrid analysis will use summary fallback if needed:', error);
+      });
+  };
+
+  const flushRawEegChunk = (force = false) => {
+    const shouldFlush =
+      rawChunkBufferRef.current.length >= RAW_EEG_CHUNK_SAMPLE_COUNT ||
+      (force && rawChunkBufferRef.current.length > 0);
+
+    if (!shouldFlush) {
+      return;
+    }
+
+    const chunkReadings = rawChunkBufferRef.current.splice(0, rawChunkBufferRef.current.length);
+    queueRawEegChunkUpload(chunkReadings);
+  };
+
   const resetMuseStream = () => {
     museSubscriptionRef.current?.unsubscribe?.();
     museSubscriptionRef.current = null;
     museClientRef.current?.disconnect?.();
     museClientRef.current = null;
     eegBufferRef.current = [];
+    eegSessionIdRef.current = null;
+    eegSessionMeasuredAtRef.current = null;
+    rawChunkBufferRef.current = [];
+    rawChunkIndexRef.current = 0;
+    rawChunkBaseTimestampRef.current = null;
+    collectedSampleCountRef.current = 0;
+    rawUploadChainRef.current = Promise.resolve();
+    rawUploadFailedRef.current = false;
     eegAnalysisRequestKeyRef.current = null;
     setEegData([]);
     setMeasuredEegData([]);
     setMeasurementProgressPercent(0);
     setMeasurementCompletedAt(null);
+    setEegUploadStats({
+      eegSessionId: null,
+      chunkCount: 0,
+      sampleCount: 0,
+      failed: false,
+    });
     setMuseRecognitionResult(null);
     setMuseCurrentState(null);
     setMuseAiExplanation(null);
@@ -851,49 +1128,172 @@ const handleSkipLoginForTesting = () => {
     }
   };
 
+  const startMuseMeasurement = async () => {
+    if (isTransitioning) return;
+
+    setAuthStage('device-connecting');
+    resetMuseStream();
+
+    try {
+      // 실제 Muse 기기 연결 및 시작
+      const client = await createMuseClient({
+        mode: 'web',
+      });
+      museClientRef.current = client;
+
+      // Web Bluetooth 페어링 창에서 사용자가 기기를 선택할 때까지 여기서 대기합니다.
+      await client.connect();
+      await client.start();
+
+      const measuredAt = new Date().toISOString();
+      eegSessionMeasuredAtRef.current = measuredAt;
+
+      try {
+        const startedSession = await startEegSession({
+          deviceType: 'Muse S Athena',
+          measuredAt,
+        });
+        const eegSessionId = startedSession?.eegSessionId ?? null;
+        eegSessionIdRef.current = eegSessionId;
+        setEegUploadStats((prev) => ({
+          ...prev,
+          eegSessionId,
+        }));
+      } catch (sessionError) {
+        console.warn('Failed to start EEG raw upload session. Continuing with local band summary:', sessionError);
+      }
+
+      const maxEegBufferSize = getMaxLocalEegBufferSize(selectedMeasurementDurationSec);
+
+      // 데이터 스트림 구독 (콘솔에서 확인)
+      museSubscriptionRef.current = client.subscribe((reading) => {
+        //나중에 Spring Boot 웹소켓으로 쏨
+        collectedSampleCountRef.current += 1;
+        eegBufferRef.current.push(reading);
+
+        if (rawChunkBaseTimestampRef.current === null) {
+          rawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
+            ? Number(reading.timestamp)
+            : Date.now();
+        }
+
+        rawChunkBufferRef.current.push(reading);
+        flushRawEegChunk(false);
+
+        if (eegBufferRef.current.length > maxEegBufferSize) {
+          eegBufferRef.current.splice(0, eegBufferRef.current.length - maxEegBufferSize);
+        }
+
+        scheduleEegFlush();
+      });
+
+      if (import.meta.env.DEV) {
+        console.debug("Muse S Athena 활성화 완료");
+      }
+      setMeasurementProgressPercent(0);
+      setAuthStage('device-complete');
+    } catch (error) {
+      console.error("Muse 기기 연결 오류:", error);
+      resetMuseStream();
+      setAuthStage('device-question');
+    }
+  };
+
+  const startLiveMuseConnection = async () => {
+    if (isTransitioning || liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected') {
+      return;
+    }
+
+    resetMuseStream();
+    setLiveMuseConnectionError('');
+    setLiveMuseConnectionStatus('connecting');
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const client = await createMuseClient({
+        mode: params.get('muse') === 'mock' ? 'mock' : 'web',
+      });
+      museClientRef.current = client;
+
+      await client.connect();
+      await client.start();
+
+      const connectedAt = new Date().toISOString();
+      eegSessionMeasuredAtRef.current = connectedAt;
+      setLiveMuseConnectedAt(connectedAt);
+
+      try {
+        const startedSession = await startEegSession({
+          deviceType: 'Muse S Athena',
+          measuredAt: connectedAt,
+        });
+        const eegSessionId = startedSession?.eegSessionId ?? null;
+        eegSessionIdRef.current = eegSessionId;
+        setEegUploadStats((prev) => ({
+          ...prev,
+          eegSessionId,
+        }));
+      } catch (sessionError) {
+        console.warn('Failed to start live Muse EEG upload session. Continuing with local stream:', sessionError);
+      }
+
+      const maxEegBufferSize = getMaxLocalEegBufferSize(
+        LIVE_MUSE_BASELINE_DURATION_SEC + LIVE_MUSE_ANALYSIS_INTERVAL_SEC
+      );
+
+      museSubscriptionRef.current = client.subscribe((reading) => {
+        collectedSampleCountRef.current += 1;
+        eegBufferRef.current.push(reading);
+
+        if (rawChunkBaseTimestampRef.current === null) {
+          rawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
+            ? Number(reading.timestamp)
+            : Date.now();
+        }
+
+        rawChunkBufferRef.current.push(reading);
+        flushRawEegChunk(false);
+
+        if (eegBufferRef.current.length > maxEegBufferSize) {
+          eegBufferRef.current.splice(0, eegBufferRef.current.length - maxEegBufferSize);
+        }
+
+        scheduleEegFlush();
+      });
+
+      const liveMuseSession = createLiveMuseSessionPayload(connectedAt, {
+        status: 'connected',
+        connectedAt,
+        eegSessionId: eegSessionIdRef.current,
+      });
+      saveLiveMuseSessionPreference(liveMuseSession);
+      setLiveMuseConnectionStatus('connected');
+
+      if (import.meta.env.DEV) {
+        console.debug('Muse S Athena live session connected');
+      }
+    } catch (error) {
+      console.error('Muse live connection failed:', error);
+      resetMuseStream();
+      setLiveMuseConnectionStatus('error');
+      setLiveMuseConnectionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const handleMuseChoice = async(choice) => {
     if (isTransitioning) return;
 
     if (choice === 'yes') {
-      setAuthStage('device-connecting');
+      setIsTransitioning(true);
       resetMuseStream();
-
-      try {
-        // 실제 Muse 기기 연결 및 시작
-        const client = await createMuseClient({
-          mode: 'web',
-        });
-        museClientRef.current = client;
-        
-        // Web Bluetooth 페어링 창에서 사용자가 기기를 선택할 때까지 여기서 대기합니다.
-        
-        await client.connect();
-        await client.start();
-
-        // 데이터 스트림 구독 (콘솔에서 확인)
-        museSubscriptionRef.current = client.subscribe((reading) => {
-          //나중에 Spring Boot 웹소켓으로 쏨
-          eegBufferRef.current.push(reading);
-
-          if (eegBufferRef.current.length > MAX_EEG_BUFFER_SIZE) {
-            eegBufferRef.current.splice(0, eegBufferRef.current.length - MAX_EEG_BUFFER_SIZE);
-          }
-
-          scheduleEegFlush();
-        });
-        
-
-        if (import.meta.env.DEV) {
-          console.debug("Muse S Athena 활성화 완료");
-        }
-        setMeasurementProgressPercent(0);
-        setAuthStage('device-complete');
-
-      } catch (error) {
-        console.error("Muse 기기 연결 오류:", error);
-        resetMuseStream();
-        setAuthStage('device-question');
-      }
+      setLiveMuseConnectionStatus('idle');
+      setLiveMuseConnectionError('');
+      setLiveMuseConnectedAt(null);
+      setSurveyAiExplanation(null);
+      window.setTimeout(() => {
+        setAuthStage('device-live-ready');
+        setIsTransitioning(false);
+      }, 520);
       return;
     }
 
@@ -918,6 +1318,10 @@ const handleSkipLoginForTesting = () => {
   const handleSurveySubmit = (e) => {
     e.preventDefault();
     if (!isSurveyComplete) return;
+    if (authStage === 'muse-survey') {
+      setAuthStage('device-success');
+      return;
+    }
     setAuthStage('analysis-loading');
   };
 
@@ -942,7 +1346,34 @@ const handleSkipLoginForTesting = () => {
 
   const handleContinueToSolarExplorer = () => {
     const now = new Date().toISOString();
-    if (authStage === 'analysis-result') {
+    if (authStage === 'device-live-ready') {
+      if (liveMuseConnectionStatus !== 'connected') {
+        setLiveMuseConnectionError('Muse Bluetooth 연결을 먼저 완료해 주세요.');
+        return;
+      }
+
+      flushRawEegChunk(true);
+      const liveMuseSession = createLiveMuseSessionPayload(liveMuseConnectedAt || now, {
+        status: 'connected',
+        connectedAt: liveMuseConnectedAt || now,
+        eegSessionId: eegSessionIdRef.current,
+        sampleCount: collectedSampleCountRef.current,
+        chunkCount: eegUploadStats.chunkCount,
+      });
+      saveLiveMuseSessionPreference(liveMuseSession);
+      saveCurrentStateSnapshot({
+        source: 'muse-live',
+        sourceLabel: 'Muse S Athena 실시간 측정',
+        title: DEVICE_CONNECTION_RESULT.title,
+        summary: DEVICE_CONNECTION_RESULT.summary,
+        conclusion: '음악 세션 중 최근 5분 EEG 윈도우를 반복 분석해 음악 전환에 반영합니다.',
+        canonicalState: LIVE_MUSE_NEUTRAL_STATE,
+        dominantState: 'live-session-pending',
+        recognitionResult: null,
+        liveMuseSession,
+        measuredAt: now,
+      });
+    } else if (authStage === 'analysis-result') {
       saveCurrentStateSnapshot({
         source: 'survey',
         sourceLabel: '설문 기반 측정',
@@ -962,16 +1393,19 @@ const handleSkipLoginForTesting = () => {
         const dominantState = resolvedRecognitionResult?.state_profile?.dominant_state || 'band-summary';
 
         saveCurrentStateSnapshot({
-          source: 'muse',
-          sourceLabel: 'Muse S Athena 측정',
+          source: 'hybrid',
+          sourceLabel: 'Muse S Athena + 설문 기반 측정',
           title: museStateLabel,
           summary:
             resolvedRecognitionResult?.state_profile?.summary?.join(' · ') ||
-            `${totalMeasurementDurationText} 측정 기반 상태 요약이 준비되었습니다.`,
+            `${totalMeasurementDurationText} 뇌파 측정과 설문 기반 상태 요약이 준비되었습니다.`,
           recognitionResult: resolvedRecognitionResult,
           canonicalState: resolvedCurrentState,
           dominantState,
           bands: museFftAnalysis?.bandPowers || [],
+          surveyContext: createSurveyContextPayload(surveyResult, surveyAnswers, 'muse-hybrid'),
+          measurementDurationSec: selectedMeasurementDurationSec,
+          eegUploadStats,
           measuredAt: now,
         });
       }
@@ -985,6 +1419,16 @@ const handleSkipLoginForTesting = () => {
       warpExitTimerRef.current = null;
     }, WARP_EXIT_FADE_DURATION_MS);
   };
+
+  const liveMuseNotice = (
+    <MuseConnectionNotice
+      status={liveMuseConnectionStatus}
+      latestValue={latestEegValue}
+      uploadStats={eegUploadStats}
+      sampleCount={eegData.length}
+      hasBack={Boolean(onBack) && !showSolarExplorer}
+    />
+  );
 
   if (showSolarExplorer) {
     return (
@@ -1001,15 +1445,22 @@ const handleSkipLoginForTesting = () => {
         <AnimatePresence>
           {showSolarEntryWarp && <SolarEntryWarpOverlay />}
         </AnimatePresence>
+        {liveMuseNotice}
       </motion.div>
     );
   }
 
   if (authStage === 'warp-transition') {
-    return <WarpTransitionScene />;
+    return (
+      <>
+        <WarpTransitionScene />
+        {liveMuseNotice}
+      </>
+    );
   }
 
-  if (authStage === 'survey' && currentSurveyItem) {
+  if ((authStage === 'survey' || authStage === 'muse-survey') && currentSurveyItem) {
+    const isMuseSurvey = authStage === 'muse-survey';
     return (
       <PrismStageShell>
         <motion.div
@@ -1029,6 +1480,14 @@ const handleSkipLoginForTesting = () => {
             isLastSurveyStep={isLastSurveyStep}
             isSurveyComplete={isSurveyComplete}
             surveyMethodNote={STATE_SURVEY_METHOD_NOTE}
+            headerKicker={isMuseSurvey ? 'Hybrid Calibration' : undefined}
+            headerTitle={isMuseSurvey ? '뇌파 측정값과 함께 반영할 현재 상태를 입력합니다.' : undefined}
+            headerSubtitle={
+              isMuseSurvey
+                ? `${totalMeasurementDurationText} Muse 측정 후 자기보고 상태를 더해 최종 상태를 계산합니다.`
+                : undefined
+            }
+            submitLabel={isMuseSurvey ? '하이브리드 분석 시작' : undefined}
             onSurveyOptionSelect={handleSurveyOptionSelect}
             onPrev={() => handleSurveyStepMove('prev')}
             onNext={() => handleSurveyStepMove('next')}
@@ -1089,14 +1548,14 @@ const handleSkipLoginForTesting = () => {
             recognitionResult={museRecognitionResult}
             currentState={museCurrentState || buildFallbackCurrentStateFromBandAnalysis(museFftAnalysis)}
             aiInterpretation={museAiExplanation}
-            title="Muse S Athena 측정 완료"
-            summary={`${totalMeasurementDurationLabel} 측정 결과를 기준으로 지금 상태를 요약했습니다. 집중·긴장·피로 지표를 먼저 확인하세요.`}
+            title="Muse S Athena + 설문 분석 완료"
+            summary={`${totalMeasurementDurationLabel} 뇌파 측정과 설문 응답을 함께 반영했습니다. 선택 시간 기준 EEG ${selectedMeasurementOption.eegWeight}% / 설문 ${100 - selectedMeasurementOption.eegWeight}%에서 신호 품질로 보정됩니다.`}
             nextStepMessage={RESULT_NEXT_STEP_MESSAGE}
-            measurementDurationSec={MEASUREMENT_DURATION_SEC}
-            resultCurrentLabel="연결 상태"
-            interpretationTitle="Connection Summary"
-            resultPanelTitle="Connection Scores"
-            resultPanelSubtitle="디바이스 점검 기반 정량 지표"
+            measurementDurationSec={selectedMeasurementDurationSec}
+            resultCurrentLabel="하이브리드 현재 상태"
+            interpretationTitle="Hybrid State Summary"
+            resultPanelTitle="Hybrid Scores"
+            resultPanelSubtitle="뇌파 측정값과 설문 자기보고를 결합한 정량 지표"
             resultNextStepMessage={RESULT_NEXT_STEP_MESSAGE}
             confirmLabel="Solar Explorer 이동"
             isTransitioning={isTransitioning}
@@ -1109,6 +1568,7 @@ const handleSkipLoginForTesting = () => {
 
   return (
     <PrismStageShell>
+      {liveMuseNotice}
       <LoginContainer>
         {onBack && (
           <BackButtonWrapper>
@@ -1318,7 +1778,7 @@ const handleSkipLoginForTesting = () => {
                     <p className="flow-kicker">Device Check</p>
                     <h2 className="flow-title">"Muse S Athena"를 보유하고 계신가요?</h2>
                     <p className="flow-description">
-                      NOOS의 집중/감정 분석을 위해 장치 보유 여부를 먼저 확인합니다.
+                      Muse가 있으면 음악 세션 중 뇌파를 계속 측정하고, 최근 5분 상태에 맞춰 음악을 자연스럽게 조정합니다.
                     </p>
                     <div
                       style={{
@@ -1354,6 +1814,118 @@ const handleSkipLoginForTesting = () => {
                     <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
                       Muse 연결 도움받기
                     </button>
+                  </div>
+                )}
+
+                {authStage === 'device-live-ready' && (
+                  <div className="flow-card flow-card-device flow-card-device-complete">
+                    <p className="flow-kicker">Muse Live Session</p>
+                    <h2 className="flow-title">Muse S Athena를 먼저 연결합니다.</h2>
+                    <p className="flow-description">
+                      이 화면에서 Bluetooth 페어링을 완료합니다. 연결되면 실시간 EEG 스트리밍을 유지하고,
+                      음악 세션에서는 1분 기준선 이후 5분마다 상태를 분석해 유지, 약한 조정, 크로스페이드 전환 중 하나를 적용합니다.
+                    </p>
+                    <div style={{ width: 'min(100%, 520px)', margin: '1.25rem 0 0', display: 'grid', gap: '0.65rem' }}>
+                      <div className="connection-complete-badge" aria-hidden="true" style={{ position: 'static', transform: 'none' }}>
+                        <span className="connection-complete-dot" />
+                        <span className="connection-complete-label">
+                          {liveMuseConnectionStatus === 'connected'
+                            ? `connected · ${latestEegValue !== null ? `${latestEegValue.toFixed(1)}uV` : 'streaming'}`
+                            : liveMuseConnectionStatus === 'connecting'
+                            ? 'bluetooth pairing · stream sync'
+                            : 'baseline 01:00 · analysis 05:00 · crossfade 00:30'}
+                        </span>
+                      </div>
+                      {liveMuseConnectionError && (
+                        <p style={{ margin: 0, color: 'rgba(255, 146, 146, 0.88)', fontSize: 12, lineHeight: 1.5 }}>
+                          {liveMuseConnectionError}
+                        </p>
+                      )}
+                      <div className="binary-actions" style={{ gridTemplateColumns: '1fr' }}>
+                        <button
+                          type="button"
+                          className={`option-button ${liveMuseConnectionStatus === 'connected' ? 'option-yes' : ''}`}
+                          onClick={startLiveMuseConnection}
+                          disabled={liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected'}
+                        >
+                          {liveMuseConnectionStatus === 'connected'
+                            ? 'Muse 연결 완료'
+                            : liveMuseConnectionStatus === 'connecting'
+                            ? 'Muse 연결 중...'
+                            : 'Muse Bluetooth 연결'}
+                        </button>
+                      </div>
+                      <div className="binary-actions">
+                        <button type="button" className="option-button option-no" onClick={() => setAuthStage('device-question')}>
+                          이전
+                        </button>
+                        <button
+                          type="button"
+                          className="option-button option-yes"
+                          onClick={handleContinueToSolarExplorer}
+                          disabled={liveMuseConnectionStatus !== 'connected'}
+                          style={{
+                            opacity: liveMuseConnectionStatus === 'connected' ? 1 : 0.42,
+                            cursor: liveMuseConnectionStatus === 'connected' ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Solar Explorer 이동
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {authStage === 'measurement-duration' && (
+                  <div className="flow-card flow-card-device">
+                    <p className="flow-kicker">Measurement Window</p>
+                    <h2 className="flow-title">뇌파 측정 시간을 선택해 주세요.</h2>
+                    <p className="flow-description">
+                      긴 측정일수록 EEG 반영 비율이 커지고, 짧은 측정은 설문 맥락을 더 크게 반영합니다.
+                    </p>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                        gap: '0.75rem',
+                        margin: '1.25rem 0',
+                      }}
+                    >
+                      {MEASUREMENT_DURATION_OPTIONS.map((option) => {
+                        const selected = selectedMeasurementDurationSec === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`option-button ${selected ? 'option-yes' : ''}`}
+                            onClick={() => setSelectedMeasurementDurationSec(option.value)}
+                            style={{
+                              alignItems: 'flex-start',
+                              minHeight: 108,
+                              textAlign: 'left',
+                              borderColor: selected ? 'rgba(127,227,255,0.72)' : undefined,
+                              boxShadow: selected ? '0 0 0 1px rgba(127,227,255,0.32), 0 18px 44px rgba(127,227,255,0.12)' : undefined,
+                            }}
+                          >
+                            <span style={{ display: 'block', fontSize: 12, opacity: 0.62 }}>{option.title}</span>
+                            <span style={{ display: 'block', marginTop: 4, fontSize: 24, fontWeight: 700 }}>{option.label}</span>
+                            <span style={{ display: 'block', marginTop: 8, fontSize: 12, lineHeight: 1.45, opacity: 0.72 }}>
+                              EEG 기본 반영 {option.eegWeight}% / 설문 {100 - option.eegWeight}%
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="binary-actions">
+                      <button type="button" className="option-button option-no" onClick={() => setAuthStage('device-question')}>
+                        이전
+                      </button>
+                      <button type="button" className="option-button option-yes" onClick={startMuseMeasurement}>
+                        {selectedMeasurementOption.label} 측정 시작
+                      </button>
+                    </div>
                   </div>
                 )}
 

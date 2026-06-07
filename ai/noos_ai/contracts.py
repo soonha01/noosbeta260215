@@ -121,6 +121,7 @@ class RecognitionRequest:
     band_summary: BandSummary | None
     baseline: BaselineProfile | None
     context: dict[str, Any]
+    survey_context: dict[str, Any]
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "RecognitionRequest":
@@ -155,6 +156,7 @@ class RecognitionRequest:
         band_summary = BandSummary.from_mapping(as_mapping(payload.get("band_summary")))
         baseline = BaselineProfile.from_mapping(as_mapping(payload.get("baseline")))
         context = dict(as_mapping(payload.get("context")))
+        survey_context = dict(as_mapping(payload.get("survey_context")))
 
         return cls(
             session_type=session_type,
@@ -166,4 +168,5 @@ class RecognitionRequest:
             band_summary=band_summary,
             baseline=baseline,
             context=context,
+            survey_context=survey_context,
         )

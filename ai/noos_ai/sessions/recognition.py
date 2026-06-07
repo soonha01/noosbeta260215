@@ -2,13 +2,23 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from ..common import clamp, now_utc_iso, round_float
+from ..common import as_mapping, clamp, now_utc_iso, round_float, safe_float
 from ..contracts import RecognitionRequest
 from ..eeg.bands import BAND_KEYS
 from ..eeg.preprocessing import prepare_signal
 from ..eeg.spectral import summarize_spectral_features
 from ..research import DATASET_LIBRARY, STATE_REFERENCE_MAP, export_references
 from .base import BaseSession, SessionError
+
+STATE_AXES = (
+    "focus_readiness",
+    "stress_load",
+    "fatigue_risk",
+    "relaxation_level",
+    "cortical_arousal",
+    "mental_workload",
+)
+RAW_FEATURE_SOURCES = {"raw-readings", "hybrid-raw-survey"}
 
 
 def _scale(value: float, low: float, high: float) -> float:
@@ -27,6 +37,16 @@ def _level(score: float) -> str:
     if score < 0.8:
         return "elevated"
     return "high"
+
+
+def _is_raw_feature_source(feature_source: str) -> bool:
+    return feature_source in RAW_FEATURE_SOURCES
+
+
+def _hybrid_feature_source(base_feature_source: str, has_survey_context: bool) -> str:
+    if not has_survey_context:
+        return base_feature_source
+    return "hybrid-raw-survey" if base_feature_source == "raw-readings" else "hybrid-summary-survey"
 
 
 def _build_feature_snapshot(features: dict[str, Any]) -> dict[str, float]:
@@ -102,16 +122,116 @@ def _confidence(
     dimension: str,
 ) -> float:
     confidence = base_strength * (0.55 + (0.45 * quality_score))
-    confidence += 0.10 if feature_source == "raw-readings" else -0.08
+    confidence += 0.10 if _is_raw_feature_source(feature_source) else -0.08
     confidence += 0.06 if has_baseline else 0.0
 
-    if feature_source != "raw-readings" and dimension == "mental_workload":
+    if not _is_raw_feature_source(feature_source) and dimension == "mental_workload":
         confidence -= 0.12
 
     if dimension in {"stress_load", "cortical_arousal"} and high_frequency_ratio > 0.12:
         confidence -= 0.12
 
     return clamp(confidence, 0.1, 0.95)
+
+
+def _duration_eeg_weight(duration_sec: float | None) -> float:
+    duration = duration_sec or 60.0
+    if duration >= 3600:
+        return 0.80
+    if duration >= 1800:
+        return 0.70
+    if duration >= 600:
+        return 0.55
+    return 0.35
+
+
+def _survey_scores(survey_context: Mapping[str, Any]) -> dict[str, float]:
+    if not survey_context:
+        return {}
+
+    candidates = [
+        as_mapping(survey_context.get("canonicalState")),
+        as_mapping(survey_context.get("canonical_state")),
+        as_mapping(as_mapping(survey_context.get("analysis")).get("canonicalState")),
+        as_mapping(as_mapping(survey_context.get("analysis")).get("canonical_state")),
+    ]
+
+    for candidate in candidates:
+        scores: dict[str, float] = {}
+        for axis in STATE_AXES:
+            value = safe_float(candidate.get(axis))
+            if value is None:
+                continue
+            scores[axis] = clamp(value / 100.0 if value > 1.5 else value, 0.0, 1.0)
+        if scores:
+            return scores
+
+    return {}
+
+
+def _fusion_weights(request: RecognitionRequest, quality_score: float) -> dict[str, float]:
+    duration_sec = safe_float(request.context.get("measurement_duration_sec"), 60.0) or 60.0
+    duration_weight = _duration_eeg_weight(duration_sec)
+    eeg_weight = clamp(duration_weight * (0.5 + (0.5 * quality_score)), 0.15, 0.85)
+    survey_weight = 1.0 - eeg_weight
+
+    return {
+        "measurement_duration_sec": round_float(duration_sec, 3),
+        "duration_weight": round_float(duration_weight, 3),
+        "quality_adjusted_eeg_weight": round_float(eeg_weight, 3),
+        "survey_weight": round_float(survey_weight, 3),
+    }
+
+
+def _fuse_dimensions(
+    dimensions: dict[str, dict[str, Any]],
+    survey_scores: dict[str, float],
+    weights: dict[str, float],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    eeg_weight = weights["quality_adjusted_eeg_weight"]
+    survey_weight = weights["survey_weight"]
+    fused: dict[str, dict[str, Any]] = {}
+    conflict_flags: list[dict[str, Any]] = []
+
+    for axis, payload in dimensions.items():
+        survey_score = survey_scores.get(axis)
+        if survey_score is None:
+            fused[axis] = payload
+            continue
+
+        eeg_score = float(payload["score"])
+        fused_score = clamp((eeg_score * eeg_weight) + (survey_score * survey_weight), 0.0, 1.0)
+        confidence = clamp((float(payload["confidence"]) * eeg_weight) + (0.72 * survey_weight), 0.1, 0.95)
+        evidence = dict(payload.get("evidence", {}))
+        evidence.update(
+            {
+                "eeg_score": round_float(eeg_score, 4),
+                "survey_score": round_float(survey_score, 4),
+                "eeg_weight": round_float(eeg_weight, 4),
+                "survey_weight": round_float(survey_weight, 4),
+            }
+        )
+
+        if abs(eeg_score - survey_score) >= 0.35:
+            conflict_flags.append(
+                {
+                    "axis": axis,
+                    "eeg_score": round_float(eeg_score, 3),
+                    "survey_score": round_float(survey_score, 3),
+                    "delta": round_float(survey_score - eeg_score, 3),
+                }
+            )
+
+        fused[axis] = {
+            **payload,
+            "score": round_float(fused_score, 3),
+            "level": _level(fused_score),
+            "confidence": round_float(confidence, 3),
+            "rationale": f"{payload['rationale']} 설문 자기보고와 측정 시간 기반 가중치를 함께 반영했다.",
+            "evidence": evidence,
+        }
+
+    return fused, conflict_flags
 
 
 def _dimension_payload(
@@ -303,7 +423,7 @@ def _limitations(
         "consumer-grade dry electrode 특성상 artifact와 세션 간 변동성이 더 크다.",
     ]
 
-    if feature_source != "raw-readings":
+    if not _is_raw_feature_source(feature_source):
         limits.append("이번 결과는 원시 샘플이 아니라 밴드 요약값 기반이어서 신뢰도가 더 낮다.")
 
     if not request.baseline:
@@ -328,7 +448,9 @@ class RecognitionSession(BaseSession):
         request = RecognitionRequest.from_mapping(payload)
 
         prepared = prepare_signal(request.readings, request.sample_rate_hz) if request.readings else None
-        feature_source = "raw-readings" if prepared is not None else "band-summary"
+        base_feature_source = "raw-readings" if prepared is not None else "band-summary"
+        survey_scores = _survey_scores(request.survey_context)
+        feature_source = _hybrid_feature_source(base_feature_source, bool(survey_scores))
 
         if prepared is not None:
             spectral_features = summarize_spectral_features(prepared.channel_series, prepared.sample_rate_hz)
@@ -354,9 +476,23 @@ class RecognitionSession(BaseSession):
         dimensions = _infer_dimensions(
             spectral_features,
             quality_score=quality["score"],
-            feature_source=feature_source,
+            feature_source=base_feature_source,
             has_baseline=request.baseline is not None,
         )
+        fusion = None
+        if survey_scores:
+            weights = _fusion_weights(request, quality["score"])
+            dimensions, conflict_flags = _fuse_dimensions(dimensions, survey_scores, weights)
+            fusion = {
+                **weights,
+                "survey_present": True,
+                "survey_influence": "high"
+                if weights["survey_weight"] >= 0.60
+                else "moderate"
+                if weights["survey_weight"] >= 0.35
+                else "low",
+                "conflict_flags": conflict_flags,
+            }
 
         state_key, state_label = _dominant_state(dimensions)
         reference_ids: list[str] = []
@@ -380,6 +516,7 @@ class RecognitionSession(BaseSession):
                 "device_type": request.device_type,
                 "feature_source": feature_source,
                 "raw_reading_count": len(request.readings),
+                "survey_present": bool(survey_scores),
                 "baseline_mode": "subject-baseline" if request.baseline else "population-prior",
                 "context": request.context,
             },
@@ -414,6 +551,7 @@ class RecognitionSession(BaseSession):
                 "dominant_state": state_key,
                 "label": state_label,
                 "dimensions": dimensions,
+                "fusion": fusion,
                 "summary": [
                     f"dominant_state={state_key}",
                     f"mental_workload={dimensions['mental_workload']['level']}",

@@ -23,6 +23,8 @@ app = FastAPI(title="NOOS Gemma Service", version="0.1.0")
 warmup_lock = threading.Lock()
 warmup_thread: threading.Thread | None = None
 warmup_error: str | None = None
+idle_unload_lock = threading.Lock()
+idle_unload_timer: threading.Timer | None = None
 
 
 def _cache_path(task: str, payload: dict[str, Any]) -> Path:
@@ -45,6 +47,7 @@ def _warmup_model() -> None:
     try:
         runtime.ensure_loaded()
         warmup_error = None
+        _schedule_idle_unload()
     except Exception as error:  # pragma: no cover - runtime dependent
         warmup_error = f"{type(error).__name__}: {error}"
 
@@ -62,19 +65,80 @@ def _maybe_start_warmup() -> bool:
         return True
 
 
-@app.get("/health")
-def health() -> dict[str, Any]:
+def _idle_unload_seconds() -> float:
+    raw_value = os.getenv("NOOS_GEMMA_IDLE_UNLOAD_SEC", "300").strip()
+    try:
+        return max(0.0, float(raw_value))
+    except ValueError:
+        return 300.0
+
+
+def _cancel_idle_unload() -> None:
+    global idle_unload_timer
+
+    with idle_unload_lock:
+        if idle_unload_timer is not None:
+            idle_unload_timer.cancel()
+            idle_unload_timer = None
+
+
+def _run_idle_unload() -> None:
+    global idle_unload_timer
+
+    with idle_unload_lock:
+        idle_unload_timer = None
+    runtime.unload()
+
+
+def _schedule_idle_unload() -> None:
+    global idle_unload_timer
+
+    delay_sec = _idle_unload_seconds()
+    if delay_sec <= 0:
+        return
+
+    with idle_unload_lock:
+        if idle_unload_timer is not None:
+            idle_unload_timer.cancel()
+        idle_unload_timer = threading.Timer(delay_sec, _run_idle_unload)
+        idle_unload_timer.daemon = True
+        idle_unload_timer.start()
+
+
+def _health_payload() -> dict[str, Any]:
     status = runtime.health()
     return {
         "service": "noos-gemma",
         "model_id": status.model_id,
         "device": status.device,
         "ready": status.ready,
+        "model_loaded": status.ready,
         "detail": status.detail,
         "warming": warmup_thread is not None and warmup_thread.is_alive(),
+        "idle_unload_sec": _idle_unload_seconds(),
         "warmup_error": warmup_error,
         "supported_tasks": sorted(SUPPORTED_TASKS),
     }
+
+
+@app.get("/health")
+def health() -> dict[str, Any]:
+    return _health_payload()
+
+
+@app.post("/v1/init")
+def init_model() -> dict[str, Any]:
+    _cancel_idle_unload()
+    runtime.ensure_loaded()
+    _schedule_idle_unload()
+    return _health_payload()
+
+
+@app.post("/v1/unload")
+def unload_model() -> dict[str, Any]:
+    _cancel_idle_unload()
+    runtime.unload()
+    return _health_payload()
 
 
 @app.post("/tasks/{task_name}")
@@ -87,6 +151,8 @@ def run_task(task_name: str, request: TaskRequest) -> dict[str, Any]:
     if cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
         cached["cached"] = True
+        if runtime.health().ready:
+            _schedule_idle_unload()
         return cached
 
     status = runtime.health()
@@ -122,6 +188,7 @@ def run_task(task_name: str, request: TaskRequest) -> dict[str, Any]:
         raw_output = runtime.generate_json(build_messages(task_name, payload))
         parsed = extract_first_json_object(raw_output)
         response_source = "gemma-4-e4b-it"
+        _schedule_idle_unload()
     except Exception as error:  # pragma: no cover - runtime dependent
         error_detail = f"{type(error).__name__}: {error}"
 

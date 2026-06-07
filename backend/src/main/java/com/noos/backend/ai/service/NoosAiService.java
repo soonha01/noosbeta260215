@@ -124,18 +124,30 @@ public class NoosAiService {
     }
 
     public Map<String, Object> recognize(EegRecognitionRequest request, List<Map<String, Object>> rawReadings) {
+        boolean hasRawReadings = rawReadings != null && !rawReadings.isEmpty();
+        boolean hasSurveyContext = request.surveyContext() != null && !request.surveyContext().isEmpty();
+        String source = hasRawReadings ? "frontend-raw-chunk-upload" : "frontend-band-summary";
+        if (hasSurveyContext) {
+            source = source + "+survey";
+        }
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("session_type", "recognition");
         payload.put("device_type", request.deviceType() != null && !request.deviceType().isBlank() ? request.deviceType() : "Muse S Athena");
         payload.put("measured_at", request.measuredAt());
         payload.put("sample_rate_hz", request.sampleRateHz() != null ? request.sampleRateHz() : 256);
-        payload.put("context", Map.of(
-                "measurement_duration_sec", request.measurementDurationSec() != null ? request.measurementDurationSec() : 0,
-                "source", rawReadings != null && !rawReadings.isEmpty() ? "frontend-raw-chunk-upload" : "frontend-band-summary"
-        ));
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("measurement_duration_sec", request.measurementDurationSec() != null ? request.measurementDurationSec() : 0);
+        context.put("analysis_window_sec", request.analysisWindowSec() != null ? request.analysisWindowSec() : 0);
+        context.put("analysis_mode", request.analysisMode() != null && !request.analysisMode().isBlank() ? request.analysisMode() : "single-measurement");
+        context.put("source", source);
+        payload.put("context", context);
 
-        if (rawReadings != null && !rawReadings.isEmpty()) {
+        if (hasRawReadings) {
             payload.put("readings", rawReadings);
+        }
+        if (hasSurveyContext) {
+            payload.put("survey_context", request.surveyContext());
         }
 
         Map<String, Object> bandSummary = new LinkedHashMap<>();
@@ -302,7 +314,7 @@ public class NoosAiService {
         coachPayload.put("planet", request.planet());
         coachPayload.put("intentText", stringValue(intentContext.get("intentText")));
         coachPayload.put("recommendation", mapValue(intentContext.get("recommendation")));
-        coachPayload.put("recommendedDurationSec", request.durationSec() != null ? request.durationSec() : 90);
+        coachPayload.put("recommendedDurationSec", durationSec);
         Map<String, Object> llmSessionCoach = invokeGemmaTaskSafely("session-coach", coachPayload);
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -628,13 +640,7 @@ public class NoosAiService {
 
     private int normalizeInterventionDuration(Integer requestedDurationSec) {
         int durationSec = requestedDurationSec != null ? requestedDurationSec : DEFAULT_INTERVENTION_DURATION_SEC;
-        if (durationSec < MIN_INTERVENTION_DURATION_SEC || durationSec > MAX_INTERVENTION_DURATION_SEC) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "durationSec must be between " + MIN_INTERVENTION_DURATION_SEC + " and " + MAX_INTERVENTION_DURATION_SEC + " seconds"
-            );
-        }
-        return durationSec;
+        return Math.max(MIN_INTERVENTION_DURATION_SEC, Math.min(MAX_INTERVENTION_DURATION_SEC, durationSec));
     }
 
     private Map<String, Object> maybeStartWizLighting(Map<String, Object> interventionResult) {
@@ -657,6 +663,11 @@ public class NoosAiService {
         putIntEnv(env, "NOOS_ACE_STEP_REQUEST_DURATION_CAP_SEC", aceStepRequestDurationCapSec, defaultAceStepRequestDurationCapSec());
         putIntEnv(env, "NOOS_ACE_STEP_INFERENCE_STEPS", aceStepInferenceSteps, defaultAceStepInferenceSteps());
         env.put("NOOS_ACE_STEP_ENABLE_LM", aceStepUseEnhancedRequest ? "true" : "false");
+        String gemmaUnloadUrl = gemmaUnloadUrl();
+        if (hasText(gemmaUnloadUrl)) {
+            env.put("NOOS_GEMMA_UNLOAD_URL", gemmaUnloadUrl);
+            env.putIfAbsent("NOOS_GEMMA_UNLOAD_TIMEOUT_SEC", "5");
+        }
         String lmModel = normalizedAceStepLmModel();
         if (!lmModel.isBlank()) {
             env.put("NOOS_ACE_STEP_LM_MODEL", lmModel);
@@ -997,6 +1008,7 @@ public class NoosAiService {
             env.put("ACESTEP_PORT", String.valueOf(port));
             env.put("ACESTEP_NO_INIT", "true");
             env.put("ACESTEP_INIT_LLM", "false");
+            env.put("ACESTEP_IDLE_UNLOAD_SEC", "300");
             env.put("TOKENIZERS_PARALLELISM", "false");
             if (isAppleSiliconMac()) {
                 env.putIfAbsent("ACESTEP_LM_BACKEND", "mlx");
@@ -1109,6 +1121,13 @@ public class NoosAiService {
 
     private URI aceStepBaseUri() {
         return URI.create(aceStepBaseUrl.replaceAll("/$", ""));
+    }
+
+    private String gemmaUnloadUrl() {
+        if (!hasText(gemmaBaseUrl)) {
+            return "";
+        }
+        return gemmaBaseUrl.trim().replaceAll("/$", "") + "/v1/unload";
     }
 
     private boolean shouldAutoStartAceStep() {

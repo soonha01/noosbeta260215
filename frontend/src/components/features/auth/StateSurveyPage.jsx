@@ -16,6 +16,10 @@ const StateSurveyPage = ({
   isLastSurveyStep,
   isSurveyComplete,
   surveyMethodNote,
+  headerKicker = 'Validated Survey',
+  headerTitle = STATE_SURVEY_HEADER_TITLE,
+  headerSubtitle = STATE_SURVEY_HEADER_SUBTITLE,
+  submitLabel = '설문 제출',
   onSurveyOptionSelect,
   onPrev,
   onNext,
@@ -32,9 +36,9 @@ const StateSurveyPage = ({
     <div className="state-survey-page">
       <form className="state-survey-card" onSubmit={onSubmit}>
         <div className="state-survey-head">
-          <p className="state-survey-kicker">Validated Survey</p>
-          <h2 className="state-survey-title">{STATE_SURVEY_HEADER_TITLE}</h2>
-          <p className="state-survey-subtitle">{STATE_SURVEY_HEADER_SUBTITLE}</p>
+          <p className="state-survey-kicker">{headerKicker}</p>
+          <h2 className="state-survey-title">{headerTitle}</h2>
+          <p className="state-survey-subtitle">{headerSubtitle}</p>
         </div>
 
         <div className="state-survey-progress-row">
@@ -88,7 +92,7 @@ const StateSurveyPage = ({
 
           {isLastSurveyStep && (
             <button type="submit" className="state-survey-next" disabled={!isSurveyComplete}>
-              설문 제출
+              {submitLabel}
             </button>
           )}
         </div>

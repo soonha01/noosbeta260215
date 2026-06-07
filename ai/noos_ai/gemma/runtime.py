@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gc
 import json
 import os
 from pathlib import Path
@@ -89,6 +90,32 @@ class GemmaRuntime:
             self._tokenizer = tokenizer
             self._model = model
             self._detail = "loaded"
+
+    def unload(self) -> RuntimeHealth:
+        with self._load_lock:
+            with self._generate_lock:
+                tokenizer = self._tokenizer
+                model = self._model
+                self._tokenizer = None
+                self._model = None
+                self._detail = "unloaded"
+
+                del tokenizer
+                del model
+                gc.collect()
+
+                try:
+                    import torch
+
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.ipc_collect()
+                    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                        torch.mps.empty_cache()
+                except Exception:
+                    pass
+
+                return self.health()
 
     def generate_json(self, messages: list[dict[str, str]], *, max_new_tokens: int = 720) -> str:
         self.ensure_loaded()

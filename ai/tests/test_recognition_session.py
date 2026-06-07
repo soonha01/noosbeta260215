@@ -122,6 +122,53 @@ class RecognitionSessionTests(unittest.TestCase):
         self.assertIn("limitations", result)
         self.assertIn("mental_workload", result["state_profile"]["dimensions"])
 
+    def test_hybrid_survey_weight_decreases_as_measurement_duration_increases(self) -> None:
+        base_payload = {
+            "session_type": "recognition",
+            "session_id": "hybrid-duration",
+            "band_summary": {
+                "delta": 5.0,
+                "theta": 10.0,
+                "alpha": 70.0,
+                "beta": 10.0,
+                "gamma": 5.0,
+            },
+            "survey_context": {
+                "canonicalState": {
+                    "focus_readiness": 0.2,
+                    "stress_load": 0.95,
+                    "fatigue_risk": 0.25,
+                    "relaxation_level": 0.15,
+                    "cortical_arousal": 0.65,
+                    "mental_workload": 0.8,
+                }
+            },
+        }
+
+        short_result = analyze_session(
+            {
+                **base_payload,
+                "context": {"measurement_duration_sec": 60},
+            }
+        )
+        long_result = analyze_session(
+            {
+                **base_payload,
+                "context": {"measurement_duration_sec": 3600},
+            }
+        )
+
+        short_fusion = short_result["state_profile"]["fusion"]
+        long_fusion = long_result["state_profile"]["fusion"]
+
+        self.assertEqual(short_result["input_summary"]["feature_source"], "hybrid-summary-survey")
+        self.assertGreater(short_fusion["survey_weight"], long_fusion["survey_weight"])
+        self.assertGreater(
+            short_result["state_profile"]["dimensions"]["stress_load"]["score"],
+            long_result["state_profile"]["dimensions"]["stress_load"]["score"],
+        )
+        self.assertTrue(short_fusion["conflict_flags"])
+
 
 if __name__ == "__main__":
     unittest.main()
