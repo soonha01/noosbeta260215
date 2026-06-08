@@ -29,6 +29,7 @@ import {
   TRACK_DURATION_SEC,
 } from './travel/constants';
 import {
+  applyWizLightingPlan,
   buildLightingPreviewFromIntervention,
   generateJourneyBundle,
   prewarmJourneyGeneration,
@@ -37,8 +38,8 @@ import {
   buildFallbackCurrentStateFromBandAnalysis,
 } from '../../../lib/noosAiApi';
 import {
+  LIVE_MUSE_SESSION_EVENT,
   getSharedLiveMuseSnapshot,
-  hasActiveSharedLiveMuseSession,
   startSharedLiveMuseSession,
   stopSharedLiveMuseSession,
   subscribeToSharedLiveMuseReadings,
@@ -65,7 +66,7 @@ const ENTRY_PLAYER_FADE_IN_SEC = 1.9;
 const DEFAULT_PLAYER_FADE_IN_SEC = 1.15;
 const ENTRY_SHELL_FADE_SEC = 1.35;
 const DEFAULT_SHELL_FADE_SEC = 0.8;
-const JOURNEY_GENERATION_DURATION_SEC = 300;
+const JOURNEY_GENERATION_DURATION_SEC = 120;
 const GENERATION_PROGRESS_STEPS = [8, 16, 28, 41, 55, 68, 80, 89, 95];
 const GENERATION_STATUS_LINES = [
   '현재 상태 벡터와 목표 행성 프로필을 정렬하는 중',
@@ -86,11 +87,18 @@ const LIVE_BAND_SUMMARY_WINDOW_SEC = 30;
 const LIVE_BAND_HISTORY_MAX_POINTS = 720;
 const LIVE_BAND_COMPARE_WINDOW_SEC = 180;
 const LIVE_MUSE_UI_UPDATE_MS = 1500;
+const LIVE_MUSE_PREVIEW_REFRESH_MS = 1000;
 const LIVE_MUSE_CROSSFADE_DURATION_SEC = 5;
 const LIVE_MUSE_FEEDBACK_CADENCE_MS = 15 * 60 * 1000;
 const LIVE_MUSE_FEEDBACK_AFTER_ADAPT_MS = 90 * 1000;
 const LIVE_MUSE_FEEDBACK_PROMPT_PROBABILITY = 0.1;
 const LIVE_MUSE_MIN_REGEN_INTERVAL_MS = 4 * 60 * 1000;
+const TRACK_QUEUE_PREFETCH_REMAINING_SEC = 70;
+const TRACK_QUEUE_CROSSFADE_LEAD_SEC = LIVE_MUSE_CROSSFADE_DURATION_SEC + 0.6;
+const TRACK_QUEUE_REPLACE_SAFE_REMAINING_SEC = 35;
+const TRACK_QUEUE_RETRY_DELAY_MS = 30 * 1000;
+const LIVE_MUSE_AUTO_ATTACH_RETRY_MS = 500;
+const LIVE_MUSE_AUTO_ATTACH_POLL_WINDOW_MS = 15 * 1000;
 const LIVE_BAND_COMPARE_BANDS = [
   { key: 'delta', label: 'Delta', color: '#84dcc6' },
   { key: 'theta', label: 'Theta', color: '#9f86ff' },
@@ -108,15 +116,72 @@ const NEUTRAL_CANONICAL_STATE = {
 };
 
 const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+const isAbortError = (error) =>
+  error?.name === 'AbortError' || /aborted|abort/i.test(String(error?.message || ''));
+
+const isAutoplayBlockedError = (error) => {
+  const errorName = String(error?.name || '');
+  const message = String(error?.message || '');
+  return errorName === 'NotAllowedError' || /notallowed|user.*gesture/i.test(message);
+};
+
+const isPlayRequestInterruptedError = (error) => {
+  const errorName = String(error?.name || '');
+  const message = String(error?.message || '');
+  return (
+    errorName === 'AbortError' ||
+    /play\(\).*interrupted|play.*interrupted|interrupted by (?:a new load request|a call to pause)/i.test(message)
+  );
+};
 
 const readLiveMuseSessionPreference = () => {
   const saved = loadStorageJSON(LIVE_MUSE_SESSION_STORAGE_KEY, null);
-  return saved?.enabled ? saved : null;
+  if (saved?.enabled) return saved;
+
+  return createLiveMuseSessionFromSharedSnapshot(getSharedLiveMuseSnapshot());
 };
 
 const writeLiveMuseSessionPreference = (nextValue) => {
   saveStorageJSON(LIVE_MUSE_SESSION_STORAGE_KEY, nextValue);
 };
+
+const createLiveMuseSessionFromSharedSnapshot = (snapshot) => {
+  if (!snapshot?.isActive) return null;
+
+  const mode = snapshot.mode || 'web';
+  const isCsvTest = mode === 'mock';
+  const analysisIntervalSec = isCsvTest
+    ? Math.round(LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS / 1000)
+    : Math.round(LIVE_MUSE_ANALYSIS_INTERVAL_MS / 1000);
+
+  return {
+    enabled: true,
+    deviceType: isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena',
+    status: snapshot.status || 'connected',
+    startedAt: snapshot.startedAt || snapshot.connectedAt || new Date().toISOString(),
+    connectedAt: snapshot.connectedAt || snapshot.startedAt || new Date().toISOString(),
+    eegSessionId: snapshot.eegSessionId || null,
+    sampleCount: snapshot.sampleCount || 0,
+    streamMode: mode,
+    testMode: isCsvTest ? 'csv-mock' : null,
+    baselineDurationSec: isCsvTest ? LIVE_MUSE_CSV_TEST_BASELINE_SEC : LIVE_MUSE_BASELINE_SEC,
+    analysisIntervalSec,
+    analysisWindowSec: isCsvTest ? analysisIntervalSec : LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+    transitionMode: 'crossfade',
+    crossfadeDurationSec: LIVE_MUSE_CROSSFADE_DURATION_SEC,
+    feedbackCadenceSec: LIVE_MUSE_FEEDBACK_CADENCE_MS / 1000,
+  };
+};
+
+const createEmptyLiveMuseMetrics = () => ({
+  sampleCount: 0,
+  analysisCount: 0,
+  eegSessionId: null,
+  lastAnalyzedAt: null,
+  nextAnalysisAt: null,
+  qualityScore: null,
+  latestValue: null,
+});
 
 const resolveLiveMuseAnalysisIntervalMs = (session) =>
   session?.testMode === 'csv-mock' ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS : LIVE_MUSE_ANALYSIS_INTERVAL_MS;
@@ -265,6 +330,37 @@ const buildBandComparisonFromHistory = ({ snapshots, readings, sampleRate = EEG_
   return buildBandComparisonFromReadings(readings, sampleRate);
 };
 
+const buildStateAxesFromBandPercentMap = (bands) =>
+  buildFallbackCurrentStateFromBandAnalysis({
+    bandPowers: LIVE_BAND_COMPARE_BANDS.map((band) => ({
+      ...band,
+      percent: Number(bands?.[band.key] || 0),
+    })),
+  });
+
+const buildStateComparisonFromBandComparison = (comparison) => {
+  if (!comparison?.hasData || !Array.isArray(comparison?.bands) || !comparison.bands.length) {
+    return null;
+  }
+
+  const beforeBands = Object.fromEntries(
+    comparison.bands.map((band) => [band.key, Number(band.before || 0)])
+  );
+  const afterBands = Object.fromEntries(
+    comparison.bands.map((band) => [band.key, Number(band.after || 0)])
+  );
+
+  return {
+    beforeLabel: comparison.beforeLabel || 'Before',
+    afterLabel: comparison.afterLabel || 'After',
+    sourceLabel: comparison.sourceLabel || null,
+    pointCount: comparison.pointCount || null,
+    pointLabel: comparison.pointLabel || null,
+    before: buildStateAxesFromBandPercentMap(beforeBands),
+    after: buildStateAxesFromBandPercentMap(afterBands),
+  };
+};
+
 const getPlanetAdaptationMode = (planetSlug) => {
   if (['venus', 'earth', 'pluto'].includes(planetSlug)) return 'calm';
   if (['mercury', 'mars', 'jupiter', 'neptune'].includes(planetSlug)) return 'focus';
@@ -284,6 +380,50 @@ const buildMusicProfileSnapshot = ({ planetMedia, generatedJourney, volumePercen
     density: musicSpec?.density ?? null,
     volumePercent,
     adaptiveVolumeScale,
+  };
+};
+
+const createQueueAction = (reason = 'queue-prefetch', label = '다음 2분 음악을 미리 준비합니다.') => ({
+  type: 'queue-prefetch',
+  reason,
+  label,
+  volumeScale: 1,
+});
+
+const normalizeLightingPhaseForWiz = (phase, preview, fallbackDurationSec) => ({
+  name: String(phase?.label || preview?.programLabel || 'planet-preview')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'planet_preview',
+  label: phase?.label || preview?.programLabel || 'Planet Preview',
+  duration_sec: Math.max(10, Math.round(Number(phase?.durationSec || fallbackDurationSec) || fallbackDurationSec)),
+  primary_mode: phase?.primaryMode || preview?.primaryMode || 'cct',
+  primary_cct_kelvin: phase?.primaryCctKelvin || phase?.cctKelvin || preview?.primaryCctKelvin || preview?.cctKelvin || 4200,
+  cct_kelvin: phase?.cctKelvin || preview?.cctKelvin || 4200,
+  primary_hex: phase?.primaryHex || preview?.primaryHex || '#ffffff',
+  secondary_hex: phase?.secondaryHex || preview?.secondaryHex || phase?.primaryHex || preview?.primaryHex || '#ffffff',
+  accent_hex: phase?.accentHex || preview?.accentHex || '#ffffff',
+  brightness_percent: phase?.brightnessPercent || preview?.brightnessPercent || 42,
+  illuminance_lux_target: phase?.luxAnchor || preview?.luxAnchor || 300,
+  animation_pattern: phase?.patternLabel || preview?.patternLabel || 'Static Hold',
+});
+
+const buildPreviewLightingSpecForWiz = (preview, durationSec = JOURNEY_GENERATION_DURATION_SEC) => {
+  if (!preview) return null;
+  const sourcePhases = Array.isArray(preview.phases) && preview.phases.length ? preview.phases : [preview];
+  const phases = sourcePhases.map((phase) => normalizeLightingPhaseForWiz(phase, preview, durationSec));
+  const finalScene = phases[phases.length - 1] || null;
+
+  return {
+    engine: 'noos-planet-preview-lighting',
+    program: {
+      label: preview.programLabel || 'Planet Preview Lighting',
+      intent: preview.summary || '',
+      research_anchor: preview.researchAnchor || '',
+    },
+    device_profile: preview.deviceProfile || 'cct-plus-rgb',
+    phases,
+    final_scene: finalScene,
   };
 };
 
@@ -411,15 +551,7 @@ const SpaceTravel = ({
   const [isRouteFadingOut, setIsRouteFadingOut] = useState(false);
   const [liveMuseSession, setLiveMuseSession] = useState(readLiveMuseSessionPreference);
   const [liveMuseStatus, setLiveMuseStatus] = useState(liveMuseSession ? 'pending' : 'off');
-  const [liveMuseMetrics, setLiveMuseMetrics] = useState({
-    sampleCount: 0,
-    analysisCount: 0,
-    eegSessionId: null,
-    lastAnalyzedAt: null,
-    nextAnalysisAt: null,
-    qualityScore: null,
-    latestValue: null,
-  });
+  const [liveMuseMetrics, setLiveMuseMetrics] = useState(createEmptyLiveMuseMetrics);
   const [liveMusePreviewReadings, setLiveMusePreviewReadings] = useState([]);
   const [liveMuseCurrentState, setLiveMuseCurrentState] = useState(null);
   const [adaptiveMusicState, setAdaptiveMusicState] = useState({
@@ -430,6 +562,7 @@ const SpaceTravel = ({
     isCrossfading: false,
   });
   const [pendingAdaptiveAudio, setPendingAdaptiveAudio] = useState(null);
+  const [queuedAdaptiveAudio, setQueuedAdaptiveAudio] = useState(null);
   const [showLiveFeedbackDialog, setShowLiveFeedbackDialog] = useState(false);
   const [liveFeedbackRating, setLiveFeedbackRating] = useState(0);
 
@@ -463,6 +596,7 @@ const SpaceTravel = ({
   const nextAudioRef = useRef(null);
   const audioPlayRetryRef = useRef(null);
   const audioPlayAttemptsRef = useRef(0);
+  const audioSourceAutoResumeRef = useRef(false);
   const journeyLightingJobRef = useRef(null);
   const lightingRestoreRequestedRef = useRef(false);
   const stateSnapshotRef = useRef(stateSnapshot);
@@ -488,8 +622,29 @@ const SpaceTravel = ({
   const liveMuseUsesSharedSessionRef = useRef(false);
   const crossfadeTimerRef = useRef(null);
   const crossfadeHandoffRef = useRef(null);
+  const queuedAdaptiveAudioRef = useRef(null);
+  const pendingAdaptiveAudioRef = useRef(null);
+  const queueGenerationInFlightRef = useRef(false);
+  const queueGenerationAbortControllerRef = useRef(null);
+  const queueRetryAfterMsRef = useRef(0);
+  const latestQueueActionRef = useRef(null);
+  const latestQueueSnapshotRef = useRef(stateSnapshot || null);
+  const requestQueuedJourneyRef = useRef(null);
+  const promoteQueuedAudioToCrossfadeRef = useRef(null);
+  const playheadSecRef = useRef(playheadSec);
+  const trackDurationSecRef = useRef(trackDurationSec);
+  const isPlayingRef = useRef(isPlaying);
+  const playbackIntentRef = useRef(isPlaying);
   const adaptiveVolumeScaleRef = useRef(adaptiveVolumeScale);
+  const journeyExitInProgressRef = useRef(false);
   const hasRealAudio = Boolean(effectivePlanetMedia?.audio);
+
+  const setPlaybackActive = useCallback((nextIsPlaying) => {
+    const normalizedIsPlaying = Boolean(nextIsPlaying);
+    playbackIntentRef.current = normalizedIsPlaying;
+    isPlayingRef.current = normalizedIsPlaying;
+    setIsPlaying(normalizedIsPlaying);
+  }, []);
 
   const clearAiTimers = useCallback(() => {
     aiTimersRef.current.forEach((timerId) => clearTimeout(timerId));
@@ -501,8 +656,9 @@ const SpaceTravel = ({
     routeTimersRef.current = [];
   }, []);
 
-  const restoreJourneyLighting = useCallback((reason = 'route-leave') => {
-    if (!journeyLightingJobRef.current || lightingRestoreRequestedRef.current) return;
+  const restoreJourneyLighting = useCallback((reason = 'route-leave', options = {}) => {
+    const force = Boolean(options?.force);
+    if ((!journeyLightingJobRef.current && !force) || lightingRestoreRequestedRef.current) return;
 
     lightingRestoreRequestedRef.current = true;
     journeyLightingJobRef.current = null;
@@ -535,6 +691,95 @@ const SpaceTravel = ({
     }
   }, []);
 
+  const stopJourneyPlaybackAndBackgroundWork = useCallback((reason = 'journey-exit') => {
+    journeyExitInProgressRef.current = true;
+    restoreJourneyLighting(reason, { force: true });
+    clearLiveMuseTimers();
+    clearAiTimers();
+
+    if (queueGenerationAbortControllerRef.current) {
+      queueGenerationAbortControllerRef.current.abort();
+      queueGenerationAbortControllerRef.current = null;
+    }
+    queueGenerationInFlightRef.current = false;
+    queueRetryAfterMsRef.current = Number.POSITIVE_INFINITY;
+    queuedAdaptiveAudioRef.current = null;
+    pendingAdaptiveAudioRef.current = null;
+    latestQueueActionRef.current = null;
+    setQueuedAdaptiveAudio(null);
+    setPendingAdaptiveAudio(null);
+
+    if (audioPlayRetryRef.current) {
+      clearTimeout(audioPlayRetryRef.current);
+      audioPlayRetryRef.current = null;
+    }
+    if (crossfadeTimerRef.current) {
+      clearInterval(crossfadeTimerRef.current);
+      crossfadeTimerRef.current = null;
+    }
+
+    audioSourceAutoResumeRef.current = false;
+    crossfadeHandoffRef.current = null;
+    audioRef.current?.pause();
+    nextAudioRef.current?.pause();
+    if (nextAudioRef.current) {
+      nextAudioRef.current.volume = 0;
+    }
+    setPlaybackActive(false);
+    setShowLiveFeedbackDialog(false);
+    setAdaptiveMusicState((prev) => ({
+      ...prev,
+      isGenerating: false,
+      isCrossfading: false,
+      label: '여정을 종료하는 중입니다.',
+      reason: '',
+    }));
+  }, [clearAiTimers, clearLiveMuseTimers, restoreJourneyLighting, setPlaybackActive]);
+
+  const syncLiveMusePreviewReadings = useCallback((options = {}) => {
+    if (journeyExitInProgressRef.current) {
+      return 0;
+    }
+
+    const maxBufferSize = EEG_SAMPLE_RATE * LIVE_MUSE_MAX_LOCAL_BUFFER_SEC;
+    const localReadings = Array.isArray(liveEegBufferRef.current) ? liveEegBufferRef.current : [];
+    let sourceReadings = localReadings;
+    let sharedSnapshot = null;
+
+    if (options.includeSharedSnapshot || !sourceReadings.length) {
+      sharedSnapshot = getSharedLiveMuseSnapshot();
+      const sharedReadings = Array.isArray(sharedSnapshot?.readings) ? sharedSnapshot.readings : [];
+      if (sharedReadings.length > sourceReadings.length) {
+        sourceReadings = sharedReadings.slice(-maxBufferSize);
+        liveEegBufferRef.current = sourceReadings;
+      }
+    }
+
+    if (sourceReadings.length > maxBufferSize) {
+      sourceReadings = sourceReadings.slice(-maxBufferSize);
+      liveEegBufferRef.current = sourceReadings;
+    }
+
+    const previewReadings = sourceReadings.slice(-LIVE_EEG_PREVIEW_POINT_COUNT);
+    const latestReading = previewReadings[previewReadings.length - 1] || sourceReadings[sourceReadings.length - 1] || null;
+    const latestValue = Number(
+      latestReading?.samples?.[0] ??
+        latestReading?.channels?.TP9 ??
+        latestReading?.raw?.TP9 ??
+        Number.NaN
+    );
+
+    setLiveMusePreviewReadings(previewReadings);
+    setLiveMuseMetrics((prev) => ({
+      ...prev,
+      eegSessionId: liveEegSessionIdRef.current || sharedSnapshot?.eegSessionId || prev.eegSessionId,
+      sampleCount: sourceReadings.length,
+      latestValue: Number.isFinite(latestValue) ? latestValue : prev.latestValue,
+    }));
+
+    return previewReadings.length;
+  }, []);
+
   const handleLiveMuseReading = useCallback((reading) => {
     const maxBufferSize = EEG_SAMPLE_RATE * LIVE_MUSE_MAX_LOCAL_BUFFER_SEC;
     liveEegBufferRef.current.push(reading);
@@ -542,20 +787,17 @@ const SpaceTravel = ({
       liveEegBufferRef.current.splice(0, liveEegBufferRef.current.length - maxBufferSize);
     }
 
+    if (liveEegBufferRef.current.length === 1) {
+      syncLiveMusePreviewReadings();
+    }
+
     if (!liveUiTimerRef.current) {
       liveUiTimerRef.current = window.setTimeout(() => {
         liveUiTimerRef.current = null;
-        const previewReadings = liveEegBufferRef.current.slice(-LIVE_EEG_PREVIEW_POINT_COUNT);
-        setLiveMusePreviewReadings(previewReadings);
-        setLiveMuseMetrics((prev) => ({
-          ...prev,
-          eegSessionId: liveEegSessionIdRef.current,
-          sampleCount: liveEegBufferRef.current.length,
-          latestValue: Number(reading?.samples?.[0] ?? reading?.channels?.TP9 ?? 0),
-        }));
+        syncLiveMusePreviewReadings();
       }, LIVE_MUSE_UI_UPDATE_MS);
     }
-  }, []);
+  }, [syncLiveMusePreviewReadings]);
 
   const fadeAdaptiveVolumeScaleTo = useCallback((targetScale, durationMs = 18000) => {
     const from = adaptiveVolumeScaleRef.current;
@@ -642,15 +884,21 @@ const SpaceTravel = ({
     });
   }, [appendLiveBandHistorySnapshot]);
 
-  const startAdaptiveCrossfade = useCallback((bundle, action) => {
-    const nextAudioUrl = bundle?.audioUrl;
+  const startAdaptiveCrossfade = useCallback((queuedAudio, transitionReason = 'queue-transition') => {
+    if (journeyExitInProgressRef.current) {
+      return;
+    }
+
+    const bundle = queuedAudio?.bundle || queuedAudio;
+    const action = queuedAudio?.action || createQueueAction(transitionReason, '다음 음악으로 부드럽게 전환합니다.');
+    const nextAudioUrl = queuedAudio?.audioUrl || bundle?.audioUrl;
     const currentAudioUrl = effectivePlanetMedia?.audio || null;
 
     if (!nextAudioUrl || !hasRealAudio || !audioRef.current || nextAudioUrl === currentAudioUrl) {
       setGeneratedJourney(bundle);
       setGenerationNotice(action?.label || bundle?.generationWarning || '');
       setPlayheadSec(0);
-      setIsPlaying(true);
+      setPlaybackActive(true);
       return;
     }
 
@@ -658,6 +906,7 @@ const SpaceTravel = ({
       bundle,
       action,
       audioUrl: nextAudioUrl,
+      transitionReason,
       startedAt: new Date().toISOString(),
     });
     setAdaptiveMusicState((prev) => ({
@@ -665,38 +914,55 @@ const SpaceTravel = ({
       isCrossfading: true,
       label: action?.label || '새 음악으로 부드럽게 전환합니다.',
     }));
-  }, [effectivePlanetMedia?.audio, hasRealAudio]);
+  }, [effectivePlanetMedia?.audio, hasRealAudio, setPlaybackActive]);
 
-  const requestAdaptiveJourney = useCallback(async ({ action, nextSnapshot }) => {
-    if (currentStepRef.current !== STEP_PLAYER) {
-      return;
+  const requestQueuedJourney = useCallback(async ({ reason = 'queue-prefetch', action, snapshot, replace = false } = {}) => {
+    if (journeyExitInProgressRef.current || currentStepRef.current !== STEP_PLAYER) {
+      return null;
     }
 
     const now = Date.now();
-    if (now - liveLastAdaptiveGenerationAtRef.current < LIVE_MUSE_MIN_REGEN_INTERVAL_MS) {
-      return;
+    if (queueGenerationInFlightRef.current) {
+      return null;
+    }
+    if (!replace && queuedAdaptiveAudioRef.current?.audioUrl) {
+      return queuedAdaptiveAudioRef.current;
+    }
+    if (now < queueRetryAfterMsRef.current) {
+      return null;
     }
 
-    liveLastAdaptiveGenerationAtRef.current = now;
+    const queueAction = action || latestQueueActionRef.current || createQueueAction(reason);
+    const queueSnapshot = snapshot || latestQueueSnapshotRef.current || stateSnapshotRef.current || null;
+    latestQueueActionRef.current = queueAction;
+    latestQueueSnapshotRef.current = queueSnapshot || latestQueueSnapshotRef.current;
+    queueGenerationInFlightRef.current = true;
+    const controller = new AbortController();
+    queueGenerationAbortControllerRef.current = controller;
+
     setAdaptiveMusicState((prev) => ({
       ...prev,
       isGenerating: true,
-      label: '플레이어는 유지한 채 백그라운드에서 다음 음악을 준비합니다.',
+      label: reason === 'muse-analysis'
+        ? '최근 Muse 분석을 다음 queue 음악에 반영합니다.'
+        : '현재곡은 유지하고 다음 2분 음악을 미리 준비합니다.',
     }));
 
     try {
       const bundle = await generateJourneyBundle({
         planet: selectedPlanet,
-        currentState: nextSnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE,
-        recognitionResult: nextSnapshot?.recognitionResult || null,
-        durationSec: LIVE_MUSE_ANALYSIS_WINDOW_SEC,
+        currentState: queueSnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE,
+        recognitionResult: queueSnapshot?.recognitionResult || null,
+        durationSec: JOURNEY_GENERATION_DURATION_SEC,
         candidateCountOverride: 1,
         feedbackHistory: feedbackHistory.slice(0, 12),
         memoText,
         intentContext: {
           ...(assistantContext || {}),
-          liveMuse: true,
-          adaptiveAction: action,
+          queuePrefetch: true,
+          queueReason: reason,
+          liveMuse: Boolean(liveMuseSessionRef.current?.enabled),
+          adaptiveAction: queueAction,
           musicProfile: buildMusicProfileSnapshot({
             planetMedia,
             generatedJourney,
@@ -704,15 +970,56 @@ const SpaceTravel = ({
             adaptiveVolumeScale: adaptiveVolumeScaleRef.current,
           }),
         },
+        signal: controller.signal,
       });
 
-      startAdaptiveCrossfade(bundle, action);
-      scheduleLiveFeedbackPrompt();
+      if (controller.signal.aborted || journeyExitInProgressRef.current || currentStepRef.current !== STEP_PLAYER) {
+        return null;
+      }
+
+      const audioUrl = bundle?.audioUrl;
+      if (!audioUrl) {
+        queueRetryAfterMsRef.current = Date.now() + TRACK_QUEUE_RETRY_DELAY_MS;
+        if (!journeyExitInProgressRef.current) {
+          setGenerationNotice(bundle?.generationWarning || '다음 음악 생성이 지연되어 현재 트랙을 유지합니다.');
+        }
+        return null;
+      }
+
+      const queuedAudio = {
+        bundle,
+        action: queueAction,
+        audioUrl,
+        reason,
+        preparedAt: new Date().toISOString(),
+      };
+
+      queuedAdaptiveAudioRef.current = queuedAudio;
+      setQueuedAdaptiveAudio(queuedAudio);
+      queueRetryAfterMsRef.current = 0;
+      setAdaptiveMusicState((prev) => ({
+        ...prev,
+        isGenerating: false,
+        label: '다음 2분 음악 준비 완료. 곡 끝에서 자연스럽게 전환합니다.',
+        reason: queueAction?.reason || prev.reason,
+      }));
+      return queuedAudio;
     } catch (error) {
-      console.error('Failed to generate adaptive Muse journey:', error);
-      setGenerationNotice('라이브 EEG 기반 새 음악 생성이 지연되어 현재 트랙을 유지합니다.');
+      if (isAbortError(error) || journeyExitInProgressRef.current) {
+        return null;
+      }
+      console.error('Failed to generate queued Muse journey:', error);
+      queueRetryAfterMsRef.current = Date.now() + TRACK_QUEUE_RETRY_DELAY_MS;
+      setGenerationNotice('다음 음악 생성이 지연되어 현재 트랙을 유지합니다.');
+      return null;
     } finally {
-      setAdaptiveMusicState((prev) => ({ ...prev, isGenerating: false }));
+      if (queueGenerationAbortControllerRef.current === controller) {
+        queueGenerationAbortControllerRef.current = null;
+      }
+      queueGenerationInFlightRef.current = false;
+      if (!journeyExitInProgressRef.current && !controller.signal.aborted) {
+        setAdaptiveMusicState((prev) => ({ ...prev, isGenerating: false }));
+      }
     }
   }, [
     assistantContext,
@@ -720,13 +1027,91 @@ const SpaceTravel = ({
     generatedJourney,
     memoText,
     planetMedia,
-    scheduleLiveFeedbackPrompt,
     selectedPlanet,
-    startAdaptiveCrossfade,
     volumePercent,
   ]);
 
+  const requestAdaptiveJourney = useCallback(async ({ action, nextSnapshot }) => {
+    if (journeyExitInProgressRef.current) {
+      return;
+    }
+
+    const queueAction = action || createQueueAction('muse-analysis');
+    latestQueueActionRef.current = queueAction;
+    latestQueueSnapshotRef.current = nextSnapshot || latestQueueSnapshotRef.current;
+
+    const hasQueuedAudio = Boolean(queuedAdaptiveAudioRef.current?.audioUrl);
+    const remainingSec = Math.max(0, trackDurationSecRef.current - playheadSecRef.current);
+    const shouldRefreshQueue = !hasQueuedAudio || remainingSec > TRACK_QUEUE_REPLACE_SAFE_REMAINING_SEC;
+
+    if (action?.type !== 'crossfade') {
+      if (!hasQueuedAudio) {
+        await requestQueuedJourney({
+          reason: 'muse-analysis',
+          action: queueAction,
+          snapshot: nextSnapshot,
+        });
+      }
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      hasQueuedAudio &&
+      now - liveLastAdaptiveGenerationAtRef.current < LIVE_MUSE_MIN_REGEN_INTERVAL_MS
+    ) {
+      setAdaptiveMusicState((prev) => ({
+        ...prev,
+        label: '최근 Muse 분석은 다음 queue 방향에 반영됩니다.',
+        reason: queueAction.reason || prev.reason,
+      }));
+      return;
+    }
+
+    if (shouldRefreshQueue) {
+      liveLastAdaptiveGenerationAtRef.current = now;
+      await requestQueuedJourney({
+        reason: 'muse-analysis',
+        action: queueAction,
+        snapshot: nextSnapshot,
+        replace: true,
+      });
+    } else {
+      setAdaptiveMusicState((prev) => ({
+        ...prev,
+        label: '현재 준비된 queue를 유지하고, 다음 생성부터 Muse 분석을 반영합니다.',
+        reason: queueAction.reason || prev.reason,
+      }));
+    }
+
+    scheduleLiveFeedbackPrompt();
+  }, [requestQueuedJourney, scheduleLiveFeedbackPrompt]);
+
+  const promoteQueuedAudioToCrossfade = useCallback((transitionReason = 'queue-transition') => {
+    if (journeyExitInProgressRef.current) {
+      return false;
+    }
+
+    if (pendingAdaptiveAudioRef.current?.audioUrl) {
+      return false;
+    }
+
+    const queuedAudio = queuedAdaptiveAudioRef.current;
+    if (!queuedAudio?.audioUrl) {
+      return false;
+    }
+
+    queuedAdaptiveAudioRef.current = null;
+    setQueuedAdaptiveAudio(null);
+    startAdaptiveCrossfade(queuedAudio, transitionReason);
+    return true;
+  }, [startAdaptiveCrossfade]);
+
   const runLiveMuseAnalysis = useCallback(async () => {
+    if (journeyExitInProgressRef.current) {
+      return;
+    }
+
     const windowReadings = liveEegBufferRef.current.slice(-(EEG_SAMPLE_RATE * LIVE_MUSE_ANALYSIS_WINDOW_SEC));
     if (windowReadings.length < EEG_SAMPLE_RATE * 20) {
       setAdaptiveMusicState((prev) => ({
@@ -798,6 +1183,10 @@ const SpaceTravel = ({
       console.warn('Live Muse backend analysis failed. Using local band summary fallback:', error);
     }
 
+    if (journeyExitInProgressRef.current || currentStepRef.current !== STEP_PLAYER) {
+      return;
+    }
+
     const fallbackState = buildFallbackCurrentStateFromBandAnalysis(analysis);
     const recognitionResult = response?.recognitionResult || null;
     const nextCurrentState = response?.currentState || fallbackState;
@@ -849,7 +1238,7 @@ const SpaceTravel = ({
       label: action.label,
       reason: action.reason,
       isGenerating: false,
-      isCrossfading: action.type === 'crossfade',
+      isCrossfading: false,
     });
 
     if (action.type === 'crossfade') {
@@ -871,15 +1260,21 @@ const SpaceTravel = ({
     volumePercent,
   ]);
 
-  const stopLiveMuseStream = useCallback(async ({ disablePreference = false } = {}) => {
+  const stopLiveMuseStream = useCallback(async ({ disablePreference = false, disconnect = false } = {}) => {
     clearLiveMuseTimers();
 
     museSubscriptionRef.current?.unsubscribe?.();
     museSubscriptionRef.current = null;
 
-    const disconnectPromise = liveMuseUsesSharedSessionRef.current
-      ? stopSharedLiveMuseSession({ disconnect: true })
-      : museClientRef.current?.disconnect?.();
+    let disconnectPromise = null;
+    if (disconnect) {
+      disconnectPromise = liveMuseUsesSharedSessionRef.current
+        ? stopSharedLiveMuseSession({ disconnect: true })
+        : museClientRef.current?.disconnect?.();
+    } else if (!liveMuseUsesSharedSessionRef.current) {
+      disconnectPromise = museClientRef.current?.disconnect?.();
+    }
+
     museClientRef.current = null;
     liveMuseUsesSharedSessionRef.current = false;
 
@@ -887,6 +1282,7 @@ const SpaceTravel = ({
     liveEegSessionIdRef.current = null;
     liveAnalysisSequenceRef.current = 0;
     setLiveMusePreviewReadings([]);
+    setLiveMuseMetrics(createEmptyLiveMuseMetrics());
     setLiveMuseCurrentState(null);
     setAdaptiveVolumeScale(1);
     adaptiveVolumeScaleRef.current = 1;
@@ -919,6 +1315,7 @@ const SpaceTravel = ({
       return;
     }
 
+    const reuseSharedOnly = Boolean(options?.reuseSharedOnly);
     const params = new URLSearchParams(window.location.search);
     const urlMode = params.get('muse') === 'mock' ? 'mock' : null;
     const savedMode =
@@ -965,6 +1362,18 @@ const SpaceTravel = ({
     try {
       let sharedSnapshot = getSharedLiveMuseSnapshot();
       if (!sharedSnapshot.isActive) {
+        if (reuseSharedOnly) {
+          setLiveMuseStatus('pending');
+          setAdaptiveMusicState({
+            type: 'pending',
+            label: 'Muse 연결 세션을 기다리는 중입니다. 연결 완료 후 실시간 그래프가 자동으로 표시됩니다.',
+            reason: '',
+            isGenerating: false,
+            isCrossfading: false,
+          });
+          return;
+        }
+
         sharedSnapshot = await startSharedLiveMuseSession({
           mode,
           metadata: { startedAt },
@@ -1000,7 +1409,7 @@ const SpaceTravel = ({
       const connectedAtMs = Date.parse(sharedSnapshot.connectedAt || startedAt);
       liveSessionStartedAtMsRef.current = Number.isFinite(connectedAtMs) ? connectedAtMs : Date.now();
       liveEegBufferRef.current = seededReadings;
-      setLiveMusePreviewReadings(seededReadings.slice(-LIVE_EEG_PREVIEW_POINT_COUNT));
+      syncLiveMusePreviewReadings({ includeSharedSnapshot: true });
       museSubscriptionRef.current = subscribeToSharedLiveMuseReadings(handleLiveMuseReading);
 
       setLiveMuseStatus('calibrating');
@@ -1050,7 +1459,10 @@ const SpaceTravel = ({
       );
     } catch (error) {
       console.error('Failed to start live Muse session:', error);
-      await stopLiveMuseStream();
+      if (reuseSharedOnly) {
+        liveMuseAutoAttachAttemptedRef.current = false;
+      }
+      await stopLiveMuseStream({ disconnect: !reuseSharedOnly });
       setLiveMuseStatus('pending');
       setAdaptiveMusicState({
         type: 'error',
@@ -1060,26 +1472,161 @@ const SpaceTravel = ({
         isCrossfading: false,
       });
     }
-  }, [handleLiveMuseReading, liveMuseStatus, recordLiveBandSummaryWindow, runLiveMuseAnalysis, stopLiveMuseStream]);
+  }, [
+    handleLiveMuseReading,
+    liveMuseStatus,
+    recordLiveBandSummaryWindow,
+    runLiveMuseAnalysis,
+    stopLiveMuseStream,
+    syncLiveMusePreviewReadings,
+  ]);
 
-  const handleStopLiveMuse = useCallback(() => {
-    stopLiveMuseStream({ disablePreference: true });
-  }, [stopLiveMuseStream]);
+  useEffect(() => {
+    const hydrateLiveMuseSession = (event) => {
+      const sessionFromStorage = readLiveMuseSessionPreference();
+      const sessionFromShared = createLiveMuseSessionFromSharedSnapshot(event?.detail);
+      const nextSession = sessionFromStorage || sessionFromShared;
+
+      if (!nextSession?.enabled) {
+        return;
+      }
+
+      setLiveMuseSession((prev) => ({
+        ...(prev || {}),
+        ...nextSession,
+      }));
+      setLiveMuseStatus((status) => (status === 'off' ? 'pending' : status));
+      setAdaptiveMusicState((prev) => {
+        if (prev.type !== 'off' && prev.label !== 'Muse live adaptation off') {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          type: 'idle',
+          label: 'Muse 연결 대기 중입니다.',
+        };
+      });
+    };
+
+    hydrateLiveMuseSession();
+    window.addEventListener(LIVE_MUSE_SESSION_EVENT, hydrateLiveMuseSession);
+    window.addEventListener('storage', hydrateLiveMuseSession);
+
+    return () => {
+      window.removeEventListener(LIVE_MUSE_SESSION_EVENT, hydrateLiveMuseSession);
+      window.removeEventListener('storage', hydrateLiveMuseSession);
+    };
+  }, []);
 
   useEffect(() => {
     if (
       entryOnly ||
       liveMuseAutoAttachAttemptedRef.current ||
       liveMuseStatus !== 'pending' ||
-      !liveMuseSession?.enabled ||
-      !hasActiveSharedLiveMuseSession()
+      !liveMuseSession?.enabled
     ) {
-      return;
+      return undefined;
     }
 
-    liveMuseAutoAttachAttemptedRef.current = true;
-    handleStartLiveMuse();
+    let stopped = false;
+    let intervalId = null;
+
+    const tryAttachSharedMuseSession = () => {
+      if (
+        stopped ||
+        liveMuseAutoAttachAttemptedRef.current ||
+        museClientRef.current ||
+        liveMuseStatus !== 'pending'
+      ) {
+        return true;
+      }
+
+      const sharedSnapshot = getSharedLiveMuseSnapshot();
+      if (!sharedSnapshot.isActive) {
+        return false;
+      }
+
+      const sessionFromShared = createLiveMuseSessionFromSharedSnapshot(sharedSnapshot);
+      if (sessionFromShared) {
+        setLiveMuseSession((prev) => ({
+          ...(prev || {}),
+          ...sessionFromShared,
+        }));
+      }
+
+      liveMuseAutoAttachAttemptedRef.current = true;
+      void handleStartLiveMuse({ reuseSharedOnly: true });
+      return true;
+    };
+
+    if (tryAttachSharedMuseSession()) {
+      return undefined;
+    }
+
+    const handleSharedMuseChange = () => {
+      if (tryAttachSharedMuseSession() && intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    window.addEventListener(LIVE_MUSE_SESSION_EVENT, handleSharedMuseChange);
+    intervalId = window.setInterval(handleSharedMuseChange, LIVE_MUSE_AUTO_ATTACH_RETRY_MS);
+
+    const timeoutId = window.setTimeout(() => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+
+      if (!stopped && !liveMuseAutoAttachAttemptedRef.current) {
+        setAdaptiveMusicState((prev) => ({
+          ...prev,
+          type: 'pending',
+          label: 'Muse 연결 세션을 기다리는 중입니다. 연결 완료 후 실시간 그래프가 자동으로 표시됩니다.',
+          isGenerating: false,
+          isCrossfading: false,
+        }));
+      }
+    }, LIVE_MUSE_AUTO_ATTACH_POLL_WINDOW_MS);
+
+    return () => {
+      stopped = true;
+      window.removeEventListener(LIVE_MUSE_SESSION_EVENT, handleSharedMuseChange);
+      if (intervalId) clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    };
   }, [entryOnly, handleStartLiveMuse, liveMuseSession?.enabled, liveMuseStatus]);
+
+  useEffect(() => {
+    if (
+      entryOnly ||
+      journeyExitInProgressRef.current ||
+      currentStep !== STEP_PLAYER ||
+      !liveMuseSession?.enabled ||
+      liveMuseStatus === 'off'
+    ) {
+      return undefined;
+    }
+
+    const refreshPreview = () => {
+      syncLiveMusePreviewReadings({ includeSharedSnapshot: true });
+    };
+
+    refreshPreview();
+    const intervalId = window.setInterval(refreshPreview, LIVE_MUSE_PREVIEW_REFRESH_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [
+    currentStep,
+    entryOnly,
+    liveMuseSession?.enabled,
+    liveMuseStatus,
+    syncLiveMusePreviewReadings,
+  ]);
 
   useEffect(() => {
     runLiveMuseAnalysisRef.current = runLiveMuseAnalysis;
@@ -1105,6 +1652,7 @@ const SpaceTravel = ({
 
   useEffect(() => {
     stateSnapshotRef.current = stateSnapshot;
+    latestQueueSnapshotRef.current = stateSnapshot || latestQueueSnapshotRef.current;
   }, [stateSnapshot]);
 
   useEffect(() => {
@@ -1116,8 +1664,50 @@ const SpaceTravel = ({
   }, [liveMuseSession]);
 
   useEffect(() => {
+    playheadSecRef.current = playheadSec;
+  }, [playheadSec]);
+
+  useEffect(() => {
+    trackDurationSecRef.current = trackDurationSec;
+  }, [trackDurationSec]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+    playbackIntentRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    queuedAdaptiveAudioRef.current = queuedAdaptiveAudio;
+  }, [queuedAdaptiveAudio]);
+
+  useEffect(() => {
+    pendingAdaptiveAudioRef.current = pendingAdaptiveAudio;
+  }, [pendingAdaptiveAudio]);
+
+  useEffect(() => {
+    requestQueuedJourneyRef.current = requestQueuedJourney;
+  }, [requestQueuedJourney]);
+
+  useEffect(() => {
+    promoteQueuedAudioToCrossfadeRef.current = promoteQueuedAudioToCrossfade;
+  }, [promoteQueuedAudioToCrossfade]);
+
+  useEffect(() => {
     adaptiveVolumeScaleRef.current = adaptiveVolumeScale;
   }, [adaptiveVolumeScale]);
+
+  useEffect(() => {
+    queuedAdaptiveAudioRef.current = null;
+    pendingAdaptiveAudioRef.current = null;
+    latestQueueActionRef.current = null;
+    journeyExitInProgressRef.current = false;
+    queueGenerationAbortControllerRef.current?.abort?.();
+    queueGenerationAbortControllerRef.current = null;
+    queueGenerationInFlightRef.current = false;
+    queueRetryAfterMsRef.current = 0;
+    setQueuedAdaptiveAudio(null);
+    setPendingAdaptiveAudio(null);
+  }, [generationAttempt, selectedPlanet]);
 
   useEffect(() => {
     clearAiTimers();
@@ -1133,7 +1723,7 @@ const SpaceTravel = ({
     setGenerationProgressPercent(entryOnly ? 100 : GENERATION_PROGRESS_STEPS[0]);
     setTrackDurationSec(TRACK_DURATION_SEC);
     setPlayheadSec(0);
-    setIsPlaying(true);
+    setPlaybackActive(true);
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -1142,7 +1732,7 @@ const SpaceTravel = ({
 
     setAssistantContext(loadStorageJSON(AI_CONTEXT_STORAGE_KEY, null));
     setCurrentStep(entryOnly ? STEP_SEATING : STEP_GENERATING);
-  }, [clearAiTimers, entryOnly, selectedPlanet]);
+  }, [clearAiTimers, entryOnly, selectedPlanet, setPlaybackActive]);
 
   useEffect(() => {
     if (entryOnly) return undefined;
@@ -1170,8 +1760,6 @@ const SpaceTravel = ({
           coach: assistantContext?.coach?.output || null,
           intent_tags: assistantContext?.recommendation?.output?.intent_tags || [],
           recommendedDurationSec:
-            assistantContext?.coach?.output?.recommended_duration_sec ||
-            assistantContext?.recommendation?.output?.recommended_duration_sec ||
             JOURNEY_GENERATION_DURATION_SEC,
         }
       : null;
@@ -1189,6 +1777,27 @@ const SpaceTravel = ({
     setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
     setGenerationStatusIndex(0);
 
+    const previewLightingSpec = buildPreviewLightingSpecForWiz(
+      planetMedia.lightingPreview,
+      JOURNEY_GENERATION_DURATION_SEC
+    );
+    if (previewLightingSpec) {
+      applyWizLightingPlan({ lightingSpec: previewLightingSpec, signal: controller.signal })
+        .then((status) => {
+          if (isCancelled) return;
+          const lightingJobId = status?.jobId || (status?.active ? 'active' : '');
+          if (lightingJobId) {
+            journeyLightingJobRef.current = lightingJobId;
+            lightingRestoreRequestedRef.current = false;
+          }
+        })
+        .catch((error) => {
+          if (!isAbortError(error)) {
+            console.warn('Planet preview lighting apply failed:', error);
+          }
+        });
+    }
+
     const progressTimerId = window.setInterval(() => {
       progressIndex = Math.min(progressIndex + 1, GENERATION_PROGRESS_STEPS.length - 1);
       setGenerationProgressPercent((prev) => Math.max(prev, GENERATION_PROGRESS_STEPS[progressIndex]));
@@ -1204,7 +1813,7 @@ const SpaceTravel = ({
           planet: selectedPlanet,
           currentState: journeySnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE,
           recognitionResult: journeySnapshot?.recognitionResult || null,
-          durationSec: normalizedIntentContext?.recommendedDurationSec || JOURNEY_GENERATION_DURATION_SEC,
+          durationSec: JOURNEY_GENERATION_DURATION_SEC,
           candidateCountOverride: 1,
           feedbackHistory: feedbackHistory.slice(0, 12),
           memoText,
@@ -1229,7 +1838,7 @@ const SpaceTravel = ({
         );
         setTrackDurationSec(Number.isFinite(nextDuration) && nextDuration > 0 ? Math.round(nextDuration) : TRACK_DURATION_SEC);
         setPlayheadSec(0);
-        setIsPlaying(true);
+        setPlaybackActive(true);
         setGenerationProgressPercent(100);
         setGenerationStatusIndex(GENERATION_STATUS_LINES.length - 1);
         setCurrentStep(STEP_PLAYER);
@@ -1247,7 +1856,7 @@ const SpaceTravel = ({
         );
         setTrackDurationSec(TRACK_DURATION_SEC);
         setPlayheadSec(0);
-        setIsPlaying(true);
+        setPlaybackActive(true);
         setGenerationProgressPercent(100);
         setGenerationStatusIndex(GENERATION_STATUS_LINES.length - 1);
         setCurrentStep(STEP_PLAYER);
@@ -1261,12 +1870,23 @@ const SpaceTravel = ({
       clearInterval(statusTimerId);
       clearTimeout(startTimerId);
     };
-  }, [assistantContext, currentStep, entryOnly, feedbackHistory, generationAttempt, memoText, planetMedia.title, selectedPlanet]);
+  }, [
+    assistantContext,
+    currentStep,
+    entryOnly,
+    feedbackHistory,
+    generationAttempt,
+    memoText,
+    planetMedia.lightingPreview,
+    planetMedia.title,
+    selectedPlanet,
+    setPlaybackActive,
+  ]);
 
   useEffect(() => {
     if (entryOnly) return;
     const lightingJobId = generatedJourney?.wizLighting?.jobId || (generatedJourney?.wizLighting?.active ? 'active' : '');
-    if (!lightingJobId) return;
+    if (!lightingJobId || journeyExitInProgressRef.current) return;
 
     journeyLightingJobRef.current = lightingJobId;
     lightingRestoreRequestedRef.current = false;
@@ -1286,12 +1906,78 @@ const SpaceTravel = ({
   }, [entryOnly, restoreJourneyLighting]);
 
   useEffect(() => {
-    if (hasRealAudio || !isPlaying || currentStep !== STEP_PLAYER) return undefined;
+    if (journeyExitInProgressRef.current || entryOnly || currentStep !== STEP_PLAYER || pendingAdaptiveAudio?.audioUrl) return;
+    if (queuedAdaptiveAudio?.audioUrl || queueGenerationInFlightRef.current) return;
+
+    requestQueuedJourney({ reason: 'player-entry-prefetch' });
+  }, [
+    currentStep,
+    entryOnly,
+    generatedJourney?.audioUrl,
+    pendingAdaptiveAudio?.audioUrl,
+    queuedAdaptiveAudio?.audioUrl,
+    requestQueuedJourney,
+  ]);
+
+  useEffect(() => {
+    if (journeyExitInProgressRef.current || entryOnly || currentStep !== STEP_PLAYER || !hasRealAudio || !isPlaying) return;
+    if (pendingAdaptiveAudio?.audioUrl) return;
+
+    const remainingSec = Math.max(0, trackDurationSec - playheadSec);
+
+    if (remainingSec <= TRACK_QUEUE_CROSSFADE_LEAD_SEC) {
+      if (promoteQueuedAudioToCrossfade('track-ending')) {
+        return;
+      }
+      if (!queueGenerationInFlightRef.current) {
+        requestQueuedJourney({ reason: 'track-ending-recovery' });
+      }
+      return;
+    }
+
+    if (
+      remainingSec <= TRACK_QUEUE_PREFETCH_REMAINING_SEC &&
+      !queuedAdaptiveAudio?.audioUrl &&
+      !queueGenerationInFlightRef.current
+    ) {
+      requestQueuedJourney({ reason: 'near-end-prefetch' });
+    }
+  }, [
+    currentStep,
+    entryOnly,
+    hasRealAudio,
+    isPlaying,
+    pendingAdaptiveAudio?.audioUrl,
+    playheadSec,
+    promoteQueuedAudioToCrossfade,
+    queuedAdaptiveAudio?.audioUrl,
+    requestQueuedJourney,
+    trackDurationSec,
+  ]);
+
+  useEffect(() => {
+    if (journeyExitInProgressRef.current || entryOnly || currentStep !== STEP_PLAYER || !hasRealAudio || !isPlaying) return;
+    if (pendingAdaptiveAudio?.audioUrl || !queuedAdaptiveAudio?.audioUrl) return;
+    if (!['track-ended-recovery', 'track-ending-recovery'].includes(queuedAdaptiveAudio.reason)) return;
+
+    promoteQueuedAudioToCrossfade('delayed-recovery-queue');
+  }, [
+    currentStep,
+    entryOnly,
+    hasRealAudio,
+    isPlaying,
+    pendingAdaptiveAudio?.audioUrl,
+    promoteQueuedAudioToCrossfade,
+    queuedAdaptiveAudio,
+  ]);
+
+  useEffect(() => {
+    if (journeyExitInProgressRef.current || hasRealAudio || !isPlaying || currentStep !== STEP_PLAYER) return undefined;
 
     const intervalId = window.setInterval(() => {
       setPlayheadSec((prev) => {
         if (prev >= trackDurationSec) {
-          setIsPlaying(false);
+          setPlaybackActive(false);
           return trackDurationSec;
         }
         return prev + 1;
@@ -1299,7 +1985,7 @@ const SpaceTravel = ({
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [currentStep, hasRealAudio, isPlaying, trackDurationSec]);
+  }, [currentStep, hasRealAudio, isPlaying, setPlaybackActive, trackDurationSec]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -1308,6 +1994,11 @@ const SpaceTravel = ({
       return undefined;
     }
 
+    const shouldAutoResume = () =>
+      !journeyExitInProgressRef.current &&
+      playbackIntentRef.current &&
+      currentStepRef.current === STEP_PLAYER;
+
     const handleLoadedMetadata = () => {
       const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration) : TRACK_DURATION_SEC;
       setTrackDurationSec(duration);
@@ -1315,26 +2006,64 @@ const SpaceTravel = ({
     };
     const handleCanPlay = () => {
       setPlaybackNotice('');
+      if (audioSourceAutoResumeRef.current || shouldAutoResume()) {
+        setPlaybackActive(true);
+      }
     };
     const handleTimeUpdate = () => {
       setPlayheadSec(audio.currentTime || 0);
     };
     const handleEnded = () => {
-      setIsPlaying(false);
-      setPlayheadSec(audio.duration || TRACK_DURATION_SEC);
+      if (journeyExitInProgressRef.current) {
+        setPlaybackActive(false);
+        return;
+      }
+
+      if (promoteQueuedAudioToCrossfadeRef.current?.('track-ended')) {
+        return;
+      }
+
+      requestQueuedJourneyRef.current?.({ reason: 'track-ended-recovery' });
+      setPlaybackNotice('다음 음악을 준비하는 동안 현재 트랙을 한 번 더 유지합니다.');
+      audio.currentTime = 0;
+      setPlayheadSec(0);
+      setPlaybackActive(true);
+      audio.play().catch((error) => {
+        console.warn('Failed to restart current track while queue is preparing:', error);
+        if (isPlayRequestInterruptedError(error) && shouldAutoResume()) {
+          audioSourceAutoResumeRef.current = true;
+          audioPlayRetryRef.current = window.setTimeout(() => {
+            if (shouldAutoResume()) {
+              audio.play().catch((retryError) => {
+                console.warn('Failed to retry current track restart:', retryError);
+              });
+            }
+          }, 180);
+          return;
+        }
+        setPlaybackActive(false);
+        setPlayheadSec(audio.duration || TRACK_DURATION_SEC);
+      });
     };
     const handlePlay = () => {
-      setIsPlaying(true);
+      if (journeyExitInProgressRef.current) {
+        audio.pause();
+        return;
+      }
+      setPlaybackActive(true);
     };
     const handlePause = () => {
-      setIsPlaying(false);
+      if (audioSourceAutoResumeRef.current || shouldAutoResume()) {
+        return;
+      }
+      setPlaybackActive(false);
     };
     const handleError = () => {
       const message = hasGeneratedJourneyAudio
         ? '생성된 오디오를 불러오지 못했습니다. 잠시 후 다시 시도하거나 PLAY를 눌러 재시도하세요.'
         : '오디오를 불러오지 못했습니다. 잠시 후 다시 시도하세요.';
       setPlaybackNotice(message);
-      setIsPlaying(false);
+      setPlaybackActive(false);
     };
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -1344,6 +2073,10 @@ const SpaceTravel = ({
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('error', handleError);
+    audioSourceAutoResumeRef.current =
+      !journeyExitInProgressRef.current &&
+      (playbackIntentRef.current || isPlayingRef.current) &&
+      currentStepRef.current === STEP_PLAYER;
     audio.load();
 
     return () => {
@@ -1355,7 +2088,12 @@ const SpaceTravel = ({
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('error', handleError);
     };
-  }, [effectivePlanetMedia?.audio, hasGeneratedJourneyAudio, hasRealAudio]);
+  }, [
+    effectivePlanetMedia?.audio,
+    hasGeneratedJourneyAudio,
+    hasRealAudio,
+    setPlaybackActive,
+  ]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -1372,36 +2110,56 @@ const SpaceTravel = ({
       audioPlayRetryRef.current = null;
     }
 
-    if (currentStep !== STEP_PLAYER || !isPlaying) {
+    if (journeyExitInProgressRef.current || currentStep !== STEP_PLAYER || !isPlaying) {
+      audioSourceAutoResumeRef.current = false;
       audio.pause();
       audioPlayAttemptsRef.current = 0;
       return;
     }
 
     const tryPlay = () => {
+      if (journeyExitInProgressRef.current) {
+        audioSourceAutoResumeRef.current = false;
+        audio.pause();
+        return;
+      }
+
       const playPromise = audio.play();
       if (!playPromise || typeof playPromise.catch !== 'function') return;
 
       playPromise
         .then(() => {
+          audioSourceAutoResumeRef.current = false;
           audioPlayAttemptsRef.current = 0;
           setPlaybackNotice('');
         })
         .catch((error) => {
-          const errorName = String(error?.name || '');
-          const isAutoplayBlocked =
-            errorName === 'NotAllowedError' || /notallowed/i.test(String(error?.message || ''));
+          if (
+            journeyExitInProgressRef.current ||
+            !playbackIntentRef.current ||
+            currentStepRef.current !== STEP_PLAYER
+          ) {
+            audioSourceAutoResumeRef.current = false;
+            audioPlayAttemptsRef.current = 0;
+            return;
+          }
 
-          if (isAutoplayBlocked) {
+          if (isPlayRequestInterruptedError(error)) {
+            audioSourceAutoResumeRef.current = true;
+          }
+
+          if (isAutoplayBlockedError(error)) {
+            audioSourceAutoResumeRef.current = false;
             setPlaybackNotice('브라우저 자동재생 제한으로 시작되지 않았습니다. PLAY를 눌러 재생을 시작하세요.');
-            setIsPlaying(false);
+            setPlaybackActive(false);
             audioPlayAttemptsRef.current = 0;
             return;
           }
 
           if (audioPlayAttemptsRef.current >= 8) {
+            audioSourceAutoResumeRef.current = false;
             setPlaybackNotice('오디오 재생을 시작하지 못했습니다. 잠시 후 PLAY를 다시 눌러 주세요.');
-            setIsPlaying(false);
+            setPlaybackActive(false);
             audioPlayAttemptsRef.current = 0;
             return;
           }
@@ -1414,7 +2172,7 @@ const SpaceTravel = ({
     };
 
     tryPlay();
-  }, [currentStep, hasRealAudio, isPlaying]);
+  }, [currentStep, effectivePlanetMedia?.audio, hasRealAudio, isPlaying, setPlaybackActive]);
 
   useEffect(() => {
     if (!pendingAdaptiveAudio?.audioUrl) return undefined;
@@ -1429,7 +2187,7 @@ const SpaceTravel = ({
     const baseVolume = Math.max(0, Math.min(1, (volumePercent / 100) * adaptiveVolumeScaleRef.current));
 
     const finishCrossfade = () => {
-      if (cancelled) return;
+      if (cancelled || journeyExitInProgressRef.current) return;
       const handoffTime = nextAudio.currentTime || 0;
       crossfadeHandoffRef.current = {
         audioUrl: pendingAdaptiveAudio.audioUrl,
@@ -1443,9 +2201,10 @@ const SpaceTravel = ({
 
       const bundleDuration = Number(pendingAdaptiveAudio.bundle?.audioDurationSec);
       setGeneratedJourney(pendingAdaptiveAudio.bundle);
-      setTrackDurationSec(Number.isFinite(bundleDuration) && bundleDuration > 0 ? Math.round(bundleDuration) : LIVE_MUSE_ANALYSIS_WINDOW_SEC);
+      setTrackDurationSec(Number.isFinite(bundleDuration) && bundleDuration > 0 ? Math.round(bundleDuration) : JOURNEY_GENERATION_DURATION_SEC);
       setPlayheadSec(handoffTime);
-      setIsPlaying(true);
+      setPlaybackActive(true);
+      setPlaybackNotice('');
       setGenerationNotice(pendingAdaptiveAudio.action?.label || pendingAdaptiveAudio.bundle?.generationWarning || '');
       setPendingAdaptiveAudio(null);
       setAdaptiveMusicState((prev) => ({
@@ -1457,6 +2216,7 @@ const SpaceTravel = ({
 
     const beginCrossfade = async () => {
       try {
+        if (journeyExitInProgressRef.current) return;
         nextAudio.pause();
         nextAudio.currentTime = 0;
         nextAudio.volume = 0;
@@ -1494,12 +2254,12 @@ const SpaceTravel = ({
       nextAudio.volume = 0;
       currentAudio.volume = baseVolume;
     };
-  }, [pendingAdaptiveAudio, volumePercent]);
+  }, [pendingAdaptiveAudio, setPlaybackActive, volumePercent]);
 
   useEffect(() => {
     const handoff = crossfadeHandoffRef.current;
     const audio = audioRef.current;
-    if (!handoff || !audio || effectivePlanetMedia?.audio !== handoff.audioUrl) {
+    if (journeyExitInProgressRef.current || !handoff || !audio || effectivePlanetMedia?.audio !== handoff.audioUrl) {
       return undefined;
     }
 
@@ -1532,7 +2292,7 @@ const SpaceTravel = ({
         clearInterval(crossfadeTimerRef.current);
         crossfadeTimerRef.current = null;
       }
-      stopLiveMuseStream();
+      stopLiveMuseStream({ disconnect: false });
       restoreJourneyLighting('unmount');
       audio?.pause();
       nextAudio?.pause();
@@ -1620,11 +2380,20 @@ const SpaceTravel = ({
     setGenerationProgressPercent(GENERATION_PROGRESS_STEPS[0]);
     setGenerationAttempt((prev) => prev + 1);
     setPlayheadSec(0);
-    setIsPlaying(true);
+    setPlaybackActive(true);
     if (hasRealAudio && audioRef.current) {
       audioRef.current.currentTime = 0;
     }
-  }, [clearRouteTimers, entryOnly, hasRealAudio, onEntryComplete, onEntryFadeOutStart, selectedPlanet, ticketData?.seat]);
+  }, [
+    clearRouteTimers,
+    entryOnly,
+    hasRealAudio,
+    onEntryComplete,
+    onEntryFadeOutStart,
+    selectedPlanet,
+    setPlaybackActive,
+    ticketData?.seat,
+  ]);
 
   const handleOpenDashboard = useCallback(() => {
     refreshStateSnapshot();
@@ -1655,9 +2424,9 @@ const SpaceTravel = ({
     setPlaybackNotice('');
     setTrackDurationSec(TRACK_DURATION_SEC);
     setPlayheadSec(0);
-    setIsPlaying(true);
+    setPlaybackActive(true);
     setCurrentStep(STEP_PLAYER);
-  }, [planetMedia.title]);
+  }, [planetMedia.title, setPlaybackActive]);
 
   const handleSaveMemo = useCallback(() => {
     writeStorageText(MEMO_STORAGE_KEY, memoText);
@@ -1701,8 +2470,59 @@ const SpaceTravel = ({
 
   const handleTogglePlay = useCallback(() => {
     setPlaybackNotice('');
-    setIsPlaying((prev) => !prev);
-  }, []);
+    audioSourceAutoResumeRef.current = false;
+
+    if (audioPlayRetryRef.current) {
+      clearTimeout(audioPlayRetryRef.current);
+      audioPlayRetryRef.current = null;
+    }
+
+    const shouldPlay = !isPlayingRef.current;
+    const audio = audioRef.current;
+
+    if (!shouldPlay) {
+      audio?.pause();
+      audioPlayAttemptsRef.current = 0;
+      setPlaybackActive(false);
+      return;
+    }
+
+    setPlaybackActive(true);
+
+    if (!hasRealAudio || !audio) {
+      return;
+    }
+
+    const playPromise = audio.play();
+    if (!playPromise || typeof playPromise.catch !== 'function') {
+      return;
+    }
+
+    playPromise
+      .then(() => {
+        audioPlayAttemptsRef.current = 0;
+        setPlaybackNotice('');
+      })
+      .catch((error) => {
+        console.warn('User-initiated audio play failed:', error);
+        audioPlayAttemptsRef.current = 0;
+        if (
+          isPlayRequestInterruptedError(error) &&
+          playbackIntentRef.current &&
+          currentStepRef.current === STEP_PLAYER &&
+          !journeyExitInProgressRef.current
+        ) {
+          audioSourceAutoResumeRef.current = true;
+          return;
+        }
+        setPlaybackActive(false);
+        setPlaybackNotice(
+          isAutoplayBlockedError(error)
+            ? '브라우저 재생 제한으로 시작되지 않았습니다. PLAY를 다시 눌러 재생을 시작하세요.'
+            : '오디오 재생을 시작하지 못했습니다. 잠시 후 PLAY를 다시 눌러 주세요.'
+        );
+      });
+  }, [hasRealAudio, setPlaybackActive]);
 
   const handleVolumeChange = useCallback((nextVolume) => {
     const numericValue = Number(nextVolume);
@@ -1763,8 +2583,10 @@ const SpaceTravel = ({
         sampleRate: EEG_SAMPLE_RATE,
       })
     );
+    stopJourneyPlaybackAndBackgroundWork('journey-exit-intent');
+    void stopLiveMuseStream({ disablePreference: true, disconnect: true });
     setShowExitDialog(true);
-  }, []);
+  }, [stopJourneyPlaybackAndBackgroundWork, stopLiveMuseStream]);
 
   const handleChooseExitType = useCallback((exitType) => {
     setShowExitDialog(false);
@@ -1785,15 +2607,27 @@ const SpaceTravel = ({
       readings: comparisonReadings,
       sampleRate: EEG_SAMPLE_RATE,
     });
-    const recordStateAxes =
+    const eegStateComparison = buildStateComparisonFromBandComparison(resolvedBandComparison);
+    const fallbackAfterStateAxes =
       liveMuseCurrentState ||
       stateSnapshot?.canonicalState ||
       generatedJourney?.currentState ||
       NEUTRAL_CANONICAL_STATE;
-    const recordBeforeStateAxes =
+    const fallbackBeforeStateAxes =
       generatedJourney?.currentState ||
       stateSnapshot?.canonicalState ||
       NEUTRAL_CANONICAL_STATE;
+    const recordStateAxes = eegStateComparison?.after || fallbackAfterStateAxes;
+    const recordBeforeStateAxes = eegStateComparison?.before || fallbackBeforeStateAxes;
+    const recordStateComparison = {
+      beforeLabel: eegStateComparison?.beforeLabel || 'Before',
+      afterLabel: eegStateComparison?.afterLabel || 'After',
+      sourceLabel: eegStateComparison?.sourceLabel || null,
+      pointCount: eegStateComparison?.pointCount || null,
+      pointLabel: eegStateComparison?.pointLabel || null,
+      before: recordBeforeStateAxes,
+      after: recordStateAxes,
+    };
     const dominantBand = (resolvedBandComparison?.bands || []).reduce((strongest, band) => {
       if (!strongest) return band;
       return Number(band.after || 0) > Number(strongest.after || 0) ? band : strongest;
@@ -1807,19 +2641,14 @@ const SpaceTravel = ({
         planetSlug,
         targetState: planetMedia.moodTarget,
         measuredState: stateSnapshot?.title || '측정 데이터 없음',
-        measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
+        measuredSource: recordStateComparison.sourceLabel || stateSnapshot?.sourceLabel || '측정 정보 없음',
         createdAt: new Date().toISOString(),
         route: pendingExitType,
         eegBandComparison: resolvedBandComparison,
         stateAxesBefore: recordBeforeStateAxes,
         stateAxesAfter: recordStateAxes,
         stateAxes: recordStateAxes,
-        stateComparison: {
-          beforeLabel: 'Before',
-          afterLabel: 'After',
-          before: recordBeforeStateAxes,
-          after: recordStateAxes,
-        },
+        stateComparison: recordStateComparison,
         dominantBand: dominantBand?.key || null,
       };
 
@@ -1841,14 +2670,9 @@ const SpaceTravel = ({
         stateAxesBefore: recordBeforeStateAxes,
         stateAxesAfter: recordStateAxes,
         stateAxes: recordStateAxes,
-        stateComparison: {
-          beforeLabel: 'Before',
-          afterLabel: 'After',
-          before: recordBeforeStateAxes,
-          after: recordStateAxes,
-        },
+        stateComparison: recordStateComparison,
         stateTitle: stateSnapshot?.title || '측정 데이터 없음',
-        stateSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
+        stateSource: recordStateComparison.sourceLabel || stateSnapshot?.sourceLabel || '측정 정보 없음',
         dominantState: stateSnapshot?.dominantState || null,
         dominantBand: dominantBand?.key || null,
         dominantBandLabel: dominantBand?.label || null,
@@ -1856,7 +2680,7 @@ const SpaceTravel = ({
 
       setShowFeedbackDialog(false);
       setIsRouteFadingOut(true);
-      await stopLiveMuseStream({ disablePreference: true });
+      await stopLiveMuseStream({ disablePreference: true, disconnect: true });
 
       clearRouteTimers();
       const timerId = window.setTimeout(() => {
@@ -1942,6 +2766,10 @@ const SpaceTravel = ({
     stateSnapshot,
     volumePercent,
   ]);
+
+  const displayedLiveMuseReadings = liveMusePreviewReadings.length
+    ? liveMusePreviewReadings
+    : liveEegBufferRef.current.slice(-LIVE_EEG_PREVIEW_POINT_COUNT);
 
   return (
     <Shell
@@ -2031,10 +2859,8 @@ const SpaceTravel = ({
               stateSnapshot={stateSnapshot}
               liveMuseStatus={liveMuseStatus}
               liveMuseMetrics={liveMuseMetrics}
-              liveMuseReadings={liveMusePreviewReadings}
+              liveMuseReadings={displayedLiveMuseReadings}
               adaptiveMusicState={adaptiveMusicState}
-              onStartLiveMuse={handleStartLiveMuse}
-              onStopLiveMuse={handleStopLiveMuse}
             />
           </StepFrame>
         )}
@@ -2085,7 +2911,12 @@ const SpaceTravel = ({
       {!entryOnly && (
         <>
           <audio ref={audioRef} src={effectivePlanetMedia?.audio || undefined} preload="metadata" hidden />
-          <audio ref={nextAudioRef} src={pendingAdaptiveAudio?.audioUrl || undefined} preload="auto" hidden />
+          <audio
+            ref={nextAudioRef}
+            src={pendingAdaptiveAudio?.audioUrl || queuedAdaptiveAudio?.audioUrl || undefined}
+            preload="auto"
+            hidden
+          />
           <AiObjetDialog
             stage={aiModalStage}
             onChoose={handleAiChoice}

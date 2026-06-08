@@ -3,6 +3,7 @@ import { createMuseClient } from './index';
 const EEG_SAMPLE_RATE = 256;
 const MAX_SHARED_BUFFER_SEC = 390;
 const MAX_SHARED_READING_COUNT = EEG_SAMPLE_RATE * MAX_SHARED_BUFFER_SEC;
+export const LIVE_MUSE_SESSION_EVENT = 'noos-live-muse-session-change';
 
 const sharedLiveMuseSession = {
   client: null,
@@ -19,6 +20,16 @@ const sharedLiveMuseSession = {
 };
 
 const isConnectedStatus = (status) => ['connecting', 'connected', 'streaming'].includes(status);
+
+function emitSharedLiveMuseSessionChange() {
+  if (typeof window === 'undefined') return;
+
+  window.dispatchEvent(
+    new CustomEvent(LIVE_MUSE_SESSION_EVENT, {
+      detail: getSharedLiveMuseSnapshot(),
+    })
+  );
+}
 
 const pushSharedReading = (reading) => {
   sharedLiveMuseSession.sampleCount += 1;
@@ -68,6 +79,7 @@ export const attachSharedLiveMuseClient = (client, metadata = {}) => {
   sharedLiveMuseSession.eegSessionId = metadata.eegSessionId ?? sharedLiveMuseSession.eegSessionId;
 
   ensureBroadcasterSubscription();
+  emitSharedLiveMuseSessionChange();
   return getSharedLiveMuseSnapshot();
 };
 
@@ -110,6 +122,7 @@ export const updateSharedLiveMuseSession = (metadata = {}) => {
   if (metadata.connectedAt) sharedLiveMuseSession.connectedAt = metadata.connectedAt;
   if (metadata.eegSessionId !== undefined) sharedLiveMuseSession.eegSessionId = metadata.eegSessionId;
   if (metadata.mode) sharedLiveMuseSession.mode = metadata.mode;
+  emitSharedLiveMuseSessionChange();
   return getSharedLiveMuseSnapshot();
 };
 
@@ -149,4 +162,5 @@ export const stopSharedLiveMuseSession = async ({ disconnect = true } = {}) => {
   sharedLiveMuseSession.sampleCount = 0;
   sharedLiveMuseSession.lastReading = null;
   sharedLiveMuseSession.readings = [];
+  emitSharedLiveMuseSessionChange();
 };

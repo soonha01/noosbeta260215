@@ -125,6 +125,14 @@ export const stopWizLighting = async ({ signal, keepalive = false } = {}) => {
   return responseBody;
 };
 
+export const applyWizLightingPlan = async ({ lightingSpec, interventionResult, signal } = {}) =>
+  postJson(
+    '/api/lighting/wiz/apply-plan',
+    interventionResult ? { interventionResult } : { lighting_spec: lightingSpec },
+    signal,
+    'WiZ lighting apply failed'
+  );
+
 const runCopilotTask = async ({ task, payload, path, signal, errorMessage }) => {
   try {
     return await postJson(path, payload, signal, errorMessage);
