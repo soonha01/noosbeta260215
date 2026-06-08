@@ -34,6 +34,6 @@ class NoosAiServiceTest {
         assertEquals(10, method.invoke(service, 1));
         assertEquals(90, method.invoke(service, 90));
         assertEquals(600, method.invoke(service, 900));
-        assertEquals(90, method.invoke(service, new Object[]{null}));
+        assertEquals(300, method.invoke(service, new Object[]{null}));
     }
 }

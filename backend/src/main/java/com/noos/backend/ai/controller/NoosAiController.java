@@ -2,7 +2,7 @@ package com.noos.backend.ai.controller;
 
 import com.noos.backend.ai.dto.AiFeedbackParseRequest;
 import com.noos.backend.ai.dto.DashboardSummaryRequest;
-import com.noos.backend.ai.dto.DeviceTroubleshootRequest;
+import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
@@ -62,11 +62,6 @@ public class NoosAiController {
     @PostMapping("/ai/session/coach")
     public Map<String, Object> coachSession(@RequestBody SessionCoachRequest request) {
         return noosAiService.coachSession(request);
-    }
-
-    @PostMapping("/ai/device/troubleshoot")
-    public Map<String, Object> troubleshootDevice(@RequestBody DeviceTroubleshootRequest request) {
-        return noosAiService.troubleshootDevice(request);
     }
 
     @GetMapping("/ai/audio")

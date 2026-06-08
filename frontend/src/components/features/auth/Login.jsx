@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, Apple, BluetoothConnected, Chrome, Github } from 'lucide-react';
+import { Activity, Apple, BluetoothConnected, Chrome, ClipboardList, Github, MessageCircle } from 'lucide-react';
 import Grainient from '../../ui/effects/Grainient';
 import Stepper, { Step } from './Stepper';
 import BackButton from '../../ui/buttons/BackButton';
@@ -18,6 +18,12 @@ import {
   createInitialStateSurveyAnswers,
 } from '../../../lib/stateSurvey';
 import { createMuseClient } from '../../../lib/muse';
+import {
+  attachSharedLiveMuseClient,
+  hasActiveSharedLiveMuseSession,
+  stopSharedLiveMuseSession,
+  updateSharedLiveMuseSession,
+} from '../../../lib/muse/liveMuseSession';
 import { DEFAULT_FFT_SIZE, analyzeEegBands } from '../../../lib/muse/signalProcessing';
 import {
   createEegAnalysisPayload,
@@ -27,7 +33,6 @@ import {
 import { LIVE_MUSE_SESSION_STORAGE_KEY } from '../solar/travel/constants';
 import {
   buildFallbackCurrentStateFromBandAnalysis,
-  requestDeviceTroubleshoot,
   requestStateExplanation,
 } from '../../../lib/noosAiApi';
 import { API_BASE_URL } from '../../../lib/env';
@@ -65,11 +70,14 @@ const MAX_LOCAL_EEG_ANALYSIS_BUFFER_SEC = 600;
 const EEG_UI_WINDOW_SEC = 12;
 const MAX_EEG_UI_BUFFER_SIZE = EEG_SAMPLE_RATE * EEG_UI_WINDOW_SEC;
 const EEG_UI_FLUSH_INTERVAL_MS = 50;
+const MUSE_NOTICE_POSITION_STORAGE_KEY = 'noos_muse_notice_position';
+const MUSE_NOTICE_MARGIN_PX = 12;
+const MUSE_NOTICE_DEFAULT_LEFT_PX = 22;
+const MUSE_NOTICE_DEFAULT_TOP_PX = 22;
+const MUSE_NOTICE_DEFAULT_TOP_WITH_BACK_PX = 106;
 const LIVE_MUSE_BASELINE_DURATION_SEC = 60;
 const LIVE_MUSE_ANALYSIS_INTERVAL_SEC = 300;
-const LIVE_MUSE_CSV_TEST_BASELINE_SEC = 5;
-const LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC = 30;
-const LIVE_MUSE_CROSSFADE_DURATION_SEC = 30;
+const LIVE_MUSE_CROSSFADE_DURATION_SEC = 5;
 const LIVE_MUSE_FEEDBACK_CADENCE_SEC = 900;
 const NOOP_PLANET_SELECT = () => {};
 const formatMeasurementClock = (seconds) => {
@@ -149,48 +157,10 @@ const saveCurrentStateSnapshot = (payload) => {
   }
 };
 
-const DeviceHelpLayer = styled.div`
-  position: fixed;
-  inset: 0;
-  background: rgba(3, 6, 12, 0.74);
-  display: grid;
-  place-items: center;
-  z-index: 12000;
-  padding: 1rem;
-`;
-
-const DeviceHelpCard = styled.div`
-  width: min(680px, 100%);
-  max-height: min(82vh, 760px);
-  overflow: auto;
-  border-radius: 28px;
-  padding: 1.2rem;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 245, 244, 0.92));
-  color: rgba(0, 0, 0, 0.92);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.22);
-  display: grid;
-  gap: 0.9rem;
-`;
-
-const DeviceHelpTextarea = styled.textarea`
-  width: 100%;
-  min-height: 128px;
-  box-sizing: border-box;
-  resize: vertical;
-  border-radius: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: #ffffff;
-  padding: 0.9rem 0.95rem;
-  font: inherit;
-  line-height: 1.6;
-  color: rgba(0, 0, 0, 0.92);
-`;
-
 const MuseLiveNotice = styled.div`
   position: fixed;
-  left: 1.35rem;
-  top: ${({ $hasBack }) => ($hasBack ? '6.65rem' : '1.35rem')};
+  left: ${({ $position }) => `${$position.x}px`};
+  top: ${({ $position }) => `${$position.y}px`};
   z-index: 13000;
   min-width: min(320px, calc(100vw - 2.7rem));
   max-width: min(380px, calc(100vw - 2.7rem));
@@ -205,7 +175,10 @@ const MuseLiveNotice = styled.div`
   backdrop-filter: blur(18px) saturate(130%);
   display: grid;
   gap: 0.42rem;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: ${({ $isDragging }) => ($isDragging ? 'grabbing' : 'grab')};
+  touch-action: none;
+  user-select: none;
 
   .muse-notice-main {
     display: flex;
@@ -246,6 +219,13 @@ const MuseLiveNotice = styled.div`
     line-height: 1.35;
   }
 
+  .muse-notice-hint {
+    margin: 0.08rem 0 0;
+    color: rgba(255, 255, 255, 0.34);
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
   .muse-notice-pulse {
     width: 7px;
     height: 7px;
@@ -253,26 +233,6 @@ const MuseLiveNotice = styled.div`
     background: ${({ $connected }) => ($connected ? '#7effc7' : '#ffffff')};
     box-shadow: ${({ $connected }) => ($connected ? '0 0 16px rgba(126,255,199,0.85)' : '0 0 12px rgba(255,255,255,0.45)')};
     animation: musePulse 1.3s ease-in-out infinite;
-  }
-
-  .muse-notice-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-
-  .muse-notice-chip {
-    min-height: 22px;
-    padding: 0 0.48rem;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
   }
 
   @keyframes musePulse {
@@ -287,21 +247,142 @@ const MuseLiveNotice = styled.div`
   }
 `;
 
+const getDefaultMuseNoticePosition = (hasBack) => ({
+  x: MUSE_NOTICE_DEFAULT_LEFT_PX,
+  y: hasBack ? MUSE_NOTICE_DEFAULT_TOP_WITH_BACK_PX : MUSE_NOTICE_DEFAULT_TOP_PX,
+});
+
+const readStoredMuseNoticePosition = (hasBack) => {
+  if (typeof window === 'undefined') {
+    return getDefaultMuseNoticePosition(hasBack);
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(MUSE_NOTICE_POSITION_STORAGE_KEY);
+    const storedPosition = storedValue ? JSON.parse(storedValue) : null;
+    const x = Number(storedPosition?.x);
+    const y = Number(storedPosition?.y);
+
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      return { x, y };
+    }
+  } catch {
+    // Ignore invalid local storage and fall back to the default corner.
+  }
+
+  return getDefaultMuseNoticePosition(hasBack);
+};
+
+const clampMuseNoticePosition = (position, element) => {
+  if (typeof window === 'undefined') {
+    return position;
+  }
+
+  const noticeWidth = element?.offsetWidth || 320;
+  const noticeHeight = element?.offsetHeight || 96;
+  const maxX = Math.max(MUSE_NOTICE_MARGIN_PX, window.innerWidth - noticeWidth - MUSE_NOTICE_MARGIN_PX);
+  const maxY = Math.max(MUSE_NOTICE_MARGIN_PX, window.innerHeight - noticeHeight - MUSE_NOTICE_MARGIN_PX);
+
+  return {
+    x: Math.min(maxX, Math.max(MUSE_NOTICE_MARGIN_PX, position.x)),
+    y: Math.min(maxY, Math.max(MUSE_NOTICE_MARGIN_PX, position.y)),
+  };
+};
+
 const MuseConnectionNotice = ({
   status,
-  latestValue,
-  uploadStats,
-  sampleCount = 0,
   hasBack = false,
 }) => {
+  const noticeRef = useRef(null);
+  const dragStateRef = useRef(null);
+  const [position, setPosition] = useState(() => readStoredMuseNoticePosition(hasBack));
+  const [isDragging, setIsDragging] = useState(false);
+  const connected = status === 'connected';
   const visible = status === 'connecting' || status === 'connected';
+
+  const updatePosition = (nextPosition, shouldPersist = false) => {
+    const clampedPosition = clampMuseNoticePosition(nextPosition, noticeRef.current);
+    setPosition(clampedPosition);
+
+    if (shouldPersist && typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(MUSE_NOTICE_POSITION_STORAGE_KEY, JSON.stringify(clampedPosition));
+      } catch {
+        // Position persistence is best-effort.
+      }
+    }
+
+    return clampedPosition;
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleResize = () => {
+      setPosition((currentPosition) => clampMuseNoticePosition(currentPosition, noticeRef.current));
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handlePointerDown = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!dragStateRef.current) return;
+
+    event.preventDefault();
+    updatePosition({
+      x: dragStateRef.current.originX + event.clientX - dragStateRef.current.startX,
+      y: dragStateRef.current.originY + event.clientY - dragStateRef.current.startY,
+    });
+  };
+
+  const handlePointerEnd = (event) => {
+    if (!dragStateRef.current) return;
+
+    event.preventDefault();
+    const finalPosition = updatePosition(
+      {
+        x: dragStateRef.current.originX + event.clientX - dragStateRef.current.startX,
+        y: dragStateRef.current.originY + event.clientY - dragStateRef.current.startY,
+      },
+      true
+    );
+
+    dragStateRef.current = null;
+    setIsDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    return finalPosition;
+  };
+
   if (!visible) return null;
 
-  const connected = status === 'connected';
-  const formattedValue = Number.isFinite(latestValue) ? `${latestValue.toFixed(1)}uV` : 'stream 대기';
-
   return (
-    <MuseLiveNotice $connected={connected} $hasBack={hasBack}>
+    <MuseLiveNotice
+      ref={noticeRef}
+      $connected={connected}
+      $hasBack={hasBack}
+      $position={position}
+      $isDragging={isDragging}
+      aria-label="Muse S Athena connection notice"
+      title="드래그해서 위치 이동"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+    >
       <div className="muse-notice-main">
         <span className="muse-notice-icon">
           {connected ? <BluetoothConnected size={16} /> : <Activity size={16} />}
@@ -313,18 +394,55 @@ const MuseConnectionNotice = ({
           <p className="muse-notice-meta">
           {connected ? '실시간 EEG 스트리밍을 유지합니다.' : 'Bluetooth 페어링과 스트림 초기화를 진행 중입니다.'}
           </p>
+          <p className="muse-notice-hint">드래그로 위치 이동</p>
         </div>
         <span className="muse-notice-pulse" />
       </div>
-      {connected && (
-        <div className="muse-notice-stats">
-          <span className="muse-notice-chip">{formattedValue}</span>
-          <span className="muse-notice-chip">{sampleCount || uploadStats?.sampleCount || 0} samples</span>
-        </div>
-      )}
     </MuseLiveNotice>
   );
 };
+
+const DeviceFloatingActions = styled.div`
+  position: fixed;
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 15000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const DeviceFloatingButton = styled.button`
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(8, 8, 8, 0.92);
+  color: rgba(255, 255, 255, 0.92);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.62);
+    background: rgba(18, 18, 18, 0.96);
+    color: #ffffff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.78);
+    outline-offset: 4px;
+  }
+
+  @media (max-width: 640px) {
+    width: 52px;
+    height: 52px;
+  }
+`;
+
 const SURVEY_ITEMS = STATE_SURVEY_SECTIONS.flatMap((section) =>
   section.questions.map((question) => ({
     ...question,
@@ -570,10 +688,6 @@ const Login = ({ onBack }) => {
   const [museCurrentState, setMuseCurrentState] = useState(null);
   const [surveyAiExplanation, setSurveyAiExplanation] = useState(null);
   const [museAiExplanation, setMuseAiExplanation] = useState(null);
-  const [showDeviceHelp, setShowDeviceHelp] = useState(false);
-  const [deviceHelpText, setDeviceHelpText] = useState('');
-  const [deviceHelpResponse, setDeviceHelpResponse] = useState(null);
-  const [isDeviceHelpLoading, setIsDeviceHelpLoading] = useState(false);
   const [liveMuseConnectionStatus, setLiveMuseConnectionStatus] = useState('idle');
   const [liveMuseConnectionError, setLiveMuseConnectionError] = useState('');
   const [liveMuseConnectedAt, setLiveMuseConnectedAt] = useState(null);
@@ -588,6 +702,7 @@ const Login = ({ onBack }) => {
   const collectedSampleCountRef = useRef(0);
   const eegFlushTimerRef = useRef(null);
   const eegAnalysisRequestKeyRef = useRef(null);
+  const preserveLiveMuseConnectionRef = useRef(false);
 
   //이름, 이메일 ,패스워드
   const [name, setName] = useState('');
@@ -656,9 +771,16 @@ const Login = ({ onBack }) => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('login') === 'success') {
-      // 0.1초 뒤에 주소창을 깨끗하게 정리 (localhost:3000 으로 만듦)
+      // 로그인 완료 플래그만 제거하고 개발/테스트용 파라미터는 유지합니다.
       const timeoutId = setTimeout(() => {
-        window.history.replaceState({}, document.title, window.location.pathname);
+        const nextParams = new URLSearchParams(window.location.search);
+        nextParams.delete('login');
+        const nextSearch = nextParams.toString();
+        window.history.replaceState(
+          {},
+          document.title,
+          `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`
+        );
       }, 100);
       return () => clearTimeout(timeoutId);
     }
@@ -738,7 +860,9 @@ const Login = ({ onBack }) => {
         eegFlushTimerRef.current = null;
       }
 
-      museClientRef.current?.disconnect?.();
+      if (!preserveLiveMuseConnectionRef.current || !hasActiveSharedLiveMuseSession()) {
+        museClientRef.current?.disconnect?.();
+      }
       museClientRef.current = null;
     };
   }, []);
@@ -887,30 +1011,6 @@ const Login = ({ onBack }) => {
     return () => controller.abort();
   }, [authStage, museCurrentState, museRecognitionResult?.state_profile?.label, museRecognitionResult?.state_profile?.summary, totalMeasurementDurationText]);
 
-  const handleOpenDeviceHelp = () => {
-    setShowDeviceHelp(true);
-    setDeviceHelpResponse(null);
-  };
-
-  const handleRequestDeviceHelp = async () => {
-    if (!deviceHelpText.trim()) return;
-
-    setIsDeviceHelpLoading(true);
-    try {
-      const response = await requestDeviceTroubleshoot({
-        issueText: deviceHelpText,
-        stage: authStage,
-        browser: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-        deviceType: 'Muse S Athena',
-      });
-      setDeviceHelpResponse(response?.output || null);
-    } catch (error) {
-      console.error('Failed to request device help:', error);
-    } finally {
-      setIsDeviceHelpLoading(false);
-    }
-  };
-
   const handleSignUpClick = () => {
     setShowStepper(true);
   };
@@ -1028,10 +1128,65 @@ const handleSkipLoginForTesting = () => {
     }, EEG_UI_FLUSH_INTERVAL_MS);
   };
 
-  const resetMuseStream = () => {
+  const queueRawEegChunkUpload = (chunkReadings) => {
+    const eegSessionId = eegSessionIdRef.current;
+    if (!eegSessionId || rawUploadFailedRef.current || !chunkReadings.length) {
+      return;
+    }
+
+    const chunkIndex = rawChunkIndexRef.current;
+    rawChunkIndexRef.current += 1;
+
+    rawUploadChainRef.current = rawUploadChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await uploadEegRawReadingsChunk({
+          eegSessionId,
+          rawReadings: chunkReadings,
+          sampleRateHz: EEG_SAMPLE_RATE,
+          chunkIndex,
+          baseTimestamp: rawChunkBaseTimestampRef.current,
+        });
+
+        if (response) {
+          setEegUploadStats((prev) => ({
+            ...prev,
+            eegSessionId,
+            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
+            sampleCount: prev.sampleCount + (response.savedCount || chunkReadings.length),
+          }));
+        }
+      })
+      .catch((error) => {
+        rawUploadFailedRef.current = true;
+        setEegUploadStats((prev) => ({ ...prev, failed: true }));
+        console.warn('Failed to upload EEG raw chunk. Hybrid analysis will use summary fallback if needed:', error);
+      });
+  };
+
+  const flushRawEegChunk = (force = false) => {
+    const shouldFlush =
+      rawChunkBufferRef.current.length >= RAW_EEG_CHUNK_SAMPLE_COUNT ||
+      (force && rawChunkBufferRef.current.length > 0);
+
+    if (!shouldFlush) {
+      return;
+    }
+
+    const chunkReadings = rawChunkBufferRef.current.splice(0, rawChunkBufferRef.current.length);
+    queueRawEegChunkUpload(chunkReadings);
+  };
+
+  const resetMuseStream = ({ preserveSharedConnection = false } = {}) => {
     museSubscriptionRef.current?.unsubscribe?.();
     museSubscriptionRef.current = null;
-    museClientRef.current?.disconnect?.();
+    if (!preserveSharedConnection) {
+      stopSharedLiveMuseSession({ disconnect: true }).catch((error) => {
+        console.warn('Failed to stop shared Muse session:', error);
+      });
+      preserveLiveMuseConnectionRef.current = false;
+      museClientRef.current?.disconnect?.();
+    }
     museClientRef.current = null;
     eegBufferRef.current = [];
     eegSessionIdRef.current = null;
@@ -1137,7 +1292,11 @@ const handleSkipLoginForTesting = () => {
     setLiveMuseConnectionStatus('connecting');
 
     try {
-      const client = await createMuseClient({ mode });
+      const params = new URLSearchParams(window.location.search);
+      const client = await createMuseClient({
+        mode: params.get('muse') === 'mock' ? 'mock' : 'web',
+      });
+      const mode = params.get('muse') === 'mock' ? 'mock' : 'web';
       museClientRef.current = client;
 
       await client.connect();
@@ -1162,7 +1321,18 @@ const handleSkipLoginForTesting = () => {
         console.warn('Failed to start live Muse EEG session. Continuing with local stream:', sessionError);
       }
 
-      const maxEegBufferSize = getMaxLocalEegBufferSize(baselineDurationSec + analysisIntervalSec);
+      attachSharedLiveMuseClient(client, {
+        mode,
+        status: 'connected',
+        startedAt: connectedAt,
+        connectedAt,
+        eegSessionId: eegSessionIdRef.current,
+      });
+      preserveLiveMuseConnectionRef.current = true;
+
+      const maxEegBufferSize = getMaxLocalEegBufferSize(
+        LIVE_MUSE_BASELINE_DURATION_SEC + LIVE_MUSE_ANALYSIS_INTERVAL_SEC
+      );
 
       museSubscriptionRef.current = client.subscribe((reading) => {
         collectedSampleCountRef.current += 1;
@@ -1186,6 +1356,7 @@ const handleSkipLoginForTesting = () => {
         analysisIntervalSec,
         analysisWindowSec: analysisIntervalSec,
       });
+      updateSharedLiveMuseSession({ status: 'connected', connectedAt, eegSessionId: eegSessionIdRef.current });
       saveLiveMuseSessionPreference(liveMuseSession);
       setLiveMuseConnectionStatus('connected');
 
@@ -1277,10 +1448,8 @@ const handleSkipLoginForTesting = () => {
         return;
       }
 
-      const isCsvTest = liveMuseConnectionMode === 'mock';
-      const deviceType = isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena';
-      const baselineDurationSec = isCsvTest ? LIVE_MUSE_CSV_TEST_BASELINE_SEC : LIVE_MUSE_BASELINE_DURATION_SEC;
-      const analysisIntervalSec = isCsvTest ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC : LIVE_MUSE_ANALYSIS_INTERVAL_SEC;
+      flushRawEegChunk(true);
+      preserveLiveMuseConnectionRef.current = true;
       const liveMuseSession = createLiveMuseSessionPayload(liveMuseConnectedAt || now, {
         deviceType,
         status: 'connected',
@@ -1358,9 +1527,6 @@ const handleSkipLoginForTesting = () => {
   const liveMuseNotice = (
     <MuseConnectionNotice
       status={liveMuseConnectionStatus}
-      latestValue={latestEegValue}
-      uploadStats={eegUploadStats}
-      sampleCount={eegData.length}
       hasBack={Boolean(onBack) && !showSolarExplorer}
     />
   );
@@ -1709,47 +1875,31 @@ const handleSkipLoginForTesting = () => {
                 )}
 
                 {authStage === 'device-question' && (
-                  <div className="flow-card flow-card-device">
-                    <p className="flow-kicker">Device Check</p>
-                    <h2 className="flow-title">"Muse S Athena"를 보유하고 계신가요?</h2>
-                    <p className="flow-description">
-                      Muse가 있으면 음악 세션 중 뇌파를 계속 측정하고, 최근 5분 상태에 맞춰 음악을 자연스럽게 조정합니다.
-                    </p>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                        gap: '0.75rem',
-                        marginBottom: '1rem',
-                      }}
-                    >
-                      <button type="button" className="option-button" onClick={openBoardPage}>
-                        게시판
-                      </button>
-                      <button type="button" className="option-button" onClick={openLiveChatPage}>
-                        채팅
-                      </button>
+                  <>
+                    <div className="flow-card flow-card-device">
+                      <p className="flow-kicker">Device Check</p>
+                      <h2 className="flow-title">"Muse S Athena"를 보유하고 계신가요?</h2>
+                      <p className="flow-description">
+                        Muse가 있으면 음악 세션 중 뇌파를 계속 측정하고, 최근 5분 상태에 맞춰 음악을 자연스럽게 조정합니다.
+                      </p>
+                      <div className="binary-actions">
+                        <button
+                          type="button"
+                          className="option-button option-yes"
+                          onClick={() => handleMuseChoice('yes')}
+                        >
+                          Yes, 보유 중입니다
+                        </button>
+                        <button
+                          type="button"
+                          className="option-button option-no"
+                          onClick={() => handleMuseChoice('no')}
+                        >
+                          No, 보유하지 않았어요
+                        </button>
+                      </div>
                     </div>
-                    <div className="binary-actions">
-                      <button
-                        type="button"
-                        className="option-button option-yes"
-                        onClick={() => handleMuseChoice('yes')}
-                      >
-                        Yes, 보유 중입니다
-                      </button>
-                      <button
-                        type="button"
-                        className="option-button option-no"
-                        onClick={() => handleMuseChoice('no')}
-                      >
-                        No, 보유하지 않았어요
-                      </button>
-                    </div>
-                    <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
-                      Muse 연결 도움받기
-                    </button>
-                  </div>
+                  </>
                 )}
 
                 {authStage === 'device-live-ready' && (
@@ -1762,15 +1912,17 @@ const handleSkipLoginForTesting = () => {
                     </p>
                     <div style={{ width: 'min(100%, 520px)', margin: '1.25rem 0 0', display: 'grid', gap: '0.65rem' }}>
                       <div className="connection-complete-badge" aria-hidden="true" style={{ position: 'static', transform: 'none' }}>
-                        <span className="connection-complete-dot" />
+                        <span
+                          className={`connection-complete-dot ${
+                            liveMuseConnectionStatus === 'connected' ? 'connection-complete-dot-connected' : ''
+                          }`}
+                        />
                         <span className="connection-complete-label">
                           {liveMuseConnectionStatus === 'connected'
-                            ? `${isLiveMuseCsvTest ? 'CSV test connected' : 'connected'} · ${latestEegValue !== null ? `${latestEegValue.toFixed(1)}uV` : 'streaming'}`
+                            ? 'Muse Connected'
                             : liveMuseConnectionStatus === 'connecting'
-                            ? isLiveMuseCsvTest
-                              ? 'CSV mock loading · stream sync'
-                              : 'bluetooth pairing · stream sync'
-                            : 'baseline 01:00 · analysis 05:00 · crossfade 00:30'}
+                            ? 'bluetooth pairing · stream sync'
+                            : 'baseline 01:00 · analysis 05:00 · crossfade 00:05'}
                         </span>
                       </div>
                       {liveMuseConnectionError && (
@@ -1778,28 +1930,18 @@ const handleSkipLoginForTesting = () => {
                           {liveMuseConnectionError}
                         </p>
                       )}
-                      <div className="binary-actions" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.72rem' }}>
-                        <button
-                          type="button"
-                          className={`option-button ${liveMuseConnectionStatus === 'connected' ? 'option-yes' : ''}`}
-                          onClick={startLiveMuseConnection}
-                          disabled={liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected'}
-                        >
-                          {liveMuseConnectionStatus === 'connected'
-                            ? 'Muse 연결 완료'
-                            : liveMuseConnectionStatus === 'connecting'
-                            ? 'Muse 연결 중...'
-                            : 'Muse Bluetooth 연결'}
-                        </button>
-                        <button
-                          type="button"
-                          className="option-button option-blue"
-                          onClick={startLiveMuseCsvTestConnection}
-                          disabled={liveMuseConnectionStatus === 'connecting' || liveMuseConnectionStatus === 'connected'}
-                        >
-                          CSV 테스트
-                        </button>
-                      </div>
+                      {liveMuseConnectionStatus !== 'connected' && (
+                        <div className="binary-actions" style={{ gridTemplateColumns: '1fr' }}>
+                          <button
+                            type="button"
+                            className="option-button"
+                            onClick={startLiveMuseConnection}
+                            disabled={liveMuseConnectionStatus === 'connecting'}
+                          >
+                            {liveMuseConnectionStatus === 'connecting' ? 'Muse 연결 중...' : 'Muse Bluetooth 연결'}
+                          </button>
+                        </div>
+                      )}
                       <div className="binary-actions">
                         <button type="button" className="option-button option-no" onClick={() => setAuthStage('device-question')}>
                           이전
@@ -1899,9 +2041,6 @@ const handleSkipLoginForTesting = () => {
                       <span>Signal</span>
                       <span>Sync</span>
                     </div>
-                    <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
-                      연결 문제가 있나요?
-                    </button>
                   </div>
                 )}
 
@@ -1947,14 +2086,6 @@ const handleSkipLoginForTesting = () => {
                           }}
                         />
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
-                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.58)' }}>
-                          측정 중 문제가 있으면 도움을 요청할 수 있습니다.
-                        </span>
-                        <button type="button" className="button-ghost auth-skip" onClick={handleOpenDeviceHelp}>
-                          도움 요청
-                        </button>
-                      </div>
                     </div>
                     <div className="connection-complete-badge" aria-hidden="true">
                       <span className="connection-complete-dot" />
@@ -1991,78 +2122,27 @@ const handleSkipLoginForTesting = () => {
           )}
         </AnimatePresence>
 
-        <AnimatePresence>
-          {showDeviceHelp && (
-            <DeviceHelpLayer
-              as={motion.div}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+        {authStage === 'device-question' && !showSolarExplorer && (
+          <DeviceFloatingActions aria-label="빠른 이동">
+            <DeviceFloatingButton
+              type="button"
+              onClick={openBoardPage}
+              aria-label="게시판 열기"
+              title="게시판"
             >
-              <DeviceHelpCard
-                as={motion.div}
-                initial={{ opacity: 0, y: 12, scale: 0.985 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.985 }}
-              >
-                <div>
-                  <p style={{ margin: 0, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#615d59', fontWeight: 600 }}>
-                    Muse Troubleshooting
-                  </p>
-                  <h3 style={{ margin: '0.2rem 0 0', fontSize: 28, lineHeight: 1, letterSpacing: '-0.05em' }}>
-                    어떤 문제가 있는지 자연어로 적어주세요.
-                  </h3>
-                </div>
+              <ClipboardList size={24} strokeWidth={1.9} aria-hidden="true" />
+            </DeviceFloatingButton>
+            <DeviceFloatingButton
+              type="button"
+              onClick={openLiveChatPage}
+              aria-label="채팅 열기"
+              title="채팅"
+            >
+              <MessageCircle size={24} strokeWidth={1.9} aria-hidden="true" />
+            </DeviceFloatingButton>
+          </DeviceFloatingActions>
+        )}
 
-                <p style={{ margin: 0, color: '#615d59', fontSize: 14, lineHeight: 1.65 }}>
-                  Gemma가 현재 단계와 문제 설명을 보고 가능한 원인과 안전한 조치 순서를 정리합니다.
-                </p>
-
-                <DeviceHelpTextarea
-                  value={deviceHelpText}
-                  onChange={(event) => setDeviceHelpText(event.target.value)}
-                  placeholder="예: 블루투스 창은 뜨는데 Muse가 안 보여. 혹은 연결은 됐는데 Streaming 값이 거의 안 올라와."
-                />
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.55rem' }}>
-                  <button type="button" className="button-confirm auth-submit" onClick={handleRequestDeviceHelp} disabled={isDeviceHelpLoading}>
-                    {isDeviceHelpLoading ? '분석 중...' : '도움 받기'}
-                  </button>
-                  <button type="button" className="button-ghost auth-skip" onClick={() => setShowDeviceHelp(false)}>
-                    닫기
-                  </button>
-                </div>
-
-                {deviceHelpResponse && (
-                  <div style={{ display: 'grid', gap: '0.75rem', borderRadius: 18, border: '1px solid rgba(0,0,0,0.08)', background: '#ffffff', padding: '0.95rem' }}>
-                    <h4 style={{ margin: 0, fontSize: 18, letterSpacing: '-0.03em' }}>{deviceHelpResponse.issue_label}</h4>
-                    <p style={{ margin: 0, color: '#615d59', lineHeight: 1.6 }}>{deviceHelpResponse.summary}</p>
-                    {!!deviceHelpResponse.probable_causes?.length && (
-                      <div>
-                        <p style={{ margin: 0, fontWeight: 600 }}>가능성 높은 원인</p>
-                        <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1rem', color: '#615d59', lineHeight: 1.55 }}>
-                          {deviceHelpResponse.probable_causes.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {!!deviceHelpResponse.steps?.length && (
-                      <div>
-                        <p style={{ margin: 0, fontWeight: 600 }}>권장 순서</p>
-                        <ol style={{ margin: '0.4rem 0 0', paddingLeft: '1rem', color: '#615d59', lineHeight: 1.55 }}>
-                          {deviceHelpResponse.steps.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </DeviceHelpCard>
-            </DeviceHelpLayer>
-          )}
-        </AnimatePresence>
       </LoginContainer>
     </PrismStageShell>
   );
@@ -2716,6 +2796,11 @@ const StyledWrapper = styled.div`
     background: #fff;
     box-shadow: 0 0 12px rgba(255, 255, 255, 0.68);
     animation: connectionDotPulse 1.25s ease-in-out infinite;
+  }
+
+  .connection-complete-dot-connected {
+    background: #7effc7;
+    box-shadow: 0 0 14px rgba(126, 255, 199, 0.86);
   }
 
   .connection-complete-label {

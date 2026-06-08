@@ -164,6 +164,7 @@ export const FeedbackDialog = ({
           transition={{ duration: 0.3 }}
         >
           <ModalCard
+            $accent={accentColor}
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
@@ -256,12 +257,6 @@ export const LiveFeedbackDialog = ({
   accentColor,
   adaptiveMusicState,
 }) => {
-  const choices = [
-    { id: 'good', label: '좋아요' },
-    { id: 'keep', label: '유지' },
-    { id: 'change', label: '바꿔줘' },
-  ];
-
   return (
     <AnimatePresence>
       {open && (
@@ -272,35 +267,33 @@ export const LiveFeedbackDialog = ({
           transition={{ duration: 0.28 }}
         >
           <ModalCard
+            $accent={accentColor}
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
           >
-            <ModalTitle $accent={accentColor}>지금 흐름이 괜찮나요?</ModalTitle>
+            <ModalTitle $accent={accentColor}>제품 개선을 위해 피드백을 부탁드려요.</ModalTitle>
             <ModalBody $accent={accentColor}>
-              짧은 피드백은 Muse EEG 기반 음악 조정을 더 정확하게 맞추는 데 사용됩니다.
+              현재 플레이어 경험을 1점부터 5점까지 평가해 주세요.
               {adaptiveMusicState?.label ? ` 최근 조정: ${adaptiveMusicState.label}` : ''}
             </ModalBody>
-            <ModalButtons>
-              {choices.map((choice) => (
-                <ModalGhostButton
-                  key={choice.id}
+            <RatingRow>
+              {[1, 2, 3, 4, 5].map((score) => (
+                <RatingButton
+                  key={score}
                   type="button"
+                  $active={value === score}
                   $accent={accentColor}
-                  onClick={() => onChange(choice.id)}
-                  style={{
-                    borderColor: value === choice.id ? `${accentColor || '#ffffff'}99` : undefined,
-                    background: value === choice.id ? `${accentColor || '#ffffff'}1f` : undefined,
-                  }}
+                  onClick={() => onChange(score)}
                 >
-                  {choice.label}
-                </ModalGhostButton>
+                  {score}
+                </RatingButton>
               ))}
-            </ModalButtons>
+            </RatingRow>
             <ModalButtons>
               <ModalPrimaryButton type="button" disabled={!value} $accent={accentColor} onClick={onSubmit}>
-                반영하기
+                피드백 저장
               </ModalPrimaryButton>
               <ModalGhostButton type="button" $accent={accentColor} onClick={onClose}>
                 나중에

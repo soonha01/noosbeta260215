@@ -793,7 +793,6 @@ const TravelPlayerPage = ({
   const transitionIntensity = Number(transitionPlan?.transition_intensity || 0);
   const transitionReliability = Number(transitionPlan?.transition_reliability || 0);
   const qualityScore = Number(interventionResult?.input_summary?.quality_score || 0);
-  const llmExplanation = generatedJourney?.llmStateExplanation?.output || null;
   const llmCoach = generatedJourney?.llmSessionCoach?.output || null;
   const sessionNotice = generationNotice || generatedJourney?.generationWarning || '';
   const playerMax = Math.max(durationSec || 0, 1);
@@ -817,6 +816,10 @@ const TravelPlayerPage = ({
   const liveMuseNextCaption = isCsvMuseTest ? 'CSV test window' : '5분 윈도우';
   const canStartLiveMuse = ['off', 'pending', 'error'].includes(liveMuseStatus);
   const canStopLiveMuse = ['connecting', 'calibrating', 'active', 'analyzing'].includes(liveMuseStatus);
+  const sessionGuideSteps = [
+    '뇌파 측정 중 몸을 많이 움직이면 신호가 흔들려 정확성이 떨어질 수 있으니 자세와 머리 움직임을 안정적으로 유지하세요.',
+    'Muse S Athena가 머리에 적절히 고정될 만큼의 강도로 조여져 있는지 확인하세요. 너무 느슨하면 센서 접촉이 불안정해질 수 있습니다.',
+  ];
 
   const currentStateCards = ['focus_readiness', 'stress_load', 'fatigue_risk'].map((key) => ({
     key,
@@ -1035,9 +1038,9 @@ const TravelPlayerPage = ({
                     </MetaGrid>
 
                     <ChipRow style={{ marginTop: '0.65rem' }}>
-                      <Chip $accent={accentColor}>{liveMuseBaselineChip}</Chip>
-                      <Chip $accent={accentColor}>{liveMuseAnalysisChip}</Chip>
-                      <Chip $accent={accentColor}>crossfade 30s</Chip>
+                      <Chip $accent={accentColor}>baseline 1m</Chip>
+                      <Chip $accent={accentColor}>analysis 5m</Chip>
+                      <Chip $accent={accentColor}>crossfade 5s</Chip>
                       {adaptiveMusicState?.reason ? <Chip $accent={accentColor}>{adaptiveMusicState.reason}</Chip> : null}
                     </ChipRow>
 
@@ -1100,38 +1103,20 @@ const TravelPlayerPage = ({
 
                   {sessionNotice ? <Notice $accent={accentColor}>{sessionNotice}</Notice> : null}
 
-                  {llmExplanation ? (
-                    <GlassPanel>
-                      <PanelHeader>
-                        <PanelLabel $accent={accentColor}>NOOS brief</PanelLabel>
-                        <PanelTitle>{llmExplanation.summary}</PanelTitle>
-                      </PanelHeader>
-                      {!!llmExplanation.why_now?.length && (
-                        <InsightList>
-                          {llmExplanation.why_now.map((item) => (
-                            <InsightItem key={item}>{item}</InsightItem>
-                          ))}
-                        </InsightList>
-                      )}
-                    </GlassPanel>
-                  ) : null}
-
-                  {llmCoach ? (
-                    <GlassPanel>
-                      <PanelHeader>
-                        <PanelLabel $accent={accentColor}>Session coach</PanelLabel>
-                        <PanelTitle>{llmCoach.session_prompt || '세션 준비 가이드'}</PanelTitle>
-                        <BodyText>{llmCoach.focus_frame || llmCoach.success_signal}</BodyText>
-                      </PanelHeader>
-                      {!!llmCoach.setup_steps?.length && (
-                        <InsightList>
-                          {llmCoach.setup_steps.map((step) => (
-                            <InsightItem key={step}>{step}</InsightItem>
-                          ))}
-                        </InsightList>
-                      )}
-                    </GlassPanel>
-                  ) : null}
+                  <GlassPanel>
+                    <PanelHeader>
+                      <PanelLabel $accent={accentColor}>Session guide</PanelLabel>
+                      <PanelTitle>세션 준비 가이드</PanelTitle>
+                      <BodyText>
+                        {llmCoach?.focus_frame || llmCoach?.success_signal || '세션 시작 전에 착용 상태와 측정 자세를 확인합니다.'}
+                      </BodyText>
+                    </PanelHeader>
+                    <InsightList>
+                      {sessionGuideSteps.map((step) => (
+                        <InsightItem key={step}>{step}</InsightItem>
+                      ))}
+                    </InsightList>
+                  </GlassPanel>
 
                   <GlassPanel>
                     <PanelHeader>

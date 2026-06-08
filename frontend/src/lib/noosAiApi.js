@@ -203,7 +203,7 @@ export const generateJourneyBundle = async ({
   planet,
   currentState,
   recognitionResult,
-  durationSec = 90,
+  durationSec = 300,
   candidateCountOverride = 1,
   feedbackHistory = [],
   memoText = '',
@@ -363,26 +363,6 @@ export const requestSessionCoach = async ({
     path: '/api/ai/session/coach',
     signal,
     errorMessage: 'Session coach failed',
-  });
-
-export const requestDeviceTroubleshoot = async ({
-  issueText,
-  stage,
-  browser,
-  deviceType,
-  signal,
-}) =>
-  runCopilotTask({
-    task: 'device-troubleshoot',
-    payload: {
-      issueText,
-      stage,
-      browser,
-      deviceType,
-    },
-    path: '/api/ai/device/troubleshoot',
-    signal,
-    errorMessage: 'Device troubleshoot failed',
   });
 
 export const warmNoosLocalCopilot = async () => ({

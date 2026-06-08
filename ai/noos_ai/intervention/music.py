@@ -50,7 +50,7 @@ def _ace_request_duration_cap_sec() -> int:
         if uname.sysname == "Darwin" and uname.machine == "arm64":
             return 30
 
-    return 120
+    return 300
 
 
 def _is_apple_silicon_mac() -> bool:

@@ -18,6 +18,18 @@ import {
   PanelTitle,
 } from './spaceTravel.styles';
 
+const getFeedbackLabel = (entry) => {
+  if (entry?.feedbackType === 'product-improvement') {
+    return '제품 개선';
+  }
+
+  if (entry?.feedbackType === 'live-muse-adaptation') {
+    return 'Muse live';
+  }
+
+  return entry?.planet || '세션';
+};
+
 const TravelDashboardPage = ({
   stateSnapshot,
   planetMedia,
@@ -74,7 +86,7 @@ const TravelDashboardPage = ({
           <FeedbackList>
             {feedbackHistory.slice(0, 5).map((entry) => (
               <FeedbackItem key={entry.id} $accent={accentColor}>
-                <span>{entry.planet}</span>
+                <span>{getFeedbackLabel(entry)}</span>
                 <strong>{entry.rating}점</strong>
               </FeedbackItem>
             ))}
