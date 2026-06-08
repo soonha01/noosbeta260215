@@ -41,6 +41,7 @@ const LIVE_EEG_CHANNELS = [
 const LIVE_EEG_CHART_WIDTH = 420;
 const LIVE_EEG_CHART_HEIGHT = 188;
 const LIVE_EEG_CHART_MARGIN = { top: 16, right: 14, bottom: 20, left: 48 };
+const LIVE_EEG_RENDER_POINT_COUNT = 96;
 
 const Page = styled.div`
   position: relative;
@@ -879,9 +880,12 @@ const getLiveReadingValue = (reading, channelKey) => {
 
 const buildLiveWaveSeries = (readings) => {
   const safeReadings = Array.isArray(readings) ? readings : [];
+  const stride = Math.max(1, Math.ceil(safeReadings.length / LIVE_EEG_RENDER_POINT_COUNT));
+  const chartReadings = safeReadings.filter((_, index) => index % stride === 0).slice(-LIVE_EEG_RENDER_POINT_COUNT);
+
   return LIVE_EEG_CHANNELS.map((channel) => ({
     ...channel,
-    samples: safeReadings.map((reading) => getLiveReadingValue(reading, channel.key)),
+    samples: chartReadings.map((reading) => getLiveReadingValue(reading, channel.key)),
   }));
 };
 
@@ -928,15 +932,6 @@ const LiveEegWaveChart = ({ readings }) => {
           <LiveWaveStat>TP9 {latestTp9.toFixed(1)} uV</LiveWaveStat>
         </LiveWaveStats>
         <LiveWaveSvg viewBox={`0 0 ${LIVE_EEG_CHART_WIDTH} ${LIVE_EEG_CHART_HEIGHT}`} preserveAspectRatio="none">
-          <defs>
-            <filter id="live-eeg-glow" x="-20%" y="-60%" width="140%" height="220%">
-              <feGaussianBlur stdDeviation="2.2" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
             <line
               key={`v-${ratio}`}
@@ -989,16 +984,6 @@ const LiveEegWaveChart = ({ readings }) => {
                   d={path}
                   fill="none"
                   stroke={channel.color}
-                  strokeWidth="4.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity="0.16"
-                  filter="url(#live-eeg-glow)"
-                />
-                <path
-                  d={path}
-                  fill="none"
-                  stroke={channel.color}
                   strokeWidth="1.55"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -1007,17 +992,6 @@ const LiveEegWaveChart = ({ readings }) => {
               </g>
             );
           })}
-          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
-            <line
-              key={ratio}
-              x1={plotLeft + plotWidth * ratio}
-              y1={plotTop}
-              x2={plotLeft + plotWidth * ratio}
-              y2={plotTop + plotHeight}
-              stroke="rgba(255,255,255,0.055)"
-              strokeWidth="1"
-            />
-          ))}
         </LiveWaveSvg>
         {!sampleCount ? <LiveWaveEmpty>Muse 연결 후 파형이 표시됩니다.</LiveWaveEmpty> : null}
       </LiveWaveFrame>
