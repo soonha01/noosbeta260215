@@ -30,7 +30,8 @@ const ATHENA_SENSOR_CONFIG = {
   0x98: { type: 'BATTERY', dataLength: 20 },
 };
 const MAX_CHANNEL_QUEUE_SIZE = 1024;
-const RAW_PACKET_LOG_LIMIT = 12;
+const RAW_PACKET_LOG_DURATION_MS = 60 * 1000;
+const RAW_PACKET_LOG_INTERVAL_MS = 1000;
 const RAW_PACKET_TIMEOUT_MS = 3000;
 
 const assertWebBluetoothAvailable = () => {
@@ -259,6 +260,10 @@ export async function createWebMuseClient(options = {}) {
   const latestSamples = Object.fromEntries(CHANNEL_ORDER.map((label) => [label, null]));
   const subscribers = new Set();
   let rawPacketLogCount = 0;
+  let rawPacketDebugPacketCount = 0;
+  let rawPacketLogStartedAt = null;
+  let rawPacketLastLoggedAt = 0;
+  let rawPacketDebugCompletedLogged = false;
   let controlInfoFragment = '';
 
   const stopPolling = () => {
@@ -286,6 +291,14 @@ export async function createWebMuseClient(options = {}) {
         );
       }
     }, RAW_PACKET_TIMEOUT_MS);
+  };
+
+  const resetRawPacketDebugWindow = () => {
+    rawPacketLogCount = 0;
+    rawPacketDebugPacketCount = 0;
+    rawPacketLogStartedAt = Date.now();
+    rawPacketLastLoggedAt = 0;
+    rawPacketDebugCompletedLogged = false;
   };
 
   const emit = () => {
@@ -332,8 +345,32 @@ export async function createWebMuseClient(options = {}) {
   const logRawPacketSample = (label, uuid, event, decodedSamples, metadata = {}) => {
     stopRawPacketTimeout();
 
-    if (rawPacketLogCount >= RAW_PACKET_LOG_LIMIT) return;
+    const loggedAt = Date.now();
+    if (!rawPacketLogStartedAt) {
+      rawPacketLogStartedAt = loggedAt;
+    }
+
+    rawPacketDebugPacketCount += 1;
+
+    const elapsedMs = loggedAt - rawPacketLogStartedAt;
+    if (elapsedMs > RAW_PACKET_LOG_DURATION_MS) {
+      if (!rawPacketDebugCompletedLogged) {
+        rawPacketDebugCompletedLogged = true;
+        console.info('Muse raw data packet debug window completed', {
+          durationSec: RAW_PACKET_LOG_DURATION_MS / 1000,
+          packetCount: rawPacketDebugPacketCount,
+          loggedPacketCount: rawPacketLogCount,
+        });
+      }
+      return;
+    }
+
+    const shouldLogFirstPacket = rawPacketLogCount === 0;
+    const shouldLogInterval = loggedAt - rawPacketLastLoggedAt >= RAW_PACKET_LOG_INTERVAL_MS;
+    if (!shouldLogFirstPacket && !shouldLogInterval) return;
+
     rawPacketLogCount += 1;
+    rawPacketLastLoggedAt = loggedAt;
 
     const bytes = getPacketBytes(event);
     const hex = bytes.map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
@@ -345,6 +382,9 @@ export async function createWebMuseClient(options = {}) {
       label,
       uuid,
       byteLength: bytes.length,
+      elapsedSec: Number((elapsedMs / 1000).toFixed(2)),
+      packetCount: rawPacketDebugPacketCount,
+      debugWindowSec: RAW_PACKET_LOG_DURATION_MS / 1000,
       hex,
       decodedPreview,
       ...metadata,
@@ -538,6 +578,7 @@ export async function createWebMuseClient(options = {}) {
         isStarted = true;
       }
 
+      resetRawPacketDebugWindow();
       startPolling();
       startRawPacketTimeout();
       return client;
@@ -554,6 +595,9 @@ export async function createWebMuseClient(options = {}) {
       stopRawPacketTimeout();
       subscribers.clear();
       isStarted = false;
+      rawPacketLogStartedAt = null;
+      rawPacketLastLoggedAt = 0;
+      rawPacketDebugCompletedLogged = false;
 
       await Promise.all(
         eegCharacteristics.map((characteristic) =>

@@ -1,8 +1,6 @@
-package com.noos.backend.ai.dto;
+package com.noos.backend.eeg.dto;
 
-import java.util.Map;
-
-public record EegRecognitionRequest(
+public record EegAnalysisRequest(
         Long eegSessionId,
         String deviceType,
         String measuredAt,
@@ -17,6 +15,6 @@ public record EegRecognitionRequest(
         Double alpha,
         Double beta,
         Double gamma,
-        Map<String, Object> surveyContext
+        EegSurveyContext surveyContext
 ) {
 }
