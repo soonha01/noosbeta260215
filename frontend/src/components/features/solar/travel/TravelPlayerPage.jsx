@@ -993,7 +993,7 @@ const LiveEegWaveChart = ({ readings }) => {
             );
           })}
         </LiveWaveSvg>
-        {!sampleCount ? <LiveWaveEmpty>Muse 연결 후 파형이 표시됩니다.</LiveWaveEmpty> : null}
+        {!sampleCount ? <LiveWaveEmpty>실시간 EEG 수신 대기 중입니다.</LiveWaveEmpty> : null}
       </LiveWaveFrame>
       <LiveWaveLegend>
         {LIVE_EEG_CHANNELS.map((channel) => (
@@ -1058,8 +1058,6 @@ const TravelPlayerPage = ({
   liveMuseMetrics = {},
   liveMuseReadings = [],
   adaptiveMusicState = null,
-  onStartLiveMuse,
-  onStopLiveMuse,
 }) => {
   const cardRef = useRef(null);
   const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
@@ -1094,8 +1092,6 @@ const TravelPlayerPage = ({
   const liveMuseBaselineChip = isCsvMuseTest ? 'baseline 5s' : 'baseline 1m';
   const liveMuseAnalysisChip = isCsvMuseTest ? 'CSV analysis 30s' : 'analysis 5m';
   const liveMuseNextCaption = isCsvMuseTest ? 'CSV test window' : '5분 윈도우';
-  const canStartLiveMuse = ['off', 'pending', 'error'].includes(liveMuseStatus);
-  const canStopLiveMuse = ['connecting', 'calibrating', 'active', 'analyzing'].includes(liveMuseStatus);
   const sessionGuideSteps = [
     '뇌파 측정 중 몸을 많이 움직이면 신호가 흔들려 정확성이 떨어질 수 있으니 자세와 머리 움직임을 안정적으로 유지하세요.',
     'Muse S Athena가 머리에 적절히 고정될 만큼의 강도로 조여져 있는지 확인하세요. 너무 느슨하면 센서 접촉이 불안정해질 수 있습니다.',
@@ -1295,7 +1291,7 @@ const TravelPlayerPage = ({
                       <PanelTitle>{liveMuseStatusLabel}</PanelTitle>
                       <BodyText>
                         {adaptiveMusicState?.label ||
-                          'Muse가 연결되면 최근 5분 EEG를 기준으로 유지, 약한 조정, 크로스페이드 전환을 선택합니다.'}
+                          '최근 5분 EEG를 기준으로 유지, 약한 조정, 크로스페이드 전환을 선택합니다.'}
                       </BodyText>
                     </PanelHeader>
 
@@ -1325,19 +1321,6 @@ const TravelPlayerPage = ({
                       <Chip $accent={accentColor}>crossfade 5s</Chip>
                       {adaptiveMusicState?.reason ? <Chip $accent={accentColor}>{adaptiveMusicState.reason}</Chip> : null}
                     </ChipRow>
-
-                    <BottomActionRow style={{ marginTop: '0.72rem' }}>
-                      {canStartLiveMuse ? (
-                        <ActionButton type="button" $accent={accentColor} onClick={onStartLiveMuse}>
-                          Muse 연결
-                        </ActionButton>
-                      ) : null}
-                      {canStopLiveMuse ? (
-                        <ActionButton type="button" $accent={accentColor} onClick={onStopLiveMuse}>
-                          Muse 중지
-                        </ActionButton>
-                      ) : null}
-                    </BottomActionRow>
                   </GlassPanel>
 
                   <GlassPanel>

@@ -50,7 +50,7 @@ const STATE_METRICS = [
     aliases: ['corticalArousal', 'arousal_index', 'arousalIndex'],
     label: '각성도',
     description: '두뇌 활성과 깨어있는 정도',
-    goodHigh: true,
+    idealRange: [45, 65],
   },
   {
     key: 'mental_workload',
@@ -68,6 +68,12 @@ const NEUTRAL_STATE_AXES = {
   relaxation_level: 0.5,
   cortical_arousal: 0.5,
   mental_workload: 0.5,
+};
+
+const METRIC_TREND_COLORS = {
+  improved: '#7ee787',
+  worsened: '#ff9b9b',
+  neutral: '#ffd166',
 };
 
 const Page = styled.main`
@@ -517,28 +523,46 @@ const getStateComparison = (record) => {
   };
 };
 
-const getMetricColor = (metric, value) => {
-  if (metric.goodHigh) {
-    if (value >= 70) return '#7ee787';
-    if (value >= 42) return '#ffd166';
-    return '#ff9b9b';
-  }
-
-  if (value >= 70) return '#ff9b9b';
-  if (value >= 42) return '#ffd166';
-  return '#7ee787';
+const getRangeDistance = (value, range = []) => {
+  const [min = 0, max = 100] = range;
+  const numeric = Number(value) || 0;
+  if (numeric < min) return min - numeric;
+  if (numeric > max) return numeric - max;
+  return 0;
 };
 
-const getMetricStatus = (metric, value) => {
-  if (metric.goodHigh) {
-    if (value >= 70) return '좋음';
-    if (value >= 42) return '보통';
-    return '낮음';
+const getMetricAssessment = (metric, before, after) => {
+  const delta = Number(after || 0) - Number(before || 0);
+  if (delta === 0) {
+    return { color: METRIC_TREND_COLORS.neutral, label: metric.idealRange ? '적정 유지' : '유지' };
   }
 
-  if (value >= 70) return '높음';
-  if (value >= 42) return '보통';
-  return '낮음';
+  if (metric.idealRange) {
+    const beforeDistance = getRangeDistance(before, metric.idealRange);
+    const afterDistance = getRangeDistance(after, metric.idealRange);
+
+    if (afterDistance < beforeDistance) {
+      return { color: METRIC_TREND_COLORS.improved, label: '적정 접근' };
+    }
+    if (afterDistance > beforeDistance) {
+      return { color: METRIC_TREND_COLORS.worsened, label: '적정 이탈' };
+    }
+
+    return { color: METRIC_TREND_COLORS.neutral, label: '적정 유지' };
+  }
+
+  const improved = metric.goodHigh ? delta > 0 : delta < 0;
+  if (improved) {
+    return {
+      color: METRIC_TREND_COLORS.improved,
+      label: metric.goodHigh ? '좋아짐' : '개선',
+    };
+  }
+
+  return {
+    color: METRIC_TREND_COLORS.worsened,
+    label: metric.goodHigh ? '저하' : '나빠짐',
+  };
 };
 
 const findDominantBand = (bands) =>
@@ -709,13 +733,14 @@ export default function TravelRecordDetailPage() {
 
             <StateGrid>
               {metricValues.map((metric) => {
-                const color = getMetricColor(metric, metric.after);
+                const assessment = getMetricAssessment(metric, metric.before, metric.after);
+                const color = assessment.color;
                 return (
                   <MetricCard key={metric.key} $color={color}>
                     <MetricTop>
                       <MetricName>{metric.label}</MetricName>
                       <MetricStatus $color={color}>
-                        {getMetricStatus(metric, metric.after)} · {formatDelta(metric.delta)}
+                        {assessment.label} · {formatDelta(metric.delta)}
                       </MetricStatus>
                     </MetricTop>
                     <MetricDescription>{metric.description}</MetricDescription>

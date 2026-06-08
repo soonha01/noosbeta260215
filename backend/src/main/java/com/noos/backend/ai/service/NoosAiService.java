@@ -54,9 +54,9 @@ public class NoosAiService {
     private static final String DEFAULT_ACE_STEP_MODEL_NAME = "acestep-v15-turbo";
     private static final Duration ACE_STEP_HEALTHCHECK_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration ACE_STEP_STARTUP_WAIT = Duration.ofSeconds(25);
-    private static final int DEFAULT_INTERVENTION_DURATION_SEC = 300;
+    private static final int DEFAULT_INTERVENTION_DURATION_SEC = 120;
     private static final int MIN_INTERVENTION_DURATION_SEC = 10;
-    private static final int MAX_INTERVENTION_DURATION_SEC = 600;
+    private static final int MAX_INTERVENTION_DURATION_SEC = 120;
     private static final int PROCESS_LOG_MAX_BYTES = 12_000;
     private static final long REMOTE_AUDIO_DOWNLOAD_MAX_BYTES = 250L * 1024L * 1024L;
 
@@ -607,7 +607,7 @@ public class NoosAiService {
     }
 
     private int defaultAceStepRequestDurationCapSec() {
-        return isAppleSiliconMac() && !isRemoteAceStepBaseUrl() ? 30 : 300;
+        return isAppleSiliconMac() && !isRemoteAceStepBaseUrl() ? 30 : 120;
     }
 
     private int defaultAceStepInferenceSteps() {

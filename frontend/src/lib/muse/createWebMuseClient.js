@@ -16,6 +16,7 @@ const CHANNEL_ORDER = ['TP9', 'AF7', 'AF8', 'TP10'];
 const EEG_SCALE = 0.48828125;
 const EEG_OFFSET = 0x800;
 const ATHENA_EEG_SCALE = 1450 / 16383;
+const ATHENA_EEG_OFFSET = 0x2000;
 const ATHENA_PACKET_HEADER_SIZE = 14;
 const ATHENA_SUBPACKET_HEADER_SIZE = 5;
 const ATHENA_SENSOR_CONFIG = {
@@ -120,7 +121,7 @@ const decodeAthenaEegData = (dataBytes, channelCount) => {
     for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
       const bitStart = (sampleIndex * channelCount + channelIndex) * 14;
       const rawValue = extractPackedInt(bits, bitStart, 14);
-      row.push(rawValue * ATHENA_EEG_SCALE);
+      row.push((rawValue - ATHENA_EEG_OFFSET) * ATHENA_EEG_SCALE);
     }
 
     rows.push(row);

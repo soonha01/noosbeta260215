@@ -59,7 +59,6 @@ const MEASUREMENT_DURATION_OPTIONS = [
 ];
 const DEVICE_SUCCESS_FADE_IN_DURATION_SEC = 3.35;
 const RESULT_PRE_STAGE_FADE_OUT_DURATION_SEC = 1.35;
-const WARP_EXIT_FADE_DURATION_MS = 2300;
 const backendUrl = (path) => `${API_BASE_URL}${path}`;
 const SOLAR_ENTRY_FADE_IN_DURATION_SEC = 2.8;
 const SOLAR_ENTRY_WARP_OVERLAY_DURATION_MS = 2200;
@@ -77,6 +76,8 @@ const MUSE_NOTICE_DEFAULT_TOP_PX = 22;
 const MUSE_NOTICE_DEFAULT_TOP_WITH_BACK_PX = 106;
 const LIVE_MUSE_BASELINE_DURATION_SEC = 60;
 const LIVE_MUSE_ANALYSIS_INTERVAL_SEC = 300;
+const LIVE_MUSE_CSV_TEST_BASELINE_SEC = 6;
+const LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC = 30;
 const LIVE_MUSE_CROSSFADE_DURATION_SEC = 5;
 const LIVE_MUSE_FEEDBACK_CADENCE_SEC = 900;
 const NOOP_PLANET_SELECT = () => {};
@@ -693,7 +694,6 @@ const Login = ({ onBack }) => {
   const [liveMuseConnectedAt, setLiveMuseConnectedAt] = useState(null);
   const [liveMuseConnectionMode, setLiveMuseConnectionMode] = useState('web');
 
-  const warpExitTimerRef = useRef(null);
   const museClientRef = useRef(null);
   const museSubscriptionRef = useRef(null);
   const eegBufferRef = useRef([]);
@@ -842,10 +842,6 @@ const Login = ({ onBack }) => {
       timeoutIds.forEach((id) => clearTimeout(id));
       if (measurementProgressTimerId) {
         clearInterval(measurementProgressTimerId);
-      }
-      if (warpExitTimerRef.current) {
-        clearTimeout(warpExitTimerRef.current);
-        warpExitTimerRef.current = null;
       }
     };
   }, [authStage, selectedMeasurementDurationSec]);
@@ -1243,11 +1239,9 @@ const handleSkipLoginForTesting = () => {
     setLiveMuseConnectionStatus('connecting');
 
     try {
-      const params = new URLSearchParams(window.location.search);
       const client = await createMuseClient({
-        mode: params.get('muse') === 'mock' ? 'mock' : 'web',
+        mode,
       });
-      const mode = params.get('muse') === 'mock' ? 'mock' : 'web';
       museClientRef.current = client;
 
       await client.connect();
@@ -1399,6 +1393,11 @@ const handleSkipLoginForTesting = () => {
         return;
       }
 
+      const isCsvTest = liveMuseConnectionMode === 'mock';
+      const deviceType = isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena';
+      const baselineDurationSec = isCsvTest ? LIVE_MUSE_CSV_TEST_BASELINE_SEC : LIVE_MUSE_BASELINE_DURATION_SEC;
+      const analysisIntervalSec = isCsvTest ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_SEC : LIVE_MUSE_ANALYSIS_INTERVAL_SEC;
+
       preserveLiveMuseConnectionRef.current = true;
       const liveMuseSession = createLiveMuseSessionPayload(liveMuseConnectedAt || now, {
         deviceType,
@@ -1462,14 +1461,8 @@ const handleSkipLoginForTesting = () => {
         });
       }
 
-    setIsTransitioning(true);
-    if (warpExitTimerRef.current) {
-      clearTimeout(warpExitTimerRef.current);
-    }
-    warpExitTimerRef.current = setTimeout(() => {
-      setAuthStage('warp-transition');
-      warpExitTimerRef.current = null;
-    }, WARP_EXIT_FADE_DURATION_MS);
+    setIsTransitioning(false);
+    setAuthStage('warp-transition');
   };
 
   const isLiveMuseCsvTest = liveMuseConnectionMode === 'mock';

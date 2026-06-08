@@ -174,7 +174,7 @@ export const FeedbackDialog = ({
           >
             <ModalTitle $accent={accentColor}>이번 여정은 어땠나요?</ModalTitle>
             <ModalBody $accent={accentColor}>
-              점수만 저장하고 Muse 연결을 종료한 뒤 나의 여행기록으로 이동합니다.
+              점수를 저장한 뒤 선택한 화면으로 이동합니다.
             </ModalBody>
             <RatingRow>
               {[1, 2, 3, 4, 5].map((score) => (
