@@ -1128,55 +1128,6 @@ const handleSkipLoginForTesting = () => {
     }, EEG_UI_FLUSH_INTERVAL_MS);
   };
 
-  const queueRawEegChunkUpload = (chunkReadings) => {
-    const eegSessionId = eegSessionIdRef.current;
-    if (!eegSessionId || rawUploadFailedRef.current || !chunkReadings.length) {
-      return;
-    }
-
-    const chunkIndex = rawChunkIndexRef.current;
-    rawChunkIndexRef.current += 1;
-
-    rawUploadChainRef.current = rawUploadChainRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const response = await uploadEegRawReadingsChunk({
-          eegSessionId,
-          rawReadings: chunkReadings,
-          sampleRateHz: EEG_SAMPLE_RATE,
-          chunkIndex,
-          baseTimestamp: rawChunkBaseTimestampRef.current,
-        });
-
-        if (response) {
-          setEegUploadStats((prev) => ({
-            ...prev,
-            eegSessionId,
-            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
-            sampleCount: prev.sampleCount + (response.savedCount || chunkReadings.length),
-          }));
-        }
-      })
-      .catch((error) => {
-        rawUploadFailedRef.current = true;
-        setEegUploadStats((prev) => ({ ...prev, failed: true }));
-        console.warn('Failed to upload EEG raw chunk. Hybrid analysis will use summary fallback if needed:', error);
-      });
-  };
-
-  const flushRawEegChunk = (force = false) => {
-    const shouldFlush =
-      rawChunkBufferRef.current.length >= RAW_EEG_CHUNK_SAMPLE_COUNT ||
-      (force && rawChunkBufferRef.current.length > 0);
-
-    if (!shouldFlush) {
-      return;
-    }
-
-    const chunkReadings = rawChunkBufferRef.current.splice(0, rawChunkBufferRef.current.length);
-    queueRawEegChunkUpload(chunkReadings);
-  };
-
   const resetMuseStream = ({ preserveSharedConnection = false } = {}) => {
     museSubscriptionRef.current?.unsubscribe?.();
     museSubscriptionRef.current = null;
@@ -1448,7 +1399,6 @@ const handleSkipLoginForTesting = () => {
         return;
       }
 
-      flushRawEegChunk(true);
       preserveLiveMuseConnectionRef.current = true;
       const liveMuseSession = createLiveMuseSessionPayload(liveMuseConnectedAt || now, {
         deviceType,

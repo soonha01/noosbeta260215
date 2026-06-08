@@ -8,6 +8,9 @@ const AboutUsPage = lazy(() => import("./pages/about/AboutUsPage.jsx"));
 const AIObjetPage = lazy(() => import("./pages/ai-objet/AIObjetPage.jsx"));
 const SolarExplorerPage = lazy(() => import("./pages/solar/SolarExplorerPage.jsx"));
 const SpaceTravelPage = lazy(() => import("./pages/solar/SpaceTravelPage.jsx"));
+const MyProfilePage = lazy(() => import("./pages/solar/MyProfilePage.jsx"));
+const TravelRecordsPage = lazy(() => import("./pages/solar/TravelRecordsPage.jsx"));
+const TravelRecordDetailPage = lazy(() => import("./pages/solar/TravelRecordDetailPage.jsx"));
 
 const BASENAME = import.meta.env.PROD ? PUBLIC_BASE_URL : "";
 const ROUTE_FALLBACK_STYLE = Object.freeze({
@@ -72,6 +75,30 @@ export default function App() {
           element={(
             <LazyRoute>
               <SpaceTravelPage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/my-profile"
+          element={(
+            <LazyRoute>
+              <MyProfilePage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/travel-records"
+          element={(
+            <LazyRoute>
+              <TravelRecordsPage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/travel-records/:recordId"
+          element={(
+            <LazyRoute>
+              <TravelRecordDetailPage />
             </LazyRoute>
           )}
         />

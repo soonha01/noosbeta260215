@@ -243,6 +243,14 @@ const SolarExplorer = ({ onPlanetSelect }) => {
     window.location.href = `${basename}/?main=true`;
   }, []);
 
+  const handleOpenProfile = useCallback(() => {
+    navigate('/my-profile');
+  }, [navigate]);
+
+  const handleOpenTravelRecords = useCallback(() => {
+    navigate('/travel-records');
+  }, [navigate]);
+
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return undefined;
@@ -395,6 +403,11 @@ const SolarExplorer = ({ onPlanetSelect }) => {
         <span className='main-return-button__icon' aria-hidden='true'>⌂</span>
         <span className='main-return-button__label'>홈으로 돌아가기</span>
       </button>
+
+      <div className='solar-user-actions' aria-label='사용자 메뉴'>
+        <button type='button' onClick={handleOpenProfile}>나의 프로필</button>
+        <button type='button' onClick={handleOpenTravelRecords}>나의 여행기록</button>
+      </div>
 
       <h1 className='logo'>
         <NoosLogo className='logo__mark' />

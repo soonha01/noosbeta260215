@@ -13,6 +13,7 @@ export const EXIT_TO_HOME = 'home';
 
 export const STATE_STORAGE_KEY = 'noos_current_state';
 export const FEEDBACK_STORAGE_KEY = 'noos_feedback_history';
+export const TRAVEL_RECORDS_STORAGE_KEY = 'noos_travel_records';
 export const MEMO_STORAGE_KEY = 'noos_dashboard_note';
 export const PROFILE_STORAGE_KEY = 'noos_user_profile';
 export const AI_CONTEXT_STORAGE_KEY = 'noos_ai_context';

@@ -206,6 +206,64 @@
   transform: translateY(0);
 }
 
+.solar-explorer-body .solar-user-actions {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 140;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.solar-explorer-body .solar-user-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.08) 40%,
+      rgba(255, 255, 255, 0.025) 100%
+    ),
+    rgba(10, 14, 26, 0.5);
+  color: rgba(241, 245, 255, 0.94);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 12px 28px rgba(0, 0, 0, 0.38);
+  transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.solar-explorer-body .solar-user-actions button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.46);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.24) 0%,
+      rgba(255, 255, 255, 0.1) 40%,
+      rgba(255, 255, 255, 0.03) 100%
+    ),
+    rgba(10, 14, 26, 0.58);
+}
+
+@media (max-width: 640px) {
+  .solar-explorer-body .solar-user-actions {
+    top: 64px;
+    right: 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .solar-explorer-body .main-return-button__dot {
   width: 6px;
   height: 6px;

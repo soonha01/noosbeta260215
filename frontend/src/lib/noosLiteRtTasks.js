@@ -1,5 +1,4 @@
 const SUPPORTED_TASKS = new Set([
-  'feedback-parse',
   'planet-recommendation',
   'state-explanation',
   'dashboard-summary',
@@ -84,7 +83,6 @@ const PLANET_CATALOG = [
 const PLANET_BY_SLUG = Object.fromEntries(PLANET_CATALOG.map((item) => [item.slug, item]));
 
 const TASK_INSTRUCTIONS = {
-  'feedback-parse': 'Parse the user feedback into structured NOOS adjustments for music, lighting, and the next session.',
   'planet-recommendation': 'Recommend the best NOOS planet given the user intent, memo context, and current state vector.',
   'state-explanation': 'Explain the NOOS state vector in non-medical Korean, cautiously and usefully.',
   'dashboard-summary': 'Summarize NOOS feedback history and memo text into trends, wins, frictions, and next adjustments.',
@@ -120,7 +118,7 @@ const summarizeFeedbackHistory = (feedbackHistory) => {
   return feedbackHistory.slice(-4).map((entry) => ({
     planet: entry?.planetSlug || entry?.planet || '',
     rating: entry?.rating ?? null,
-    summary: truncateText(entry?.summary || entry?.memo || entry?.feedbackText || '', 80),
+    summary: truncateText(entry?.summary || entry?.memo || '', 80),
   }));
 };
 
@@ -164,16 +162,6 @@ const buildTaskReference = (task, payload) => {
 
 const buildTaskPromptPayload = (task, payload) => {
   switch (task) {
-    case 'feedback-parse':
-      return {
-        feedbackText: truncateText(payload?.feedbackText, 220),
-        rating: payload?.rating ?? null,
-        planet: payload?.planet || '',
-        targetState: payload?.targetState || '',
-        measuredState: payload?.measuredState || '',
-        measuredSource: payload?.measuredSource || '',
-        currentState: topAxes(payload),
-      };
     case 'planet-recommendation':
       return {
         intentText: truncateText(payload?.intentText, 180),
@@ -266,7 +254,7 @@ const deepMerge = (base, override) => {
 const keywordScore = (text, keywords) => keywords.reduce((sum, keyword) => sum + (text.includes(keyword) ? 1 : 0), 0);
 
 const fallbackFeedbackParse = (payload) => {
-  const text = lowerText(payload, 'feedbackText');
+  const text = '';
   const rating = clamp(safeFloat(payload?.rating, 3) / 5, 0, 1);
 
   const tooCool = ['차갑', 'blue', 'cool'].some((token) => text.includes(token));
@@ -549,7 +537,6 @@ const fallbackSessionCoach = (payload) => {
 };
 
 const FALLBACK_BUILDERS = {
-  'feedback-parse': fallbackFeedbackParse,
   'planet-recommendation': fallbackPlanetRecommendation,
   'state-explanation': fallbackStateExplanation,
   'dashboard-summary': fallbackDashboardSummary,

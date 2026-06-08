@@ -2,9 +2,7 @@ package com.noos.backend.ai.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.noos.backend.ai.dto.AiFeedbackParseRequest;
 import com.noos.backend.ai.dto.DashboardSummaryRequest;
-import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
@@ -45,7 +43,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -166,18 +163,6 @@ public class NoosAiService {
 
     public EegAnalysisResponse recognizeFromSummary(EegAnalysisRequest request) {
         return recognize(request);
-    }
-
-    public Map<String, Object> parseFeedback(AiFeedbackParseRequest request) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("feedbackText", request.feedbackText());
-        payload.put("rating", request.rating());
-        payload.put("planet", request.planet());
-        payload.put("targetState", request.targetState());
-        payload.put("measuredState", request.measuredState());
-        payload.put("measuredSource", request.measuredSource());
-        payload.put("currentState", request.currentState() != null ? request.currentState() : Map.of());
-        return invokeGemmaTask("feedback-parse", payload, true);
     }
 
     public Map<String, Object> recommendPlanet(PlanetRecommendationRequest request) {
@@ -427,59 +412,27 @@ public class NoosAiService {
             return Map.of();
         }
 
-        double tempoDelta = 0.0;
-        double energyDelta = 0.0;
-        double brightnessDelta = 0.0;
-        double densityDelta = 0.0;
-        double tensionDelta = 0.0;
-        double textureDelta = 0.0;
-        double lightingBrightnessDelta = 0.0;
-        double cctDelta = 0.0;
-        double luxDelta = 0.0;
-        double motionDelta = 0.0;
-        double durationDelta = 0.0;
         int counted = 0;
-        Map<String, Integer> preferredPlanets = new HashMap<>();
-        Map<String, Integer> avoidPlanets = new HashMap<>();
-        List<String> summaryFragments = new ArrayList<>();
+        double ratingTotal = 0.0;
+        Map<String, Integer> visitedPlanets = new HashMap<>();
+        Map<String, Integer> ratingDistribution = new LinkedHashMap<>();
 
         for (Map<String, Object> entry : feedbackHistory) {
-            Map<String, Object> llm = mapValue(entry.get("llm"));
-            Map<String, Object> structured = mapValue(llm.get("structuredFeedback"));
-            if (structured.isEmpty()) {
-                structured = mapValue(llm.get("structured_feedback"));
-            }
-            Map<String, Object> recommended = mapValue(structured.get("recommendedAdjustments"));
-            if (recommended.isEmpty()) {
-                recommended = mapValue(structured.get("recommended_adjustments"));
-            }
-            Map<String, Object> music = mapValue(recommended.get("music_adjustments"));
-            Map<String, Object> lighting = mapValue(recommended.get("lighting_adjustments"));
-            Map<String, Object> session = mapValue(recommended.get("session_adjustments"));
-
-            if (!music.isEmpty() || !lighting.isEmpty() || !session.isEmpty()) {
+            double rating = numberValue(entry.get("rating"), 0.0);
+            if (rating > 0.0) {
                 counted += 1;
+                ratingTotal += rating;
+                int roundedRating = Math.max(1, Math.min(5, roundedInt(rating)));
+                String ratingKey = String.valueOf(roundedRating);
+                ratingDistribution.put(ratingKey, ratingDistribution.getOrDefault(ratingKey, 0) + 1);
             }
 
-            tempoDelta += numberValue(music.get("tempo_delta"), 0.0);
-            energyDelta += numberValue(music.get("energy_delta"), 0.0);
-            brightnessDelta += numberValue(music.get("brightness_delta"), 0.0);
-            densityDelta += numberValue(music.get("density_delta"), 0.0);
-            tensionDelta += numberValue(music.get("tension_delta"), 0.0);
-            textureDelta += numberValue(music.get("texture_delta"), 0.0);
-
-            lightingBrightnessDelta += numberValue(lighting.get("brightness_delta"), 0.0);
-            cctDelta += numberValue(lighting.get("cct_delta"), 0.0);
-            luxDelta += numberValue(lighting.get("lux_delta"), 0.0);
-            motionDelta += numberValue(lighting.get("motion_delta"), 0.0);
-
-            durationDelta += numberValue(session.get("duration_delta_sec"), 0.0);
-            accumulatePlanetVotes(preferredPlanets, stringList(session.get("preferred_planets")));
-            accumulatePlanetVotes(avoidPlanets, stringList(session.get("avoid_planets")));
-
-            String summary = stringValue(llm.get("summary"));
-            if (summary != null && !summary.isBlank()) {
-                summaryFragments.add(summary);
+            String planet = stringValue(entry.get("planetSlug"));
+            if (planet == null || planet.isBlank()) {
+                planet = stringValue(entry.get("planet"));
+            }
+            if (planet != null && !planet.isBlank()) {
+                visitedPlanets.put(planet, visitedPlanets.getOrDefault(planet, 0) + 1);
             }
         }
 
@@ -488,26 +441,11 @@ public class NoosAiService {
         }
 
         return Map.of(
-                "music_adjustments", Map.of(
-                        "tempo_delta", roundedInt(tempoDelta / counted),
-                        "energy_delta", rounded(numberValue(energyDelta / counted, 0.0)),
-                        "brightness_delta", rounded(numberValue(brightnessDelta / counted, 0.0)),
-                        "density_delta", rounded(numberValue(densityDelta / counted, 0.0)),
-                        "tension_delta", rounded(numberValue(tensionDelta / counted, 0.0)),
-                        "texture_delta", rounded(numberValue(textureDelta / counted, 0.0))
-                ),
-                "lighting_adjustments", Map.of(
-                        "brightness_delta", roundedInt(lightingBrightnessDelta / counted),
-                        "cct_delta", roundedInt(cctDelta / counted),
-                        "lux_delta", roundedInt(luxDelta / counted),
-                        "motion_delta", rounded(numberValue(motionDelta / counted, 0.0))
-                ),
-                "session_adjustments", Map.of(
-                        "duration_delta_sec", roundedInt(durationDelta / counted),
-                        "preferred_planets", topPlanetVotes(preferredPlanets),
-                        "avoid_planets", topPlanetVotes(avoidPlanets)
-                ),
-                "summary", summaryFragments.stream().filter(Objects::nonNull).limit(3).collect(Collectors.toList())
+                "rating_count", counted,
+                "average_rating", rounded(ratingTotal / counted),
+                "rating_distribution", ratingDistribution,
+                "visited_planets", visitedPlanets,
+                "top_planets", topPlanetVotes(visitedPlanets)
         );
     }
 
@@ -1158,25 +1096,6 @@ public class NoosAiService {
 
     private int roundedInt(double value) {
         return (int) Math.round(value);
-    }
-
-    private List<String> stringList(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return List.of();
-        }
-        List<String> strings = new ArrayList<>();
-        for (Object item : list) {
-            if (item instanceof String string && !string.isBlank()) {
-                strings.add(string.toLowerCase());
-            }
-        }
-        return strings;
-    }
-
-    private void accumulatePlanetVotes(Map<String, Integer> votes, List<String> planets) {
-        for (String planet : planets) {
-            votes.merge(planet, 1, Integer::sum);
-        }
     }
 
     private List<String> topPlanetVotes(Map<String, Integer> votes) {

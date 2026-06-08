@@ -255,32 +255,6 @@ export const prewarmJourneyGeneration = async ({ signal } = {}) =>
     'Journey generation prewarm failed'
   );
 
-export const parseNaturalLanguageFeedback = async ({
-  feedbackText,
-  rating,
-  planet,
-  targetState,
-  measuredState,
-  measuredSource,
-  currentState,
-  signal,
-}) =>
-  runCopilotTask({
-    task: 'feedback-parse',
-    payload: {
-      feedbackText,
-      rating,
-      planet,
-      targetState,
-      measuredState,
-      measuredSource,
-      currentState,
-    },
-    path: '/api/ai/feedback/parse',
-    signal,
-    errorMessage: 'Feedback parsing failed',
-  });
-
 export const requestPlanetRecommendation = async ({
   intentText,
   desiredOutcome,

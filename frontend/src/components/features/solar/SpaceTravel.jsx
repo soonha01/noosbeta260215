@@ -19,6 +19,7 @@ import {
   PLANET_MEDIA,
   PROFILE_STORAGE_KEY,
   STATE_STORAGE_KEY,
+  TRAVEL_RECORDS_STORAGE_KEY,
   STEP_DASHBOARD,
   STEP_GENERATING,
   STEP_PLAYER,
@@ -31,7 +32,6 @@ import {
   buildLightingPreviewFromIntervention,
   generateJourneyBundle,
   prewarmJourneyGeneration,
-  parseNaturalLanguageFeedback,
   requestDashboardSummary,
   stopWizLighting,
   buildFallbackCurrentStateFromBandAnalysis,
@@ -80,12 +80,24 @@ const LIVE_MUSE_ANALYSIS_INTERVAL_MS = LIVE_MUSE_ANALYSIS_WINDOW_SEC * 1000;
 const LIVE_MUSE_CSV_TEST_BASELINE_SEC = 5;
 const LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS = 30 * 1000;
 const LIVE_MUSE_MAX_LOCAL_BUFFER_SEC = LIVE_MUSE_ANALYSIS_WINDOW_SEC + LIVE_MUSE_BASELINE_SEC + 30;
+const LIVE_EEG_PREVIEW_POINT_COUNT = 320;
+const LIVE_BAND_SUMMARY_INTERVAL_MS = 15 * 1000;
+const LIVE_BAND_SUMMARY_WINDOW_SEC = 30;
+const LIVE_BAND_HISTORY_MAX_POINTS = 720;
+const LIVE_BAND_COMPARE_WINDOW_SEC = 180;
 const LIVE_MUSE_UI_UPDATE_MS = 900;
 const LIVE_MUSE_CROSSFADE_DURATION_SEC = 5;
 const LIVE_MUSE_FEEDBACK_CADENCE_MS = 15 * 60 * 1000;
 const LIVE_MUSE_FEEDBACK_AFTER_ADAPT_MS = 90 * 1000;
 const LIVE_MUSE_FEEDBACK_PROMPT_PROBABILITY = 0.1;
 const LIVE_MUSE_MIN_REGEN_INTERVAL_MS = 4 * 60 * 1000;
+const LIVE_BAND_COMPARE_BANDS = [
+  { key: 'delta', label: 'Delta', color: '#84dcc6' },
+  { key: 'theta', label: 'Theta', color: '#9f86ff' },
+  { key: 'alpha', label: 'Alpha', color: '#ffd166' },
+  { key: 'beta', label: 'Beta', color: '#ff7b72' },
+  { key: 'gamma', label: 'Gamma', color: '#7ee787' },
+];
 const NEUTRAL_CANONICAL_STATE = {
   focus_readiness: 0.5,
   stress_load: 0.5,
@@ -109,6 +121,150 @@ const writeLiveMuseSessionPreference = (nextValue) => {
 const resolveLiveMuseAnalysisIntervalMs = (session) =>
   session?.testMode === 'csv-mock' ? LIVE_MUSE_CSV_TEST_ANALYSIS_INTERVAL_MS : LIVE_MUSE_ANALYSIS_INTERVAL_MS;
 
+const getBandPercent = (analysis, bandKey) => {
+  const matchedBand = (analysis?.bandPowers || []).find((band) => band.key === bandKey);
+  const value = Number(matchedBand?.percent);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const createBandHistorySnapshot = ({ analysis, measuredAt, elapsedSec, windowSec, sequence, source }) => ({
+  measuredAt,
+  elapsedSec: Math.max(0, Number(elapsedSec) || 0),
+  windowSec: Math.max(0, Number(windowSec) || 0),
+  sequence: sequence || null,
+  source: source || 'live-summary',
+  sampleCount: Number(analysis?.sampleCount || 0),
+  dominantBand: analysis?.dominantBand || null,
+  bands: Object.fromEntries(
+    LIVE_BAND_COMPARE_BANDS.map((band) => [band.key, getBandPercent(analysis, band.key)])
+  ),
+});
+
+const getSnapshotBandValue = (snapshot, bandKey) => {
+  const value = Number(snapshot?.bands?.[bandKey] ?? snapshot?.[bandKey]);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const averageBandSnapshots = (snapshots) => {
+  const validSnapshots = (snapshots || []).filter(Boolean);
+  if (!validSnapshots.length) return null;
+
+  return Object.fromEntries(
+    LIVE_BAND_COMPARE_BANDS.map((band) => {
+      const total = validSnapshots.reduce((sum, snapshot) => sum + getSnapshotBandValue(snapshot, band.key), 0);
+      return [band.key, total / validSnapshots.length];
+    })
+  );
+};
+
+const createBandComparison = ({ before, after, beforeLabel, afterLabel, sourceLabel, pointCount, pointLabel = 'windows' }) => {
+  if (!before || !after) {
+    return {
+      hasData: false,
+      message: '실시간 EEG 요약 데이터가 아직 충분하지 않습니다.',
+    };
+  }
+
+  return {
+    hasData: true,
+    beforeLabel,
+    afterLabel,
+    sourceLabel,
+    pointCount,
+    pointLabel,
+    bands: LIVE_BAND_COMPARE_BANDS.map((band) => {
+      const beforeValue = Number(before[band.key] || 0);
+      const afterValue = Number(after[band.key] || 0);
+      return {
+        ...band,
+        before: beforeValue,
+        after: afterValue,
+        delta: afterValue - beforeValue,
+      };
+    }),
+  };
+};
+
+const buildBandComparisonFromReadings = (readings, sampleRate = EEG_SAMPLE_RATE) => {
+  const safeReadings = Array.isArray(readings) ? readings : [];
+  const totalSec = Math.floor(safeReadings.length / sampleRate);
+
+  if (totalSec < 5) {
+    return {
+      hasData: false,
+      message: '최소 5초 이상 측정되면 before/after 비교가 표시됩니다.',
+    };
+  }
+
+  const segmentSec = Math.min(LIVE_BAND_COMPARE_WINDOW_SEC, Math.max(5, Math.floor(totalSec / 3)));
+  const segmentSamples = Math.max(64, segmentSec * sampleRate);
+  const beforeReadings = safeReadings.slice(0, segmentSamples);
+  const afterReadings = safeReadings.slice(-segmentSamples);
+  const beforeAnalysis = analyzeEegBands(beforeReadings, {
+    sampleRate,
+    fftSize: DEFAULT_FFT_SIZE,
+  });
+  const afterAnalysis = analyzeEegBands(afterReadings, {
+    sampleRate,
+    fftSize: DEFAULT_FFT_SIZE,
+  });
+
+  return createBandComparison({
+    before: Object.fromEntries(LIVE_BAND_COMPARE_BANDS.map((band) => [band.key, getBandPercent(beforeAnalysis, band.key)])),
+    after: Object.fromEntries(LIVE_BAND_COMPARE_BANDS.map((band) => [band.key, getBandPercent(afterAnalysis, band.key)])),
+    beforeLabel: segmentSec >= LIVE_BAND_COMPARE_WINDOW_SEC ? 'First 3 min' : `First ${segmentSec}s`,
+    afterLabel: segmentSec >= LIVE_BAND_COMPARE_WINDOW_SEC ? 'Last 3 min' : `Last ${segmentSec}s`,
+    sourceLabel: 'front raw buffer',
+    pointCount: safeReadings.length,
+    pointLabel: 'samples',
+  });
+};
+
+const buildBandComparisonFromHistory = ({ snapshots, readings, sampleRate = EEG_SAMPLE_RATE }) => {
+  const validSnapshots = (snapshots || [])
+    .filter((snapshot) => Number.isFinite(Number(snapshot?.elapsedSec)))
+    .sort((a, b) => Number(a.elapsedSec) - Number(b.elapsedSec));
+
+  if (validSnapshots.length >= 2) {
+    const firstSnapshot = validSnapshots[0];
+    const lastSnapshot = validSnapshots[validSnapshots.length - 1];
+    const elapsedSpanSec = Number(lastSnapshot.elapsedSec) - Number(firstSnapshot.elapsedSec);
+    let beforeSnapshots = [];
+    let afterSnapshots = [];
+    let beforeLabel = 'First 3 min';
+    let afterLabel = 'Last 3 min';
+
+    if (elapsedSpanSec >= LIVE_BAND_COMPARE_WINDOW_SEC * 2) {
+      const beforeEdgeSec = Number(firstSnapshot.elapsedSec) + LIVE_BAND_COMPARE_WINDOW_SEC;
+      const afterEdgeSec = Number(lastSnapshot.elapsedSec) - LIVE_BAND_COMPARE_WINDOW_SEC;
+      beforeSnapshots = validSnapshots.filter((snapshot) => Number(snapshot.elapsedSec) <= beforeEdgeSec);
+      afterSnapshots = validSnapshots.filter((snapshot) => Number(snapshot.elapsedSec) >= afterEdgeSec);
+    } else {
+      const segmentCount = Math.max(1, Math.ceil(validSnapshots.length * 0.34));
+      beforeSnapshots = validSnapshots.slice(0, segmentCount);
+      afterSnapshots = validSnapshots.slice(-segmentCount);
+      beforeLabel = 'Early window';
+      afterLabel = 'Late window';
+    }
+
+    const before = averageBandSnapshots(beforeSnapshots);
+    const after = averageBandSnapshots(afterSnapshots);
+
+    if (before && after) {
+      return createBandComparison({
+        before,
+        after,
+        beforeLabel,
+        afterLabel,
+        sourceLabel: 'live band windows',
+        pointCount: validSnapshots.length,
+      });
+    }
+  }
+
+  return buildBandComparisonFromReadings(readings, sampleRate);
+};
+
 const getPlanetAdaptationMode = (planetSlug) => {
   if (['venus', 'earth', 'pluto'].includes(planetSlug)) return 'calm';
   if (['mercury', 'mars', 'jupiter', 'neptune'].includes(planetSlug)) return 'focus';
@@ -129,6 +285,13 @@ const buildMusicProfileSnapshot = ({ planetMedia, generatedJourney, volumePercen
     volumePercent,
     adaptiveVolumeScale,
   };
+};
+
+const appendTravelRecord = (record) => {
+  const currentRecords = loadStorageJSON(TRAVEL_RECORDS_STORAGE_KEY, []);
+  const nextRecords = [record, ...(Array.isArray(currentRecords) ? currentRecords : [])].slice(0, 120);
+  saveStorageJSON(TRAVEL_RECORDS_STORAGE_KEY, nextRecords);
+  return nextRecords;
 };
 
 const resolveAdaptiveMusicAction = ({ currentState, previousState, qualityScore, planetSlug }) => {
@@ -244,9 +407,7 @@ const SpaceTravel = ({
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
   const [pendingExitType, setPendingExitType] = useState(null);
   const [feedbackScore, setFeedbackScore] = useState(0);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [parsedFeedback, setParsedFeedback] = useState(null);
-  const [isFeedbackParsing, setIsFeedbackParsing] = useState(false);
+  const [sessionBandComparison, setSessionBandComparison] = useState(null);
   const [isRouteFadingOut, setIsRouteFadingOut] = useState(false);
   const [liveMuseSession, setLiveMuseSession] = useState(readLiveMuseSessionPreference);
   const [liveMuseStatus, setLiveMuseStatus] = useState(liveMuseSession ? 'pending' : 'off');
@@ -259,6 +420,7 @@ const SpaceTravel = ({
     qualityScore: null,
     latestValue: null,
   });
+  const [liveMusePreviewReadings, setLiveMusePreviewReadings] = useState([]);
   const [liveMuseCurrentState, setLiveMuseCurrentState] = useState(null);
   const [adaptiveMusicState, setAdaptiveMusicState] = useState({
     type: 'idle',
@@ -309,13 +471,16 @@ const SpaceTravel = ({
   const museClientRef = useRef(null);
   const museSubscriptionRef = useRef(null);
   const liveEegBufferRef = useRef([]);
+  const liveBandHistoryRef = useRef([]);
   const liveEegSessionIdRef = useRef(null);
   const liveAnalysisTimerRef = useRef(null);
+  const liveBandHistoryTimerRef = useRef(null);
   const liveCalibrationTimerRef = useRef(null);
   const liveUiTimerRef = useRef(null);
   const liveFeedbackTimerRef = useRef(null);
   const liveLastFeedbackAtRef = useRef(0);
   const liveLastAdaptiveGenerationAtRef = useRef(0);
+  const liveSessionStartedAtMsRef = useRef(null);
   const livePreviousStateRef = useRef(stateSnapshot?.canonicalState || NEUTRAL_CANONICAL_STATE);
   const liveAnalysisSequenceRef = useRef(0);
   const runLiveMuseAnalysisRef = useRef(null);
@@ -352,6 +517,10 @@ const SpaceTravel = ({
       clearInterval(liveAnalysisTimerRef.current);
       liveAnalysisTimerRef.current = null;
     }
+    if (liveBandHistoryTimerRef.current) {
+      clearInterval(liveBandHistoryTimerRef.current);
+      liveBandHistoryTimerRef.current = null;
+    }
     if (liveCalibrationTimerRef.current) {
       clearTimeout(liveCalibrationTimerRef.current);
       liveCalibrationTimerRef.current = null;
@@ -366,53 +535,6 @@ const SpaceTravel = ({
     }
   }, []);
 
-  const queueLiveRawChunkUpload = useCallback((chunkReadings) => {
-    const eegSessionId = liveEegSessionIdRef.current;
-    if (!eegSessionId || liveRawUploadFailedRef.current || !chunkReadings.length) {
-      return;
-    }
-
-    const chunkIndex = liveRawChunkIndexRef.current;
-    liveRawChunkIndexRef.current += 1;
-
-    liveRawUploadChainRef.current = liveRawUploadChainRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const response = await uploadEegRawReadingsChunk({
-          eegSessionId,
-          rawReadings: chunkReadings,
-          sampleRateHz: EEG_SAMPLE_RATE,
-          chunkIndex,
-          baseTimestamp: liveRawChunkBaseTimestampRef.current,
-        });
-
-        if (response) {
-          setLiveMuseMetrics((prev) => ({
-            ...prev,
-            eegSessionId,
-            chunkCount: Math.max(prev.chunkCount, chunkIndex + 1),
-          }));
-        }
-      })
-      .catch((error) => {
-        liveRawUploadFailedRef.current = true;
-        console.warn('Failed to upload live Muse EEG raw chunk. Continuing with local summary:', error);
-      });
-  }, []);
-
-  const flushLiveRawChunk = useCallback((force = false) => {
-    const shouldFlush =
-      liveRawChunkBufferRef.current.length >= LIVE_MUSE_RAW_CHUNK_SAMPLE_COUNT ||
-      (force && liveRawChunkBufferRef.current.length > 0);
-
-    if (!shouldFlush) {
-      return;
-    }
-
-    const chunkReadings = liveRawChunkBufferRef.current.splice(0, liveRawChunkBufferRef.current.length);
-    queueLiveRawChunkUpload(chunkReadings);
-  }, [queueLiveRawChunkUpload]);
-
   const handleLiveMuseReading = useCallback((reading) => {
     const maxBufferSize = EEG_SAMPLE_RATE * LIVE_MUSE_MAX_LOCAL_BUFFER_SEC;
     liveEegBufferRef.current.push(reading);
@@ -420,18 +542,11 @@ const SpaceTravel = ({
       liveEegBufferRef.current.splice(0, liveEegBufferRef.current.length - maxBufferSize);
     }
 
-    if (liveRawChunkBaseTimestampRef.current === null) {
-      liveRawChunkBaseTimestampRef.current = Number.isFinite(Number(reading?.timestamp))
-        ? Number(reading.timestamp)
-        : Date.now();
-    }
-
-    liveRawChunkBufferRef.current.push(reading);
-    flushLiveRawChunk(false);
-
     if (!liveUiTimerRef.current) {
       liveUiTimerRef.current = window.setTimeout(() => {
         liveUiTimerRef.current = null;
+        const previewReadings = liveEegBufferRef.current.slice(-LIVE_EEG_PREVIEW_POINT_COUNT);
+        setLiveMusePreviewReadings(previewReadings);
         setLiveMuseMetrics((prev) => ({
           ...prev,
           eegSessionId: liveEegSessionIdRef.current,
@@ -440,7 +555,7 @@ const SpaceTravel = ({
         }));
       }, LIVE_MUSE_UI_UPDATE_MS);
     }
-  }, [flushLiveRawChunk]);
+  }, []);
 
   const fadeAdaptiveVolumeScaleTo = useCallback((targetScale, durationMs = 18000) => {
     const from = adaptiveVolumeScaleRef.current;
@@ -481,6 +596,51 @@ const SpaceTravel = ({
       setShowLiveFeedbackDialog(true);
     }, delayMs);
   }, []);
+
+  const appendLiveBandHistorySnapshot = useCallback((analysis, options = {}) => {
+    if (!analysis || Number(analysis.sampleCount || 0) < 64) {
+      return null;
+    }
+
+    const measuredAt = options.measuredAt || new Date().toISOString();
+    const measuredAtMs = Date.parse(measuredAt);
+    const startedAtMs = liveSessionStartedAtMsRef.current || measuredAtMs || Date.now();
+    const elapsedSec = Number.isFinite(measuredAtMs)
+      ? (measuredAtMs - startedAtMs) / 1000
+      : (Date.now() - startedAtMs) / 1000;
+    const snapshot = createBandHistorySnapshot({
+      analysis,
+      measuredAt,
+      elapsedSec,
+      windowSec: options.windowSec || LIVE_BAND_SUMMARY_WINDOW_SEC,
+      sequence: options.sequence,
+      source: options.source,
+    });
+
+    liveBandHistoryRef.current.push(snapshot);
+    if (liveBandHistoryRef.current.length > LIVE_BAND_HISTORY_MAX_POINTS) {
+      liveBandHistoryRef.current.splice(0, liveBandHistoryRef.current.length - LIVE_BAND_HISTORY_MAX_POINTS);
+    }
+
+    return snapshot;
+  }, []);
+
+  const recordLiveBandSummaryWindow = useCallback(() => {
+    const windowReadings = liveEegBufferRef.current.slice(-(EEG_SAMPLE_RATE * LIVE_BAND_SUMMARY_WINDOW_SEC));
+    if (windowReadings.length < EEG_SAMPLE_RATE * 10) {
+      return;
+    }
+
+    const analysis = analyzeEegBands(windowReadings, {
+      sampleRate: EEG_SAMPLE_RATE,
+      fftSize: DEFAULT_FFT_SIZE,
+    });
+    appendLiveBandHistorySnapshot(analysis, {
+      measuredAt: new Date().toISOString(),
+      windowSec: LIVE_BAND_SUMMARY_WINDOW_SEC,
+      source: 'front-live-summary',
+    });
+  }, [appendLiveBandHistorySnapshot]);
 
   const startAdaptiveCrossfade = useCallback((bundle, action) => {
     const nextAudioUrl = bundle?.audioUrl;
@@ -595,6 +755,12 @@ const SpaceTravel = ({
     }
 
     liveAnalysisSequenceRef.current += 1;
+    appendLiveBandHistorySnapshot(analysis, {
+      measuredAt,
+      windowSec: activeAnalysisWindowSec,
+      sequence: liveAnalysisSequenceRef.current,
+      source: isCsvTest ? 'csv-analysis-window' : 'muse-analysis-window',
+    });
     setLiveMuseStatus('analyzing');
 
     const musicProfile = buildMusicProfileSnapshot({
@@ -694,6 +860,7 @@ const SpaceTravel = ({
 
     setLiveMuseStatus('active');
   }, [
+    appendLiveBandHistorySnapshot,
     fadeAdaptiveVolumeScaleTo,
     generatedJourney,
     planetMedia,
@@ -715,16 +882,20 @@ const SpaceTravel = ({
       : museClientRef.current?.disconnect?.();
     museClientRef.current = null;
     liveMuseUsesSharedSessionRef.current = false;
-    Promise.resolve(disconnectPromise).catch((error) => {
-      console.warn('Failed to disconnect live Muse stream:', error);
-    });
 
     liveEegBufferRef.current = [];
     liveEegSessionIdRef.current = null;
     liveAnalysisSequenceRef.current = 0;
+    setLiveMusePreviewReadings([]);
     setLiveMuseCurrentState(null);
     setAdaptiveVolumeScale(1);
     adaptiveVolumeScaleRef.current = 1;
+
+    try {
+      await Promise.resolve(disconnectPromise);
+    } catch (error) {
+      console.warn('Failed to disconnect live Muse stream:', error);
+    }
 
     if (disablePreference) {
       writeLiveMuseSessionPreference({ enabled: false, disabledAt: new Date().toISOString() });
@@ -761,6 +932,9 @@ const SpaceTravel = ({
     const savedEegSessionId = Number(liveMuseSessionRef.current?.eegSessionId) || null;
     liveEegSessionIdRef.current = savedEegSessionId;
     const startedAt = new Date().toISOString();
+    liveBandHistoryRef.current = [];
+    liveSessionStartedAtMsRef.current = Date.parse(startedAt) || Date.now();
+    setSessionBandComparison(null);
     const nextSession = {
       ...(liveMuseSessionRef.current || {}),
       enabled: true,
@@ -789,8 +963,6 @@ const SpaceTravel = ({
     });
 
     try {
-      const params = new URLSearchParams(window.location.search);
-      const mode = params.get('muse') === 'mock' ? 'mock' : 'web';
       let sharedSnapshot = getSharedLiveMuseSnapshot();
       if (!sharedSnapshot.isActive) {
         sharedSnapshot = await startSharedLiveMuseSession({
@@ -811,7 +983,7 @@ const SpaceTravel = ({
       try {
         if (!eegSessionId) {
           const startedSession = await startEegSession({
-            deviceType: 'Muse S Athena',
+            deviceType: isCsvTest ? 'CSV Mock Muse' : 'Muse S Athena',
             measuredAt: sharedSnapshot.connectedAt || startedAt,
           });
           eegSessionId = startedSession?.eegSessionId || null;
@@ -825,7 +997,10 @@ const SpaceTravel = ({
       const maxBufferSize = EEG_SAMPLE_RATE * LIVE_MUSE_MAX_LOCAL_BUFFER_SEC;
       const seededReadings = (sharedSnapshot.readings || []).slice(-maxBufferSize);
       const latestSeedReading = seededReadings[seededReadings.length - 1] || null;
+      const connectedAtMs = Date.parse(sharedSnapshot.connectedAt || startedAt);
+      liveSessionStartedAtMsRef.current = Number.isFinite(connectedAtMs) ? connectedAtMs : Date.now();
       liveEegBufferRef.current = seededReadings;
+      setLiveMusePreviewReadings(seededReadings.slice(-LIVE_EEG_PREVIEW_POINT_COUNT));
       museSubscriptionRef.current = subscribeToSharedLiveMuseReadings(handleLiveMuseReading);
 
       setLiveMuseStatus('calibrating');
@@ -836,7 +1011,9 @@ const SpaceTravel = ({
         latestValue: latestSeedReading
           ? Number(latestSeedReading?.samples?.[0] ?? latestSeedReading?.channels?.TP9 ?? 0)
           : prev.latestValue,
-        nextAnalysisAt: new Date(Date.now() + LIVE_MUSE_ANALYSIS_INTERVAL_MS).toISOString(),
+        nextAnalysisAt: new Date(Date.now() + analysisIntervalMs).toISOString(),
+        testMode: isCsvTest ? 'csv-mock' : null,
+        analysisIntervalSec: Math.round(analysisIntervalMs / 1000),
       }));
       setAdaptiveMusicState({
         type: 'calibrating',
@@ -848,9 +1025,8 @@ const SpaceTravel = ({
         isCrossfading: false,
       });
 
-      const connectedAtMs = Date.parse(sharedSnapshot.connectedAt || startedAt);
       const baselineElapsedMs = Number.isFinite(connectedAtMs) ? Math.max(0, Date.now() - connectedAtMs) : 0;
-      const baselineRemainingMs = Math.max(0, (LIVE_MUSE_BASELINE_SEC * 1000) - baselineElapsedMs);
+      const baselineRemainingMs = Math.max(0, (baselineDurationSec * 1000) - baselineElapsedMs);
 
       liveCalibrationTimerRef.current = window.setTimeout(() => {
         liveCalibrationTimerRef.current = null;
@@ -867,6 +1043,11 @@ const SpaceTravel = ({
       liveAnalysisTimerRef.current = window.setInterval(() => {
         runLiveMuseAnalysisRef.current?.();
       }, analysisIntervalMs);
+      recordLiveBandSummaryWindow();
+      liveBandHistoryTimerRef.current = window.setInterval(
+        recordLiveBandSummaryWindow,
+        LIVE_BAND_SUMMARY_INTERVAL_MS
+      );
     } catch (error) {
       console.error('Failed to start live Muse session:', error);
       await stopLiveMuseStream();
@@ -879,7 +1060,7 @@ const SpaceTravel = ({
         isCrossfading: false,
       });
     }
-  }, [handleLiveMuseReading, liveMuseStatus, runLiveMuseAnalysis, stopLiveMuseStream]);
+  }, [handleLiveMuseReading, liveMuseStatus, recordLiveBandSummaryWindow, runLiveMuseAnalysis, stopLiveMuseStream]);
 
   const handleStopLiveMuse = useCallback(() => {
     stopLiveMuseStream({ disablePreference: true });
@@ -913,13 +1094,13 @@ const SpaceTravel = ({
     navigate('/solar-explorer', { replace: true });
   }, [navigate, onBack, restoreJourneyLighting]);
 
-  const goToHome = useCallback(() => {
-    restoreJourneyLighting('home');
+  const goToTravelRecords = useCallback(() => {
+    restoreJourneyLighting('travel-records');
     if (typeof onEndJourney === 'function') {
       onEndJourney();
       return;
     }
-    navigate('/', { replace: true });
+    navigate('/travel-records', { replace: true });
   }, [navigate, onEndJourney, restoreJourneyLighting]);
 
   useEffect(() => {
@@ -1571,6 +1752,17 @@ const SpaceTravel = ({
   }, [clearAiTimers]);
 
   const handleExitIntent = useCallback(() => {
+    const sharedSnapshot = getSharedLiveMuseSnapshot();
+    const comparisonReadings = liveEegBufferRef.current.length
+      ? liveEegBufferRef.current
+      : sharedSnapshot.readings || [];
+    setSessionBandComparison(
+      buildBandComparisonFromHistory({
+        snapshots: liveBandHistoryRef.current,
+        readings: comparisonReadings,
+        sampleRate: EEG_SAMPLE_RATE,
+      })
+    );
     setShowExitDialog(true);
   }, []);
 
@@ -1578,67 +1770,39 @@ const SpaceTravel = ({
     setShowExitDialog(false);
     setPendingExitType(exitType);
     setFeedbackScore(0);
-    setFeedbackText('');
-    setParsedFeedback(null);
     setShowFeedbackDialog(true);
   }, []);
-
-  const handlePreviewFeedbackParse = useCallback(async () => {
-    if (!feedbackScore && !feedbackText.trim()) return;
-
-    setIsFeedbackParsing(true);
-    try {
-      const response = await parseNaturalLanguageFeedback({
-        feedbackText,
-        rating: feedbackScore || 3,
-        planet: selectedPlanet,
-        targetState: planetMedia.moodTarget,
-        measuredState: stateSnapshot?.title || '측정 데이터 없음',
-        measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
-        currentState: stateSnapshot?.canonicalState || generatedJourney?.currentState || NEUTRAL_CANONICAL_STATE,
-      });
-      setParsedFeedback(response);
-    } catch (error) {
-      console.error('Failed to preview NOOS feedback parse:', error);
-    } finally {
-      setIsFeedbackParsing(false);
-    }
-  }, [
-    feedbackScore,
-    feedbackText,
-    generatedJourney?.currentState,
-    planetMedia.moodTarget,
-    selectedPlanet,
-    stateSnapshot?.canonicalState,
-    stateSnapshot?.sourceLabel,
-    stateSnapshot?.title,
-  ]);
 
   const persistFeedbackAndNavigate = useCallback(async () => {
     if (!feedbackScore || !pendingExitType) return;
 
-    setIsFeedbackParsing(true);
-    let feedbackResponse = parsedFeedback;
+    const sharedSnapshot = getSharedLiveMuseSnapshot();
+    const comparisonReadings = liveEegBufferRef.current.length
+      ? liveEegBufferRef.current
+      : sharedSnapshot.readings || [];
+    const resolvedBandComparison = sessionBandComparison || buildBandComparisonFromHistory({
+      snapshots: liveBandHistoryRef.current,
+      readings: comparisonReadings,
+      sampleRate: EEG_SAMPLE_RATE,
+    });
+    const recordStateAxes =
+      liveMuseCurrentState ||
+      stateSnapshot?.canonicalState ||
+      generatedJourney?.currentState ||
+      NEUTRAL_CANONICAL_STATE;
+    const recordBeforeStateAxes =
+      generatedJourney?.currentState ||
+      stateSnapshot?.canonicalState ||
+      NEUTRAL_CANONICAL_STATE;
+    const dominantBand = (resolvedBandComparison?.bands || []).reduce((strongest, band) => {
+      if (!strongest) return band;
+      return Number(band.after || 0) > Number(strongest.after || 0) ? band : strongest;
+    }, null);
 
     try {
-      if (!feedbackResponse) {
-        feedbackResponse = await parseNaturalLanguageFeedback({
-          feedbackText,
-          rating: feedbackScore,
-          planet: selectedPlanet,
-          targetState: planetMedia.moodTarget,
-          measuredState: stateSnapshot?.title || '측정 데이터 없음',
-          measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
-          currentState: stateSnapshot?.canonicalState || generatedJourney?.currentState || NEUTRAL_CANONICAL_STATE,
-        });
-      }
-
-      setParsedFeedback(feedbackResponse);
-
       const entry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         rating: feedbackScore,
-        feedbackText,
         planet: selectedPlanet,
         planetSlug,
         targetState: planetMedia.moodTarget,
@@ -1646,15 +1810,53 @@ const SpaceTravel = ({
         measuredSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
         createdAt: new Date().toISOString(),
         route: pendingExitType,
-        llm: feedbackResponse?.output || null,
+        eegBandComparison: resolvedBandComparison,
+        stateAxesBefore: recordBeforeStateAxes,
+        stateAxesAfter: recordStateAxes,
+        stateAxes: recordStateAxes,
+        stateComparison: {
+          beforeLabel: 'Before',
+          afterLabel: 'After',
+          before: recordBeforeStateAxes,
+          after: recordStateAxes,
+        },
+        dominantBand: dominantBand?.key || null,
       };
 
       const nextHistory = [entry, ...feedbackHistory].slice(0, 40);
       setFeedbackHistory(nextHistory);
       saveStorageJSON(FEEDBACK_STORAGE_KEY, nextHistory);
+      appendTravelRecord({
+        id: entry.id,
+        createdAt: entry.createdAt,
+        planet: planetMedia.title || selectedPlanet,
+        planetSlug,
+        moodTarget: planetMedia.moodTarget,
+        trackName: generatedJourney?.trackName || planetMedia.trackName,
+        sessionDurationSec: Math.round(Number(playheadSec || 0)),
+        trackDurationSec: Math.round(Number(trackDurationSec || 0)),
+        route: pendingExitType,
+        rating: feedbackScore,
+        bandComparison: resolvedBandComparison,
+        stateAxesBefore: recordBeforeStateAxes,
+        stateAxesAfter: recordStateAxes,
+        stateAxes: recordStateAxes,
+        stateComparison: {
+          beforeLabel: 'Before',
+          afterLabel: 'After',
+          before: recordBeforeStateAxes,
+          after: recordStateAxes,
+        },
+        stateTitle: stateSnapshot?.title || '측정 데이터 없음',
+        stateSource: stateSnapshot?.sourceLabel || '측정 정보 없음',
+        dominantState: stateSnapshot?.dominantState || null,
+        dominantBand: dominantBand?.key || null,
+        dominantBandLabel: dominantBand?.label || null,
+      });
 
       setShowFeedbackDialog(false);
       setIsRouteFadingOut(true);
+      await stopLiveMuseStream({ disablePreference: true });
 
       clearRouteTimers();
       const timerId = window.setTimeout(() => {
@@ -1664,31 +1866,35 @@ const SpaceTravel = ({
         }
 
         if (pendingExitType === EXIT_TO_HOME) {
-          goToHome();
+          goToTravelRecords();
         }
       }, 880);
       routeTimersRef.current.push(timerId);
     } catch (error) {
       console.error('Failed to persist NOOS feedback:', error);
-    } finally {
-      setIsFeedbackParsing(false);
     }
   }, [
     clearRouteTimers,
     feedbackHistory,
     feedbackScore,
-    feedbackText,
     generatedJourney?.currentState,
+    generatedJourney?.trackName,
     goToExplorer,
-    goToHome,
-    parsedFeedback,
+    goToTravelRecords,
+    liveMuseCurrentState,
     pendingExitType,
     planetMedia.moodTarget,
+    planetMedia.trackName,
     planetSlug,
+    playheadSec,
     selectedPlanet,
+    sessionBandComparison,
     stateSnapshot?.canonicalState,
+    stateSnapshot?.dominantState,
     stateSnapshot?.sourceLabel,
     stateSnapshot?.title,
+    stopLiveMuseStream,
+    trackDurationSec,
   ]);
 
   const handleSubmitLiveFeedback = useCallback(() => {
@@ -1698,7 +1904,6 @@ const SpaceTravel = ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       feedbackType: 'product-improvement',
       rating: liveFeedbackRating,
-      feedbackText: `제품 개선 피드백 ${liveFeedbackRating}점`,
       desiredChange: 'product_improvement',
       planet: selectedPlanet,
       planetSlug,
@@ -1826,6 +2031,7 @@ const SpaceTravel = ({
               stateSnapshot={stateSnapshot}
               liveMuseStatus={liveMuseStatus}
               liveMuseMetrics={liveMuseMetrics}
+              liveMuseReadings={liveMusePreviewReadings}
               adaptiveMusicState={adaptiveMusicState}
               onStartLiveMuse={handleStartLiveMuse}
               onStopLiveMuse={handleStopLiveMuse}
@@ -1896,11 +2102,6 @@ const SpaceTravel = ({
             open={showFeedbackDialog}
             value={feedbackScore}
             onChange={setFeedbackScore}
-            feedbackText={feedbackText}
-            onFeedbackTextChange={setFeedbackText}
-            parsedFeedback={parsedFeedback?.output || null}
-            isParsing={isFeedbackParsing}
-            onPreviewParse={handlePreviewFeedbackParse}
             onSubmit={persistFeedbackAndNavigate}
             onClose={() => setShowFeedbackDialog(false)}
             accentColor={accentColor}

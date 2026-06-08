@@ -1,8 +1,6 @@
 package com.noos.backend.ai.controller;
 
-import com.noos.backend.ai.dto.AiFeedbackParseRequest;
 import com.noos.backend.ai.dto.DashboardSummaryRequest;
-import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import com.noos.backend.ai.dto.PlanetRecommendationRequest;
 import com.noos.backend.ai.dto.SessionCoachRequest;
@@ -37,11 +35,6 @@ public class NoosAiController {
     @PostMapping("/ai/intervention/prewarm")
     public Map<String, Object> prewarmIntervention() {
         return noosAiService.prewarmIntervention();
-    }
-
-    @PostMapping("/ai/feedback/parse")
-    public Map<String, Object> parseFeedback(@RequestBody AiFeedbackParseRequest request) {
-        return noosAiService.parseFeedback(request);
     }
 
     @PostMapping("/ai/planet/recommend")
