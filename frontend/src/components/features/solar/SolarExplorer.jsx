@@ -201,13 +201,13 @@ const SolarExplorer = ({ onPlanetSelect }) => {
         memoText,
         currentState: currentSnapshot?.canonicalState || null,
         feedbackHistory,
-        requestedDurationSec: 900,
+        requestedDurationSec: 300,
       });
       const coach = await requestSessionCoach({
         planet: recommendation?.output?.recommended_planet || selectedPlanet.toLowerCase(),
         intentText: trimmedIntent,
         recommendation: recommendation?.output || null,
-        recommendedDurationSec: recommendation?.output?.recommended_duration_sec || 900,
+        recommendedDurationSec: recommendation?.output?.recommended_duration_sec || 300,
       });
 
       setAssistantRecommendation(recommendation);

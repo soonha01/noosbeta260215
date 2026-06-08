@@ -4,7 +4,6 @@ const SUPPORTED_TASKS = new Set([
   'state-explanation',
   'dashboard-summary',
   'session-coach',
-  'device-troubleshoot',
 ]);
 
 const PLANET_CATALOG = [
@@ -90,7 +89,6 @@ const TASK_INSTRUCTIONS = {
   'state-explanation': 'Explain the NOOS state vector in non-medical Korean, cautiously and usefully.',
   'dashboard-summary': 'Summarize NOOS feedback history and memo text into trends, wins, frictions, and next adjustments.',
   'session-coach': 'Turn the selected planet and user goal into a concise NOOS session brief and setup checklist.',
-  'device-troubleshoot': 'Transform a device issue description into likely causes and safe troubleshooting steps.',
 };
 
 const truncateText = (value, maxLength = 160) => {
@@ -205,13 +203,6 @@ const buildTaskPromptPayload = (task, payload) => {
         intentText: truncateText(payload?.intentText, 180),
         recommendedDurationSec: payload?.recommendedDurationSec ?? null,
         recommendation: compactObject(payload?.recommendation, 6),
-      };
-    case 'device-troubleshoot':
-      return {
-        issueText: truncateText(payload?.issueText, 220),
-        stage: payload?.stage || '',
-        browser: payload?.browser || '',
-        deviceType: payload?.deviceType || '',
       };
     default:
       return compactObject(payload, 8);
@@ -541,7 +532,7 @@ const fallbackSessionCoach = (payload) => {
   const planet = String(payload?.planet || recommendation?.recommended_planet || 'earth').toLowerCase();
   const profile = PLANET_BY_SLUG[planet] || PLANET_BY_SLUG.earth;
   const intentText = String(payload?.intentText || '').trim();
-  const duration = Math.round(safeFloat(payload?.recommendedDurationSec || recommendation?.recommended_duration_sec, 900));
+  const duration = Math.round(safeFloat(payload?.recommendedDurationSec || recommendation?.recommended_duration_sec, 300));
 
   return {
     session_prompt: `${profile.title} 세션은 ${profile.goal_label} 방향으로 현재 상태를 정렬합니다.`,
@@ -557,76 +548,12 @@ const fallbackSessionCoach = (payload) => {
   };
 };
 
-const fallbackDeviceTroubleshoot = (payload) => {
-  const issueText = lowerText(payload, 'issueText');
-  const stage = String(payload?.stage || 'device-question');
-
-  if (['bluetooth', '블루투스', 'pair', '페어', '검색'].some((token) => issueText.includes(token))) {
-    return {
-      issue_label: 'Muse 연결/페어링 문제',
-      summary: '현재 입력 기준으로 가장 가능성이 높은 원인과 안전한 조치 순서를 정리했습니다.',
-      probable_causes: [
-        '브라우저의 Bluetooth 권한이 차단되어 있을 수 있습니다.',
-        'Muse S Athena가 이미 다른 기기와 연결된 상태일 수 있습니다.',
-      ],
-      steps: [
-        'macOS 블루투스와 브라우저 권한을 다시 확인합니다.',
-        'Muse 전원을 껐다 켜고, 다른 앱과의 연결을 해제합니다.',
-        'Chrome 계열 브라우저에서 다시 검색을 시도합니다.',
-      ],
-      avoid: [
-        '연결이 불안정한 상태에서 여러 번 빠르게 재시도하지 않습니다.',
-        '신호가 나쁘다고 바로 상태 해석을 믿지 않습니다.',
-      ],
-      escalate_if: '권한 확인과 재연결 후에도 동일 현상이 3회 이상 반복되면 장치 상태 또는 브라우저 호환성을 별도로 점검합니다.',
-    };
-  }
-
-  if (['signal', '노이즈', 'stream', '파형', '0'].some((token) => issueText.includes(token))) {
-    return {
-      issue_label: '신호 수집/스트리밍 문제',
-      summary: '현재 입력 기준으로 가장 가능성이 높은 원인과 안전한 조치 순서를 정리했습니다.',
-      probable_causes: [
-        '센서 접촉이 불안정하거나 전극이 건조할 수 있습니다.',
-        '측정 시작 직후 아직 안정화가 끝나지 않았을 수 있습니다.',
-      ],
-      steps: [
-        '센서 접촉부를 다시 맞추고 피부 접촉을 안정화합니다.',
-        '머리 위치를 고정한 채 10~20초 더 기다립니다.',
-        '파형이 계속 0에 가깝다면 연결을 다시 시작합니다.',
-      ],
-      avoid: [
-        '연결이 불안정한 상태에서 여러 번 빠르게 재시도하지 않습니다.',
-        '신호가 나쁘다고 바로 상태 해석을 믿지 않습니다.',
-      ],
-      escalate_if: '권한 확인과 재연결 후에도 동일 현상이 3회 이상 반복되면 장치 상태 또는 브라우저 호환성을 별도로 점검합니다.',
-    };
-  }
-
-  return {
-    issue_label: '일반 측정 흐름 문제',
-    summary: '현재 입력 기준으로 가장 가능성이 높은 원인과 안전한 조치 순서를 정리했습니다.',
-    probable_causes: [`현재 단계(${stage})에서 권한/연결/동기화 중 하나가 지연되고 있을 수 있습니다.`],
-    steps: [
-      '브라우저 탭을 새로고침하기 전에 먼저 연결 권한 상태를 확인합니다.',
-      '다른 블루투스 연결을 줄이고 Muse만 다시 연결합니다.',
-      '동일 문제가 반복되면 설문 모드로 임시 진행하고, 이후 장치 환경을 재점검합니다.',
-    ],
-    avoid: [
-      '연결이 불안정한 상태에서 여러 번 빠르게 재시도하지 않습니다.',
-      '신호가 나쁘다고 바로 상태 해석을 믿지 않습니다.',
-    ],
-    escalate_if: '권한 확인과 재연결 후에도 동일 현상이 3회 이상 반복되면 장치 상태 또는 브라우저 호환성을 별도로 점검합니다.',
-  };
-};
-
 const FALLBACK_BUILDERS = {
   'feedback-parse': fallbackFeedbackParse,
   'planet-recommendation': fallbackPlanetRecommendation,
   'state-explanation': fallbackStateExplanation,
   'dashboard-summary': fallbackDashboardSummary,
   'session-coach': fallbackSessionCoach,
-  'device-troubleshoot': fallbackDeviceTroubleshoot,
 };
 
 const buildMessages = (task, payload) => {

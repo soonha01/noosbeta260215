@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noos.backend.ai.dto.AiFeedbackParseRequest;
 import com.noos.backend.ai.dto.DashboardSummaryRequest;
-import com.noos.backend.ai.dto.DeviceTroubleshootRequest;
 import com.noos.backend.ai.dto.EegRecognitionRequest;
 import com.noos.backend.ai.dto.InterventionGenerationRequest;
 import com.noos.backend.ai.dto.PlanetRecommendationRequest;
@@ -54,7 +53,7 @@ public class NoosAiService {
     private static final String DEFAULT_ACE_STEP_MODEL_NAME = "acestep-v15-turbo";
     private static final Duration ACE_STEP_HEALTHCHECK_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration ACE_STEP_STARTUP_WAIT = Duration.ofSeconds(25);
-    private static final int DEFAULT_INTERVENTION_DURATION_SEC = 90;
+    private static final int DEFAULT_INTERVENTION_DURATION_SEC = 300;
     private static final int MIN_INTERVENTION_DURATION_SEC = 10;
     private static final int MAX_INTERVENTION_DURATION_SEC = 600;
     private static final int PROCESS_LOG_MAX_BYTES = 12_000;
@@ -221,15 +220,6 @@ public class NoosAiService {
         payload.put("recommendation", request.recommendation() != null ? request.recommendation() : Map.of());
         payload.put("recommendedDurationSec", request.recommendedDurationSec());
         return invokeGemmaTask("session-coach", payload, true);
-    }
-
-    public Map<String, Object> troubleshootDevice(DeviceTroubleshootRequest request) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("issueText", request.issueText());
-        payload.put("stage", request.stage());
-        payload.put("browser", request.browser());
-        payload.put("deviceType", request.deviceType());
-        return invokeGemmaTask("device-troubleshoot", payload, true);
     }
 
     public Map<String, Object> generateIntervention(InterventionGenerationRequest request) {
@@ -683,7 +673,7 @@ public class NoosAiService {
     }
 
     private int defaultAceStepRequestDurationCapSec() {
-        return isAppleSiliconMac() && !isRemoteAceStepBaseUrl() ? 30 : 120;
+        return isAppleSiliconMac() && !isRemoteAceStepBaseUrl() ? 30 : 300;
     }
 
     private int defaultAceStepInferenceSteps() {
