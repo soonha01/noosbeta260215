@@ -307,22 +307,6 @@ const TrackMeta = styled.p`
   line-height: 1.45;
 `;
 
-const ProgressLine = styled.div`
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.55rem;
-  align-items: center;
-  margin-bottom: 0.9rem;
-`;
-
-const TimeText = styled.span`
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 11px;
-  font-family: ${NUMERIC_FONT};
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-`;
-
 const Range = styled.input`
   width: 100%;
   accent-color: ${({ $accent }) => $accent || '#fff'};
@@ -1033,14 +1017,10 @@ const buildFallbackPhases = (planetMedia, durationSec) => [
 const TravelPlayerPage = ({
   planetMedia,
   accentColor,
-  playheadSec,
   durationSec,
-  remainingSec,
   isPlaying,
-  formatClock,
   onOpenDashboard,
   onOpenProfile,
-  onSeek,
   onRewind,
   onForward,
   onTogglePlay,
@@ -1073,7 +1053,6 @@ const TravelPlayerPage = ({
   const qualityScore = Number(interventionResult?.input_summary?.quality_score || 0);
   const llmCoach = generatedJourney?.llmSessionCoach?.output || null;
   const sessionNotice = generationNotice || generatedJourney?.generationWarning || '';
-  const playerMax = Math.max(durationSec || 0, 1);
   const planetSpinDurationSec = getPlanetSpinDurationSec(planetMedia?.title);
   const backgroundImage = planetMedia?.backgroundImage || planetMedia?.image;
   const sessionStatus = hasGeneratedAudio ? 'AI audio generated' : generatedJourney ? 'AI plan synced' : 'planet preset';
@@ -1172,25 +1151,12 @@ const TravelPlayerPage = ({
                     <TrackTitle>{planetMedia.trackName}</TrackTitle>
                     <TrackMeta>
                       {hasGeneratedAudio
-                        ? `${formatClock(durationSec)} 동안 현재 상태에서 목표 상태 방향으로 이동하도록 설계된 세션`
+                        ? '현재 상태에서 목표 상태 방향으로 이동하도록 설계된 AI 세션'
                         : generatedJourney
-                        ? `${formatClock(durationSec)} 동안 AI 개입 벡터와 조명 계획을 유지하는 플레이어`
-                        : `${formatClock(durationSec)} 기본 행성 트랙`}
+                        ? 'AI 개입 벡터와 조명 계획을 유지하는 플레이어'
+                        : '기본 행성 트랙'}
                     </TrackMeta>
                   </TrackCopy>
-
-                  <ProgressLine>
-                    <TimeText>{formatClock(playheadSec)}</TimeText>
-                    <Range
-                      type="range"
-                      min={0}
-                      max={playerMax}
-                      value={Math.min(playheadSec, playerMax)}
-                      onChange={(event) => onSeek(Number(event.target.value))}
-                      $accent={accentColor}
-                    />
-                    <TimeText>{formatClock(remainingSec)}</TimeText>
-                  </ProgressLine>
 
                   <ControlRow>
                     <PlayerButtons>

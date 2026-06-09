@@ -57,7 +57,6 @@ import {
   saveStorageJSON,
   writeStorageText,
 } from './travel/storage';
-import { formatClock } from './travel/utils';
 import { getPlanetAccent } from '../../../lib/planetAccents';
 import { Shell, StepFrame } from './travel/spaceTravel.styles';
 
@@ -597,6 +596,7 @@ const SpaceTravel = ({
   const audioPlayRetryRef = useRef(null);
   const audioPlayAttemptsRef = useRef(0);
   const audioSourceAutoResumeRef = useRef(false);
+  const audioPlaybackUnlockedRef = useRef(false);
   const journeyLightingJobRef = useRef(null);
   const lightingRestoreRequestedRef = useRef(false);
   const stateSnapshotRef = useRef(stateSnapshot);
@@ -645,6 +645,92 @@ const SpaceTravel = ({
     isPlayingRef.current = normalizedIsPlaying;
     setIsPlaying(normalizedIsPlaying);
   }, []);
+
+  const shouldResumePrimaryAudio = useCallback(() => (
+    !journeyExitInProgressRef.current &&
+    playbackIntentRef.current &&
+    currentStepRef.current === STEP_PLAYER
+  ), []);
+
+  const playPrimaryAudio = useCallback((reason = 'auto-resume', options = {}) => {
+    const audio = audioRef.current;
+    if (!hasRealAudio || !audio) {
+      return false;
+    }
+
+    const maxAttempts = Math.max(1, Number(options.maxAttempts || 12));
+    const retryDelayMs = Math.max(80, Number(options.retryDelayMs || 180));
+
+    if (audioPlayRetryRef.current) {
+      clearTimeout(audioPlayRetryRef.current);
+      audioPlayRetryRef.current = null;
+    }
+
+    audioSourceAutoResumeRef.current = true;
+    setPlaybackActive(true);
+
+    const attemptPlay = (attemptIndex = 0) => {
+      if (!shouldResumePrimaryAudio()) {
+        audioSourceAutoResumeRef.current = false;
+        audioPlayAttemptsRef.current = 0;
+        return;
+      }
+
+      const playPromise = audio.play();
+      if (!playPromise || typeof playPromise.catch !== 'function') {
+        audioPlaybackUnlockedRef.current = true;
+        audioSourceAutoResumeRef.current = false;
+        audioPlayAttemptsRef.current = 0;
+        setPlaybackNotice('');
+        return;
+      }
+
+      playPromise
+        .then(() => {
+          audioPlaybackUnlockedRef.current = true;
+          audioSourceAutoResumeRef.current = false;
+          audioPlayAttemptsRef.current = 0;
+          setPlaybackNotice('');
+        })
+        .catch((error) => {
+          if (!shouldResumePrimaryAudio()) {
+            audioSourceAutoResumeRef.current = false;
+            audioPlayAttemptsRef.current = 0;
+            return;
+          }
+
+          const autoplayBlocked = isAutoplayBlockedError(error);
+          const retryableAutoplayBlock = autoplayBlocked && audioPlaybackUnlockedRef.current;
+          const retryable =
+            isPlayRequestInterruptedError(error) ||
+            retryableAutoplayBlock ||
+            !autoplayBlocked;
+
+          if (!retryable || attemptIndex >= maxAttempts) {
+            audioSourceAutoResumeRef.current = false;
+            audioPlayAttemptsRef.current = 0;
+            setPlaybackActive(false);
+            setPlaybackNotice(
+              autoplayBlocked
+                ? '브라우저 재생 제한으로 다음 음악이 자동 시작되지 않았습니다. PLAY를 눌러 재생을 시작하세요.'
+                : '다음 음악 재생을 시작하지 못했습니다. 잠시 후 PLAY를 다시 눌러 주세요.'
+            );
+            console.warn(`Primary audio ${reason} failed:`, error);
+            return;
+          }
+
+          audioSourceAutoResumeRef.current = true;
+          audioPlayAttemptsRef.current = attemptIndex + 1;
+          audioPlayRetryRef.current = window.setTimeout(() => {
+            audioPlayRetryRef.current = null;
+            attemptPlay(attemptIndex + 1);
+          }, retryDelayMs);
+        });
+    };
+
+    attemptPlay(0);
+    return true;
+  }, [hasRealAudio, setPlaybackActive, shouldResumePrimaryAudio]);
 
   const clearAiTimers = useCallback(() => {
     aiTimersRef.current.forEach((timerId) => clearTimeout(timerId));
@@ -2003,11 +2089,22 @@ const SpaceTravel = ({
       const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration) : TRACK_DURATION_SEC;
       setTrackDurationSec(duration);
       setPlaybackNotice('');
+
+      const handoff = crossfadeHandoffRef.current;
+      if (handoff?.audioUrl === effectivePlanetMedia?.audio) {
+        const handoffTime = Math.max(0, Math.min(Number(handoff.currentTime || 0), Math.max(duration - 0.25, 0)));
+        try {
+          audio.currentTime = handoffTime;
+          setPlayheadSec(handoffTime);
+        } catch (error) {
+          console.warn('Failed to restore audio handoff time:', error);
+        }
+      }
     };
     const handleCanPlay = () => {
       setPlaybackNotice('');
       if (audioSourceAutoResumeRef.current || shouldAutoResume()) {
-        setPlaybackActive(true);
+        playPrimaryAudio('canplay', { maxAttempts: 14, retryDelayMs: 180 });
       }
     };
     const handleTimeUpdate = () => {
@@ -2027,29 +2124,15 @@ const SpaceTravel = ({
       setPlaybackNotice('다음 음악을 준비하는 동안 현재 트랙을 한 번 더 유지합니다.');
       audio.currentTime = 0;
       setPlayheadSec(0);
-      setPlaybackActive(true);
-      audio.play().catch((error) => {
-        console.warn('Failed to restart current track while queue is preparing:', error);
-        if (isPlayRequestInterruptedError(error) && shouldAutoResume()) {
-          audioSourceAutoResumeRef.current = true;
-          audioPlayRetryRef.current = window.setTimeout(() => {
-            if (shouldAutoResume()) {
-              audio.play().catch((retryError) => {
-                console.warn('Failed to retry current track restart:', retryError);
-              });
-            }
-          }, 180);
-          return;
-        }
-        setPlaybackActive(false);
-        setPlayheadSec(audio.duration || TRACK_DURATION_SEC);
-      });
+      audioSourceAutoResumeRef.current = true;
+      playPrimaryAudio('track-loop-recovery', { maxAttempts: 14, retryDelayMs: 180 });
     };
     const handlePlay = () => {
       if (journeyExitInProgressRef.current) {
         audio.pause();
         return;
       }
+      audioPlaybackUnlockedRef.current = true;
       setPlaybackActive(true);
     };
     const handlePause = () => {
@@ -2092,6 +2175,7 @@ const SpaceTravel = ({
     effectivePlanetMedia?.audio,
     hasGeneratedJourneyAudio,
     hasRealAudio,
+    playPrimaryAudio,
     setPlaybackActive,
   ]);
 
@@ -2117,62 +2201,8 @@ const SpaceTravel = ({
       return;
     }
 
-    const tryPlay = () => {
-      if (journeyExitInProgressRef.current) {
-        audioSourceAutoResumeRef.current = false;
-        audio.pause();
-        return;
-      }
-
-      const playPromise = audio.play();
-      if (!playPromise || typeof playPromise.catch !== 'function') return;
-
-      playPromise
-        .then(() => {
-          audioSourceAutoResumeRef.current = false;
-          audioPlayAttemptsRef.current = 0;
-          setPlaybackNotice('');
-        })
-        .catch((error) => {
-          if (
-            journeyExitInProgressRef.current ||
-            !playbackIntentRef.current ||
-            currentStepRef.current !== STEP_PLAYER
-          ) {
-            audioSourceAutoResumeRef.current = false;
-            audioPlayAttemptsRef.current = 0;
-            return;
-          }
-
-          if (isPlayRequestInterruptedError(error)) {
-            audioSourceAutoResumeRef.current = true;
-          }
-
-          if (isAutoplayBlockedError(error)) {
-            audioSourceAutoResumeRef.current = false;
-            setPlaybackNotice('브라우저 자동재생 제한으로 시작되지 않았습니다. PLAY를 눌러 재생을 시작하세요.');
-            setPlaybackActive(false);
-            audioPlayAttemptsRef.current = 0;
-            return;
-          }
-
-          if (audioPlayAttemptsRef.current >= 8) {
-            audioSourceAutoResumeRef.current = false;
-            setPlaybackNotice('오디오 재생을 시작하지 못했습니다. 잠시 후 PLAY를 다시 눌러 주세요.');
-            setPlaybackActive(false);
-            audioPlayAttemptsRef.current = 0;
-            return;
-          }
-
-          audioPlayAttemptsRef.current += 1;
-          audioPlayRetryRef.current = window.setTimeout(() => {
-            tryPlay();
-          }, 160);
-        });
-    };
-
-    tryPlay();
-  }, [currentStep, effectivePlanetMedia?.audio, hasRealAudio, isPlaying, setPlaybackActive]);
+    playPrimaryAudio('playback-effect', { maxAttempts: 14, retryDelayMs: 180 });
+  }, [currentStep, effectivePlanetMedia?.audio, hasRealAudio, isPlaying, playPrimaryAudio]);
 
   useEffect(() => {
     if (!pendingAdaptiveAudio?.audioUrl) return undefined;
@@ -2200,6 +2230,10 @@ const SpaceTravel = ({
       nextAudio.volume = 0;
 
       const bundleDuration = Number(pendingAdaptiveAudio.bundle?.audioDurationSec);
+      audioSourceAutoResumeRef.current = true;
+      playbackIntentRef.current = true;
+      isPlayingRef.current = true;
+      audioPlayAttemptsRef.current = 0;
       setGeneratedJourney(pendingAdaptiveAudio.bundle);
       setTrackDurationSec(Number.isFinite(bundleDuration) && bundleDuration > 0 ? Math.round(bundleDuration) : JOURNEY_GENERATION_DURATION_SEC);
       setPlayheadSec(handoffTime);
@@ -2239,6 +2273,7 @@ const SpaceTravel = ({
         }, 120);
       } catch (error) {
         console.warn('Adaptive crossfade failed. Switching track without overlap:', error);
+        audioSourceAutoResumeRef.current = true;
         finishCrossfade();
       }
     };
@@ -2265,18 +2300,23 @@ const SpaceTravel = ({
 
     const timeoutId = window.setTimeout(() => {
       const baseVolume = Math.max(0, Math.min(1, (volumePercent / 100) * adaptiveVolumeScaleRef.current));
-      audio.currentTime = handoff.currentTime || 0;
+      try {
+        audio.currentTime = handoff.currentTime || 0;
+      } catch (error) {
+        console.warn('Adaptive crossfade handoff seek failed:', error);
+      }
       audio.volume = baseVolume;
-      if (isPlaying) {
-        audio.play().catch((error) => {
-          console.warn('Adaptive crossfade handoff play failed:', error);
-        });
+      if (playbackIntentRef.current || isPlaying) {
+        audioSourceAutoResumeRef.current = true;
+        playbackIntentRef.current = true;
+        setPlaybackActive(true);
+        playPrimaryAudio('crossfade-handoff', { maxAttempts: 18, retryDelayMs: 180 });
       }
       crossfadeHandoffRef.current = null;
     }, 80);
 
     return () => clearTimeout(timeoutId);
-  }, [effectivePlanetMedia?.audio, isPlaying, volumePercent]);
+  }, [effectivePlanetMedia?.audio, isPlaying, playPrimaryAudio, setPlaybackActive, volumePercent]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -2440,14 +2480,6 @@ const SpaceTravel = ({
     saveStorageJSON(PROFILE_STORAGE_KEY, profileForm);
   }, [profileForm]);
 
-  const handleSeek = useCallback((nextSec) => {
-    const clamped = Math.max(0, Math.min(trackDurationSec, Number(nextSec) || 0));
-    setPlayheadSec(clamped);
-    if (hasRealAudio && audioRef.current) {
-      audioRef.current.currentTime = clamped;
-    }
-  }, [hasRealAudio, trackDurationSec]);
-
   const handleRewind = useCallback(() => {
     setPlayheadSec((prev) => {
       const next = Math.max(prev - 10, 0);
@@ -2495,11 +2527,13 @@ const SpaceTravel = ({
 
     const playPromise = audio.play();
     if (!playPromise || typeof playPromise.catch !== 'function') {
+      audioPlaybackUnlockedRef.current = true;
       return;
     }
 
     playPromise
       .then(() => {
+        audioPlaybackUnlockedRef.current = true;
         audioPlayAttemptsRef.current = 0;
         setPlaybackNotice('');
       })
@@ -2836,14 +2870,10 @@ const SpaceTravel = ({
             <TravelPlayerPage
               planetMedia={effectivePlanetMedia}
               accentColor={accentColor}
-              playheadSec={playheadSec}
               durationSec={trackDurationSec}
-              remainingSec={Math.max(trackDurationSec - playheadSec, 0)}
               isPlaying={isPlaying}
-              formatClock={formatClock}
               onOpenDashboard={handleOpenDashboard}
               onOpenProfile={handleOpenProfile}
-              onSeek={handleSeek}
               onRewind={handleRewind}
               onForward={handleForward}
               onTogglePlay={handleTogglePlay}

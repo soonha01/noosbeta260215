@@ -52,8 +52,8 @@ The current target model configuration is:
 ```properties
 noos.ai.ace-step.model=acestep-v15-xl-turbo
 noos.ai.ace-step.lm-model=acestep-5Hz-lm-1.7B
-noos.ai.ace-step.use-enhanced-request=true
-noos.ai.ace-step.inference-steps=8
+noos.ai.ace-step.use-enhanced-request=false
+noos.ai.ace-step.inference-steps=6
 ```
 
 Windows handoff files created during setup live in `ai/docs/`.
