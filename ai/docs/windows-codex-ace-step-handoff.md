@@ -1,17 +1,17 @@
-# Windows Codex Handoff: NOOS ACE-Step Worker on RTX 4080
+# Windows Codex 인수인계: RTX 4080 NOOS ACE-Step 작업자
 
-이 문서는 Windows RTX 4080 PC에서 ACE-Step 1.5 API 서버를 실행해 Mac의 NOOS backend가 원격 음악 생성 worker로 사용할 수 있게 만드는 인수인계 메모다.
+이 문서는 Windows RTX 4080 PC에서 ACE-Step 1.5 API 서버를 실행해 Mac의 NOOS backend가 원격 음악 생성 작업자로 사용할 수 있게 만드는 인수인계 메모다.
 
 ## 목표 구조
 
 ```text
 Mac
-- NOOS frontend
-- Spring backend
+- NOOS 프론트엔드
+- Spring 백엔드
 - NOOS Python planner / recognition / intervention
 
 Windows RTX 4080 PC
-- ACE-Step API server only
+- ACE-Step API 서버만 실행
 - http://0.0.0.0:8011 로 열어 Mac backend가 접속
 ```
 
@@ -138,7 +138,7 @@ LM 1.7B는 정상 동작하지만 10초 생성 기준 더 느렸다.
 
 ## Mac 쪽에서 나중에 필요한 코드 수정
 
-Windows Codex가 당장 처리할 필요는 없지만, 전체 연동을 완성하려면 Mac repo에서 다음 수정이 필요하다.
+Windows Codex가 당장 처리할 필요는 없지만, 전체 연동을 완성하려면 Mac 저장소에서 다음 수정이 필요하다.
 
 1. `noos.ai.ace-step.base-url`을 Windows PC IP로 바꾸기
 
@@ -146,9 +146,9 @@ Windows Codex가 당장 처리할 필요는 없지만, 전체 연동을 완성�
 noos.ai.ace-step.base-url=http://WINDOWS_PC_IP:8011
 ```
 
-2. ACE-Step auto-start를 local URL일 때만 실행하도록 분리
+2. ACE-Step 자동 시작을 로컬 URL일 때만 실행하도록 분리
 
-현재 Mac backend는 ACE-Step health 실패 시 로컬 `ai/scripts/start_acestep_api.sh`를 실행하려 한다. 원격 worker 구조에서는 Windows PC가 꺼져 있을 때 Mac에서 로컬 ACE-Step을 잘못 띄우면 안 된다.
+현재 Mac backend는 ACE-Step health 실패 시 로컬 `ai/scripts/start_acestep_api.sh`를 실행하려 한다. 원격 작업자 구조에서는 Windows PC가 꺼져 있을 때 Mac에서 로컬 ACE-Step을 잘못 띄우면 안 된다.
 
 권장 설정:
 
@@ -156,7 +156,7 @@ noos.ai.ace-step.base-url=http://WINDOWS_PC_IP:8011
 noos.ai.ace-step.auto-start=false
 ```
 
-또는 URL이 `localhost`, `127.0.0.1`, `::1`일 때만 auto-start.
+또는 URL이 `localhost`, `127.0.0.1`, `::1`일 때만 자동 시작한다.
 
 3. 원격 ACE-Step 오디오 결과 처리
 
@@ -182,7 +182,7 @@ Windows Codex는 다음을 확인하고 보고하면 된다.
 2. uv sync 성공 여부
 3. RTX 4080 / CUDA 인식 여부
 4. ACE-Step API가 0.0.0.0:8011에서 실행 중인지
-5. Windows local health 응답
+5. Windows 로컬 health 응답
 6. Windows LAN IP
 7. Mac에서 curl http://WINDOWS_PC_IP:8011/health 로 접근 가능한지
 ```

@@ -1,4 +1,4 @@
-# Mac Backend Remote ACE-Step Notes
+# Mac 백엔드 원격 ACE-Step 참고
 
 Windows RTX 4080 PC에서 ACE-Step API가 켜지면, Mac backend는 `localhost:8011` 대신 Windows PC IP를 봐야 한다.
 
@@ -17,15 +17,15 @@ Windows에서 localhost = Windows 자기 자신
 
 따라서 Mac backend가 Windows ACE-Step에 붙으려면 반드시 Windows PC의 LAN IP를 써야 한다.
 
-## 주의 2: auto-start
+## 주의 2: 자동 시작
 
 현재 Mac backend는 ACE-Step이 안 닿으면 로컬 ACE-Step을 시작하려고 한다.
 
-원격 worker 구조에서는 다음 정책이 필요하다.
+원격 작업자 구조에서는 다음 정책이 필요하다.
 
 ```text
-ACE-Step URL이 localhost면 auto-start 가능
-ACE-Step URL이 원격 IP면 auto-start 금지, health check만 수행
+ACE-Step URL이 localhost면 자동 시작 가능
+ACE-Step URL이 원격 IP면 자동 시작 금지, health check만 수행
 ```
 
 권장 설정:
@@ -49,4 +49,3 @@ Mac backend
 ```
 
 이 방식이 지금 프로젝트 구조에 가장 잘 맞는다.
-

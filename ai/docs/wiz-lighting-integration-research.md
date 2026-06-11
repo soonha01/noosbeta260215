@@ -1,47 +1,47 @@
-# WiZ Lighting Integration Research
+# WiZ 조명 연동 조사
 
-## Summary
+## 요약
 
-Philips Smart LED Connected by WiZ bulbs are a good fit for the current NOOS lighting handoff.
+Philips Smart LED Connected by WiZ 전구는 현재 NOOS 조명 handoff 구조와 잘 맞는다.
 
-Best first integration path:
+가장 단순하고 안전한 1차 연동 경로는 아래와 같다.
 
-1. Use WiZ local UDP control on port `38899`.
-2. Discover bulbs with `getSystemConfig` / `getPilot`.
-3. Apply NOOS white-light scenes with `setPilot` using `temp` and `dimming`.
-4. Keep `illuminance_lux_target` as a calibration target, not as a direct WiZ command.
-5. Add RGB mode later for decorative/planet color scenes, because WiZ full-color bulbs switch between tunable-white mode and RGB mode.
+1. `38899` 포트의 WiZ local UDP control을 사용한다.
+2. `getSystemConfig` / `getPilot`으로 전구를 찾고 현재 상태를 읽는다.
+3. NOOS white-light scene은 `setPilot`의 `temp`와 `dimming`으로 적용한다.
+4. `illuminance_lux_target`은 직접 WiZ 명령이 아니라 calibration 목표값으로 유지한다.
+5. 장식용/행성 색상 scene은 나중에 RGB mode로 추가한다. WiZ full-color 전구는 tunable-white mode와 RGB mode 사이를 전환하기 때문이다.
 
-## Sources Checked
+## 확인한 자료
 
-- Signify / Philips WiZ data notice says nearly all WiZ products except WiZ Camera expose a local control API and that local access can be disabled with the WiZ app's "Allow local communication" toggle:
+- Signify / Philips WiZ data notice는 WiZ Camera를 제외한 거의 모든 WiZ 제품이 local control API를 제공하며, WiZ 앱의 "Allow local communication" toggle로 local access를 끌 수 있다고 설명한다.
   - https://www.usa.lighting.philips.com/consumer/wiz-data-notice
-- Official WiZ local control project:
+- 공식 WiZ local control project:
   - https://gitlab.com/wizlighting/wiz-local-control
-- Home Assistant WiZ integration documents Wi-Fi/no-bridge setup and the local communication toggle:
+- Home Assistant WiZ integration 문서는 Wi-Fi/no-bridge 설정과 local communication toggle을 설명한다.
   - https://www.home-assistant.io/integrations/wiz/
-- pywizlight documents the native UDP methods and examples:
+- pywizlight는 native UDP method와 예제를 문서화한다.
   - https://pypi.org/project/pywizlight/
-- openHAB WiZ binding documents the local UDP approach, supported channels, scene IDs, and limitations:
+- openHAB WiZ binding은 local UDP 방식, 지원 channel, scene ID, 한계를 설명한다.
   - https://www.openhab.org/addons/bindings/wiz/
-- WiZ Matter compatibility reference:
+- WiZ Matter compatibility 참고:
   - https://faq.wizconnected.com/hc/en/3-wiz/faq/539-matter-compatible-product-list/
   - https://www.wizconnected.com/en-us/explore-wiz/works-with
 
-## Local Discovery Result
+## 로컬 발견 결과
 
-Read-only UDP discovery was attempted first with broadcast. Broadcast returned no devices, but direct UDP reads against ARP candidates found four WiZ bulbs on `192.168.123.0/24`.
+먼저 broadcast 방식으로 read-only UDP discovery를 시도했다. Broadcast는 장치를 반환하지 않았지만, ARP 후보 IP에 직접 UDP read를 보내자 `192.168.123.0/24` 대역에서 WiZ 전구 4개를 찾았다.
 
-No state-changing command was sent.
+상태를 바꾸는 명령은 보내지 않았다.
 
-| IP | MAC | Module | Firmware | State | Scene | Temp | Dimming | RSSI |
+| IP | MAC | Module | Firmware | 상태 | Scene | Temp | Dimming | RSSI |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `192.168.123.100` | `9877d5140d5a` | `ESP25_SHRGB_01` | `1.37.0` | on | `12` | `4200K` | `51` | `-72` |
 | `192.168.123.102` | `d8a0119fdcf7` | `ESP20_SHRGB_01ABI` | `1.37.0` | on | `12` | `4200K` | `51` | `-77` |
 | `192.168.123.112` | `444f8ee85dbc` | `ESP20_SHRGB_01ABI` | `1.37.0` | on | `12` | `4200K` | `51` | `-78` |
 | `192.168.123.113` | `9877d5141bc6` | `ESP25_SHRGB_01` | `1.37.0` | on | `12` | `4200K` | `51` | `-78` |
 
-Observed `getPilot` response shape:
+관찰한 `getPilot` 응답 형태:
 
 ```json
 {
@@ -58,56 +58,56 @@ Observed `getPilot` response shape:
 }
 ```
 
-## WiZ Local UDP Basics
+## WiZ 로컬 UDP 기본
 
-Default port:
+기본 포트:
 
 ```text
 UDP 38899
 ```
 
-Read current state:
+현재 상태 읽기:
 
 ```json
 {"method":"getPilot","params":{}}
 ```
 
-Read system/device config:
+시스템/장치 설정 읽기:
 
 ```json
 {"method":"getSystemConfig","params":{}}
 ```
 
-Set tunable-white scene:
+tunable-white scene 설정:
 
 ```json
 {"method":"setPilot","params":{"state":true,"temp":4200,"dimming":51}}
 ```
 
-Set RGB scene:
+RGB scene 설정:
 
 ```json
 {"method":"setPilot","params":{"state":true,"r":242,"g":216,"b":197,"dimming":38}}
 ```
 
-Set built-in scene/effect:
+내장 scene/effect 설정:
 
 ```json
 {"method":"setPilot","params":{"state":true,"sceneId":12,"speed":100,"dimming":51}}
 ```
 
-## Important Limitations
+## 중요한 한계
 
-- WiZ full-color bulbs operate in either RGB color mode or tunable-white/color-temperature mode. Sending RGB switches to RGB mode; sending `temp` switches to tunable-white mode.
-- Dimming commonly clamps at `10-100`.
-- WiZ `dimming` is not equal to measured room lux. NOOS `illuminance_lux_target` needs calibration with the bulb model, distance, room reflectance, and optionally a lux meter.
-- UDP control does not provide a reliable per-command transition duration. Smooth transitions should be implemented by sending gradual small steps over time, or by routing through Matter/Home Assistant where transition support may be better.
-- Local control requires the bulbs to be on the same reachable LAN and WiZ app setting `Allow local communication` enabled.
-- Many newer WiZ / Philips Smart LED Connected by WiZ products support Matter, but Matter is not the simplest first path for direct NOOS-generated values.
+- WiZ full-color 전구는 RGB color mode 또는 tunable-white/color-temperature mode 중 하나로 동작한다. RGB를 보내면 RGB mode로 바뀌고, `temp`를 보내면 tunable-white mode로 바뀐다.
+- Dimming은 보통 `10-100` 범위로 clamp된다.
+- WiZ `dimming`은 실제 실내 lux 측정값과 같지 않다. NOOS `illuminance_lux_target`은 전구 모델, 거리, 방 반사율, 필요 시 lux meter를 사용해 calibration해야 한다.
+- UDP control은 명령별 transition duration을 안정적으로 제공하지 않는다. 부드러운 전환은 작은 step을 시간에 따라 여러 번 보내거나, transition 지원이 더 나을 수 있는 Matter/Home Assistant 경로를 통해 구현해야 한다.
+- Local control을 쓰려면 전구가 접근 가능한 같은 LAN에 있어야 하고, WiZ 앱의 `Allow local communication` 설정이 켜져 있어야 한다.
+- 최신 WiZ / Philips Smart LED Connected by WiZ 제품 다수는 Matter를 지원하지만, NOOS가 생성한 값을 직접 적용하는 1차 경로로는 Matter가 가장 단순하지 않다.
 
-## NOOS To WiZ Mapping
+## NOOS에서 WiZ로 매핑
 
-Existing NOOS lighting output already contains:
+기존 NOOS 조명 output에는 이미 아래 값이 들어 있다.
 
 - `brightness_percent`
 - `cct_kelvin`
@@ -119,31 +119,31 @@ Existing NOOS lighting output already contains:
 - `transition_sec`
 - phase durations
 
-Recommended first mapping:
+권장 1차 mapping:
 
 ```text
 NOOS brightness_percent -> WiZ dimming
 NOOS cct_kelvin         -> WiZ temp
-NOOS primary_hex        -> WiZ RGB only for decorative mode
-NOOS lux target         -> calibration metadata, not direct command
+NOOS primary_hex        -> 장식 mode에서만 WiZ RGB로 사용
+NOOS lux target         -> 직접 명령이 아니라 calibration metadata
 NOOS transition_sec     -> client-side step/ramp scheduler
 ```
 
-For research-grounded focus/recovery scenes, prefer tunable-white mode:
+연구 근거가 있는 집중/회복 scene에는 tunable-white mode를 우선 사용한다.
 
 ```json
 {"method":"setPilot","params":{"state":true,"temp":4780,"dimming":42}}
 ```
 
-For decorative planet-color previews, use RGB mode:
+장식용 행성 색상 preview에는 RGB mode를 사용한다.
 
 ```json
 {"method":"setPilot","params":{"state":true,"r":242,"g":216,"b":197,"dimming":42}}
 ```
 
-## Sample NOOS Neptune Output Converted To WiZ
+## NOOS 해왕성(Neptune) 출력을 WiZ로 변환한 예시
 
-Input used for the sample:
+예시에 사용한 입력:
 
 ```json
 {
@@ -160,16 +160,16 @@ Input used for the sample:
 }
 ```
 
-Output:
+출력:
 
-| Phase | Duration | Transition | Brightness | CCT | Lux Target | WiZ Payload |
+| 단계 | 길이 | 전환 시간 | 밝기 | CCT | Lux 목표 | WiZ 페이로드 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | `stabilize` | `36s` | `8s` | `42%` | `4780K` | `590 lx` | `{"method":"setPilot","params":{"state":true,"temp":4780,"dimming":42}}` |
 | `deepen` | `54s` | `8s` | `38%` | `4580K` | `490 lx` | `{"method":"setPilot","params":{"state":true,"temp":4580,"dimming":38}}` |
 
-## Implementation Recommendation
+## 구현 권장안
 
-Add a backend-side WiZ adapter:
+백엔드 쪽에 WiZ adapter를 추가한다.
 
 ```text
 NOOS lighting_spec.hardware_handoff.sequence
@@ -178,7 +178,7 @@ NOOS lighting_spec.hardware_handoff.sequence
   -> optional gradual ramp scheduler
 ```
 
-Suggested Java/Spring API endpoints:
+권장 Java/Spring API endpoint:
 
 ```text
 GET  /api/lighting/wiz/discover
@@ -187,12 +187,11 @@ POST /api/lighting/wiz/test-scene
 POST /api/lighting/wiz/apply-plan
 ```
 
-Safety defaults:
+기본 안전 규칙:
 
-- Discovery and state read are allowed.
-- Actual `setPilot` commands should be behind an explicit user action.
-- Start with a single bulb or selected group before broadcasting to every bulb.
-- Clamp brightness to the existing NOOS limit, currently `10-88`.
-- Clamp CCT to `2400-6500K`.
-- No rapid flashing.
-
+- Discovery와 상태 읽기는 허용한다.
+- 실제 `setPilot` 명령은 명시적인 사용자 action 뒤에서만 실행한다.
+- 모든 전구에 broadcast하기 전에 단일 전구 또는 선택한 group부터 시작한다.
+- brightness는 기존 NOOS 제한인 `10-88`로 clamp한다.
+- CCT는 `2400-6500K`로 clamp한다.
+- 빠른 flashing은 금지한다.

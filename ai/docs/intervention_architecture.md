@@ -1,17 +1,17 @@
-# Intervention Architecture
+# 개입 아키텍처
 
 이 문서는 `recognition -> intervention -> adaptation` 흐름에서 intervention 엔진이 무엇을 하는지 정리한다.
 
 ## 1. 핵심 개념
 
-intervention session의 목적은 “음악을 생성하는 것”이 아니다.  
-목적은 현재 상태와 목표 상태의 차이를 계산해, 조명과 음악을 위한 `controlled spec`를 만드는 것이다.
+intervention session의 목적은 단순히 “음악을 생성하는 것”이 아니다.
+진짜 목적은 현재 상태와 목표 상태의 차이를 계산해, 조명과 음악을 안정적으로 제어할 수 있는 `controlled spec`을 만드는 것이다.
 
 ## 2. 입력
 
 intervention 입력은 두 방식 중 하나다.
 
-### A. recognition 결과 전체
+### A. 인식 결과 전체
 
 - `recognition_result.state_profile.dimensions`
 - `recognition_result.quality`
@@ -24,19 +24,19 @@ intervention 입력은 두 방식 중 하나다.
 
 ## 3. 처리 단계
 
-### Step 1. 현재 상태 벡터 추출
+### 1단계. 현재 상태 벡터 추출
 
 현재 recognition 엔진의 6개 상태 점수를 intervention 축으로 그대로 쓴다.
 
-### Step 2. 행성 목표 상태 벡터 로드
+### 2단계. 행성 목표 상태 벡터 로드
 
 행성마다 미리 정의된 목표 벡터와 style bias를 읽는다.
 
-### Step 3. delta 계산
+### 3단계. 변화량 계산
 
 `target - current` 를 각 축별로 계산한다.
 
-### Step 4. transition mode 선택
+### 4단계. 전환 모드 선택
 
 예:
 
@@ -45,7 +45,7 @@ intervention 입력은 두 방식 중 하나다.
 - `Pluto` -> `downshift_and_restore`
 - 현재와 목표가 비슷함 -> `maintain_and_refine`
 
-### Step 5. phase plan 생성
+### 5단계. 단계 계획 생성
 
 한 세션을 1~2개의 phase로 나눈다.
 
@@ -57,7 +57,7 @@ intervention 입력은 두 방식 중 하나다.
 - `recover`
 - `maintain`
 
-### Step 6. lighting spec 생성
+### 6단계. 조명 명세 생성
 
 phase별로 다음을 만든다.
 
@@ -68,7 +68,7 @@ phase별로 다음을 만든다.
 - motion intensity
 - pulse bpm
 
-### Step 7. music spec 생성
+### 7단계. 음악 명세 생성
 
 phase와 행성 profile을 합쳐 다음을 만든다.
 
@@ -83,7 +83,7 @@ phase와 행성 profile을 합쳐 다음을 만든다.
 - primary instruments
 - avoid list
 
-### Step 8. ACE-Step 요청 payload 생성
+### 8단계. ACE-Step 요청 페이로드 생성
 
 NOOS는 먼저 prompt와 control payload를 만든 뒤, 그걸 ACE-Step API로 넘긴다.
 
@@ -106,7 +106,7 @@ NOOS는 먼저 prompt와 control payload를 만든 뒤, 그걸 ACE-Step API로 �
 
 즉 ACE-Step은 작곡자이고, NOOS는 감독이다.
 
-## 5. adaptation 연결
+## 5. 적응 단계 연결
 
 현재 구현은 intervention spec까지만 만든다.  
 다음 단계 adaptation에서는 재생 중 EEG 또는 피드백을 보고 다음을 조정한다.

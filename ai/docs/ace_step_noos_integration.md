@@ -1,4 +1,4 @@
-# ACE-Step NOOS Integration
+# ACE-Step NOOS 연동
 
 이 문서는 NOOS가 ACE-Step 1.5를 어떻게 붙이는지 정리한다.
 
@@ -22,15 +22,15 @@ git clone https://github.com/ace-step/ACE-Step-1.5.git vendor/ACE-Step-1.5
 ## 2. 공식 근거
 
 - GitHub: [ace-step/ACE-Step-1.5](https://github.com/ace-step/ACE-Step-1.5)
-- Project Page: [ACE-Step 1.5](https://ace-step.github.io/ace-step-v1.5.github.io/)
-- Paper: [arXiv 2602.00744](https://arxiv.org/abs/2602.00744)
+- 프로젝트 페이지: [ACE-Step 1.5](https://ace-step.github.io/ace-step-v1.5.github.io/)
+- 논문: [arXiv 2602.00744](https://arxiv.org/abs/2602.00744)
 
 확인한 사실:
 
 - macOS Apple Silicon / MLX 지원
 - REST API 지원
 - `bpm`, `key_scale`, `time_signature`, `audio_duration` 제어 가능
-- `thinking` 기반 LM planning 옵션 존재
+- `thinking` 기반 LM planning 옵션이 존재함
 
 ## 3. 검증 상태
 
@@ -61,10 +61,10 @@ ACESTEP_NO_INIT=true uv run acestep-api --host 127.0.0.1 --port 8011
 추가 검증 결과:
 
 - `8012` 포트에서 실제 체크포인트 다운로드, 모델 초기화, 생성 성공까지 확인했다.
-- `8013` 포트의 fresh server에서 `python3 -m noos_ai.cli <10초 intervention input> --generate-ace-step` 경로까지 성공 확인했다.
+- `8013` 포트의 새 서버에서 `python3 -m noos_ai.cli <10초 intervention input> --generate-ace-step` 경로까지 성공 확인했다.
 - 10초 `Neptune` intervention 기준으로 실제 mp3 파일 4개가 생성됐다.
 
-즉 현재 기준 상태는 `minimum API verified`를 넘어서 `real generation verified`다.
+즉 현재 기준 상태는 `minimum API verified`를 넘어 `real generation verified`다.
 
 ## 4. NOOS가 직접 하는 일
 

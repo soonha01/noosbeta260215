@@ -1,4 +1,4 @@
-# Research Foundations
+# 연구 근거
 
 이 문서는 현재 `recognition session` 엔진이 어떤 근거 위에서 무엇을 말하고, 무엇은 아직 과장하지 않는지를 정리한 문서다.
 
@@ -18,7 +18,7 @@
 
 ## 2. 근거가 비교적 강한 축
 
-### 2.1 Cognitive workload
+### 2.1 인지 작업부하
 
 주요 근거:
 
@@ -37,7 +37,7 @@
 
 를 중심으로 사용한다.
 
-### 2.2 Mental fatigue / sleepiness risk
+### 2.2 정신 피로 / 졸림 위험
 
 주요 근거:
 
@@ -58,7 +58,7 @@
 
 를 묶어서 본다.
 
-### 2.3 Stress load
+### 2.3 스트레스 부하
 
 주요 근거:
 
@@ -111,13 +111,13 @@
 다음 단계에서 supervised / calibrated model로 확장할 수 있게 공식 데이터셋 카탈로그를 같이 넣었다.
 
 - EEGMAT: [PhysioNet EEG During Mental Arithmetic Tasks](https://www.physionet.org/content/eegmat/1.0.0/)
-  workload / arousal-like 변화
+  작업부하 / 각성 유사 변화
 - SEED-VIG: [SEED-VIG](https://weilongzheng.github.io/datasets/seed-vig/)
-  vigilance / fatigue
+  각성 유지 / 피로
 - DEAP: [DEAP Dataset](https://www.eecs.qmul.ac.uk/mmv/datasets/deap/download_split.html)
-  valence / arousal
+  정서 valence / arousal
 - AMIGOS: [AMIGOS Dataset](https://eecs.qmul.ac.uk/mmv/datasets/amigos/index.html)
-  affect / mood / social context
+  정서 / 기분 / 사회적 맥락
 
 ## 6. 결론
 

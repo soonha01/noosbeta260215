@@ -1,4 +1,4 @@
-# NOOS Frontend
+# NOOS 프론트엔드
 
 NOOS의 단일 실행 프론트엔드입니다. 로컬에서는 이 폴더의 Vite 앱만 `localhost:3000`으로 실행합니다. 기존 Next 기반 랜딩 페이지와 AI Objet 제품 설명 페이지는 정적 산출물로 변환되어 Vite 안에 포함됩니다.
 

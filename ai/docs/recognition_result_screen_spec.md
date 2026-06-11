@@ -1,4 +1,4 @@
-# Recognition Result Screen Spec
+# 인식 결과 화면 설계
 
 이 문서는 `recognition session` 결과를 앱에서 어떻게 보여줄지 정의한 화면 설계 문서다.  
 아직 프론트 반영은 하지 않고, 현재 AI 출력 JSON을 어떤 UI로 변환할지만 정리한다.
@@ -47,7 +47,7 @@
 
 화면은 아래 6개 블록으로 나눈다.
 
-### A. Hero Summary
+### A. 히어로 요약
 
 가장 위에 상태 한 줄 요약을 둔다.
 
@@ -64,7 +64,7 @@
 - `신뢰도: 보통`
 - `개인 기준선 없이 해석됨`
 
-### B. Primary State Cards
+### B. 주요 상태 카드
 
 핵심 3개만 먼저 크게 보여준다.
 
@@ -81,7 +81,7 @@
 - 레벨 배지
 - 짧은 해석 문장
 
-### C. Secondary Metrics
+### C. 보조 지표
 
 보조 지표는 별도 섹션으로 분리한다.
 
@@ -91,7 +91,7 @@
 
 이 섹션은 메인 판단을 보강하는 용도로만 쓴다.
 
-### D. Brainwave Evidence
+### D. 뇌파 근거
 
 뇌파 근거는 한 단계 아래에서 보여준다.
 
@@ -110,7 +110,7 @@
 
 여기서는 숫자보다 패턴을 보여주는 것이 중요하다.
 
-### E. Reliability & Limitations
+### E. 신뢰도와 한계
 
 이 블록은 반드시 있어야 한다.
 
@@ -126,7 +126,7 @@
 - “이번 해석은 어느 정도 믿을 수 있는가”
 - “왜 조심해서 봐야 하는가”
 
-### F. Next Transition
+### F. 다음 전환
 
 마지막 CTA 블록.
 
@@ -138,21 +138,21 @@
 
 ## 4. 권장 레이아웃
 
-### Desktop
+### 데스크톱
 
-- 상단 30%: Hero Summary
-- 중단 35%: Primary State Cards 3개
-- 하단 왼쪽: Secondary Metrics
-- 하단 오른쪽: Brainwave Evidence
-- 맨 아래: Reliability / CTA
+- 상단 30%: 히어로 요약
+- 중단 35%: 주요 상태 카드 3개
+- 하단 왼쪽: 보조 지표
+- 하단 오른쪽: 뇌파 근거
+- 맨 아래: 신뢰도 / CTA
 
-### Mobile
+### 모바일
 
-- Hero Summary
-- Primary State Cards
-- Reliability strip
-- Secondary Metrics accordion
-- Brainwave Evidence accordion
+- 히어로 요약
+- 주요 상태 카드
+- 신뢰도 strip
+- 보조 지표 accordion
+- 뇌파 근거 accordion
 - CTA
 
 모바일에서는 절대 모든 차트를 한 화면에 펼치지 않는다.
@@ -165,7 +165,7 @@
 - 큰 숫자 점수 `68`
 - 작은 레벨 배지 `elevated`
 - 한 줄 해석
-- confidence thin bar
+- 얇은 confidence bar
 
 ### 라벨 매핑
 
@@ -186,19 +186,19 @@
 
 ## 6. 상태별 카드 해석 문장 규칙
 
-### focus_readiness
+### 집중 준비도(`focus_readiness`)
 
 - 높음: `집중 세션으로 진입하기에 비교적 좋은 상태입니다.`
 - 보통: `집중은 가능하지만 피로 또는 긴장 관리가 함께 필요합니다.`
 - 낮음: `집중 유지보다 회복이나 안정화가 먼저 필요한 상태입니다.`
 
-### stress_load
+### 스트레스 부하(`stress_load`)
 
 - 높음: `긴장과 과부하 신호가 비교적 강하게 나타납니다.`
 - 보통: `일부 긴장 신호가 있으나 단일 원인으로 단정하기는 어렵습니다.`
 - 낮음: `스트레스 부하 신호는 상대적으로 낮은 편입니다.`
 
-### fatigue_risk
+### 피로 위험(`fatigue_risk`)
 
 - 높음: `정신 피로 또는 졸림 위험이 커 보입니다.`
 - 보통: `피로 누적 가능성을 함께 확인할 필요가 있습니다.`
@@ -286,7 +286,7 @@
 - 카드 대신 warning hero
 - CTA는 `다시 측정하기`
 
-### band-summary only
+### 밴드 요약만 있는 경우
 
 조건:
 
@@ -298,40 +298,40 @@
 - Evidence 섹션 축소
 - confidence 낮게 표현
 
-## 12. JSON to UI 매핑
+## 12. JSON에서 UI로 매핑
 
-### Hero
+### 히어로
 
 - 제목: `state_profile.label`
 - 서브텍스트: `state_profile.summary`
 - 보조: `quality.score`, `input_summary.baseline_mode`
 
-### Primary cards
+### 주요 카드
 
 - `state_profile.dimensions.focus_readiness`
 - `state_profile.dimensions.stress_load`
 - `state_profile.dimensions.fatigue_risk`
 
-### Secondary cards
+### 보조 카드
 
 - `state_profile.dimensions.mental_workload`
 - `state_profile.dimensions.relaxation_level`
 - `state_profile.dimensions.cortical_arousal`
 
-### Evidence
+### 근거
 
 - `bands.global_relative`
 - `features.snapshot.theta_beta_ratio`
 - `features.snapshot.alpha_beta_ratio`
 - `features.artifact_indicators`
 
-### Reliability
+### 신뢰도
 
 - `quality`
 - `limitations`
 - `citations`
 
-## 13. 추후 intervention 연결 포인트
+## 13. 추후 개입 연결 포인트
 
 이 화면은 recognition의 끝이면서 intervention의 시작점이다.
 
