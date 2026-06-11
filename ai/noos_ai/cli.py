@@ -37,6 +37,7 @@ def _write_output(path: str | None, payload: dict[str, object]) -> None:
     if path:
         output_path = Path(path).expanduser().resolve()
         output_path.write_text(rendered + "\n", encoding="utf-8")
+        return
     print(rendered)
 
 
