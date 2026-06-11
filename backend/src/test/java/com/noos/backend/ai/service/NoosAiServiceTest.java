@@ -20,10 +20,10 @@ class NoosAiServiceTest {
             "",
             0,
             0,
-            false,
-            "http://127.0.0.1:8091",
-            120,
-            null
+            null,
+            new AiPayloadFactory(),
+            new NoosAiPaths(),
+            new GeneratedAudioService(new NoosAiPaths())
     );
 
     @Test

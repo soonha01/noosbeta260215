@@ -7,7 +7,6 @@ This project normally runs across the Mac local app and a Windows 4080 ACE-Step 
 ```text
 Frontend Vite          http://localhost:3000
 Backend Spring Boot    http://localhost:8080
-Gemma optional         http://127.0.0.1:8091
 ACE-Step worker        http://192.168.123.114:8011
 WiZ bulbs              UDP 38899 on configured LAN IPs
 ```
@@ -29,15 +28,6 @@ Start backend:
 cd backend
 ./gradlew bootRun
 ```
-
-Optional Gemma service:
-
-```bash
-cd ai
-python3 -m uvicorn noos_ai.gemma.service:app --host 127.0.0.1 --port 8091
-```
-
-Gemma is optional. Keep `noos.ai.gemma.enabled=false` unless the local Gemma service is known to be fast enough for interactive use.
 
 ## Windows ACE-Step Worker
 
@@ -127,7 +117,6 @@ If generation gets stuck around 95 percent:
 
 - Check backend logs.
 - Check ACE-Step worker health.
-- Keep Gemma disabled unless needed.
 
 If WiZ bulbs do not sync:
 

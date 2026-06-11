@@ -2,7 +2,7 @@
  * BoardPage.jsx
  * ──────────────────────────────────────────────────────────────────────────────
  * 게시판 메인 페이지 (백엔드 실제 연동 버전)
- * 경로: /api.auth/board
+ * 경로: /board
  *
  * - 로그인 세션 자동 확인 (/api/auth/me)
  * - 게시글 CRUD → 실제 백엔드 API 호출
@@ -19,10 +19,11 @@ import {
   User, Clock, Tag, AlertCircle, CheckCircle,
   ThumbsUp, Bookmark, Share2,
 } from "lucide-react";
+import { apiUrl } from "../../../../lib/env";
 
 // ─── API 기본 URL ─────────────────────────────────────────────────────────────
-const API = "http://localhost:8080/api/auth/board";
-const AUTH_API = "http://localhost:8080/api/auth";
+const API = apiUrl("/api/auth/board");
+const AUTH_API = apiUrl("/api/auth");
 
 // ─── 카테고리 정의 ────────────────────────────────────────────────────────────
 const CATEGORIES = [

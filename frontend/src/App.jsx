@@ -11,6 +11,8 @@ const SpaceTravelPage = lazy(() => import("./pages/solar/SpaceTravelPage.jsx"));
 const MyProfilePage = lazy(() => import("./pages/solar/MyProfilePage.jsx"));
 const TravelRecordsPage = lazy(() => import("./pages/solar/TravelRecordsPage.jsx"));
 const TravelRecordDetailPage = lazy(() => import("./pages/solar/TravelRecordDetailPage.jsx"));
+const BoardPage = lazy(() => import("./components/features/auth/board/BoardPage.jsx"));
+const LiveChatPage = lazy(() => import("./components/features/auth/livechat/LiveChatPage.jsx"));
 
 const BASENAME = import.meta.env.PROD ? PUBLIC_BASE_URL : "";
 const ROUTE_FALLBACK_STYLE = Object.freeze({
@@ -99,6 +101,22 @@ export default function App() {
           element={(
             <LazyRoute>
               <TravelRecordDetailPage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/board"
+          element={(
+            <LazyRoute>
+              <BoardPage />
+            </LazyRoute>
+          )}
+        />
+        <Route
+          path="/livechat"
+          element={(
+            <LazyRoute>
+              <LiveChatPage />
             </LazyRoute>
           )}
         />

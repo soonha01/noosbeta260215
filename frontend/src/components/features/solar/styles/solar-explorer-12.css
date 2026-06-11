@@ -1,0 +1,430 @@
+.solar-explorer-body .solar_systm:nth-of-type(2) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(2) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(2) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(2) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(2) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(3) .planet {
+  transform: translateZ(-4600px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(3) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(3) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(3) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(3) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(3) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(4) .planet {
+  transform: translateZ(-6900px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(4) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(4) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(4) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(4) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(4) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(5) .planet {
+  transform: translateZ(-9200px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -2;
+}
+.solar-explorer-body .solar_systm:nth-of-type(5) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(5) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(5) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(5) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(5) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(6) .planet {
+  transform: translateZ(-11500px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -3;
+}
+.solar-explorer-body .solar_systm:nth-of-type(6) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(6) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(6) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(6) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(6) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(7) .planet {
+  transform: translateZ(-13800px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -4;
+}
+.solar-explorer-body .solar_systm:nth-of-type(7) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(7) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(7) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(7) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(7) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(8) .planet {
+  transform: translateZ(-16100px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -5;
+}
+.solar-explorer-body .solar_systm:nth-of-type(8) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(8) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(8) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(8) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(8) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(9) .planet {
+  transform: translateZ(-18400px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -6;
+}
+.solar-explorer-body .solar_systm:nth-of-type(9) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(9) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(9) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(9) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(9) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm:nth-of-type(10) .planet {
+  transform: translateZ(-20700px) translateY(0) rotatex(4deg) scalex(0.89);
+  opacity: -7;
+}
+.solar-explorer-body .solar_systm:nth-of-type(10) .planet_description {
+  opacity: 1;
+}
+.solar-explorer-body .solar_systm:nth-of-type(10) .planet_description p,
+.solar-explorer-body .solar_systm:nth-of-type(10) .planet_description a {
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm:nth-of-type(10) .planet_description h1,
+.solar-explorer-body .solar_systm:nth-of-type(10) .planet_description h2 {
+  position: relative;
+  top: -330px;
+  transition: all 0.5s 0s;
+}
+.solar-explorer-body .solar_systm .planet .trajectory {
+  transition: all 0.6s 0s;
+  opacity: 0;
+}
+.solar-explorer-body .solar_systm .planet.mercury {
+  background-image: url("/media/planets/textures/mercury.jpg");
+  box-shadow: 0 -590px 150px black inset,
+    0 0px 130px 40px rgba(234, 205, 199, 0.6) inset,
+    0 0px 23px 4px rgba(234, 205, 199, 0.6) inset,
+    0 -10px 130px rgba(188, 143, 127, 0.6);
+}
+.solar-explorer-body .solar_systm .planet.venus {
+  background-image: url("/media/planets/textures/venus.jpg");
+  box-shadow: 0 -590px 150px black inset, 0 0px 130px 40px #ffcb9c inset,
+    0 0px 23px 4px #ffcb9c inset, 0 -10px 130px #b85a07;
+}
+.solar-explorer-body .solar_systm .planet.earth {
+  background-image: url("/media/planets/textures/earth.jpg");
+  box-shadow: 0 -590px 150px black inset, 0 0px 130px 40px #8cbaff inset,
+    0 0px 23px 4px #8cbaff inset, 0 -10px 130px #7894a9;
+}
+.solar-explorer-body .solar_systm .planet.earth .trajectory.m {
+  width: 1500px;
+  height: 1500px;
+  left: -150px;
+  top: -110px;
+}
+.solar-explorer-body .solar_systm .planet.earth .moon {
+  left: 800px;
+  top: -160px;
+  transform: scale(0.45);
+  background-image: url("/media/planets/textures/mercury.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.earth .moon h3 {
+  color: #26daaa;
+}
+.solar-explorer-body .solar_systm .planet.mars {
+  background-image: url("/media/planets/textures/mars.jpg");
+  box-shadow: 0 -590px 150px black inset, 0 0px 130px 40px #e86363 inset,
+    0 0px 23px 4px #e86363 inset, 0 -10px 130px #6b261a;
+}
+.solar-explorer-body .solar_systm .planet.mars .moon h3 {
+  color: #e55f45;
+}
+.solar-explorer-body .solar_systm .planet.mars .deimos {
+  left: 900px;
+  top: -100px;
+  transform: scale(0.45);
+  background-image: url("/media/planets/textures/pluto.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.mars .trajectory.d {
+  width: 1770px;
+  height: 1770px;
+  left: -317px;
+  top: -110px;
+}
+.solar-explorer-body .solar_systm .planet.mars .trajectory.p {
+  width: 1600px;
+  height: 1600px;
+  left: -200px;
+  top: -160px;
+}
+.solar-explorer-body .solar_systm .planet.mars .phoebos {
+  left: 100px;
+  top: -160px;
+  transform: scale(0.5);
+  background-image: url("/media/planets/textures/mercury.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.jupiter {
+  background-image: url("/media/planets/textures/jupiter.jpg");
+  box-shadow: 0 -590px 150px black inset,
+    0 0px 130px 40px rgba(234, 205, 199, 0.6) inset,
+    0 0px 23px 4px rgba(234, 205, 199, 0.6) inset,
+    0 -10px 130px rgba(188, 143, 127, 0.6);
+}
+.solar-explorer-body .solar_systm .planet.jupiter .moon h3 {
+  color: orange;
+}
+.solar-explorer-body .solar_systm .planet.jupiter .trajectory.lop {
+  width: 1500px;
+  height: 1500px;
+  left: -210px;
+  top: -189px;
+}
+.solar-explorer-body .solar_systm .planet.jupiter .trajectory.eu {
+  width: 1530px;
+  height: 1530px;
+  left: -165px;
+  top: -130px;
+}
+.solar-explorer-body .solar_systm .planet.jupiter .trajectory.ga {
+  width: 1760px;
+  height: 1760px;
+  left: -360px;
+  top: -114px;
+}
+.solar-explorer-body .solar_systm .planet.jupiter .lo {
+  left: 100px;
+  top: -100px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/venus.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.jupiter .europa {
+  left: 400px;
+  top: -210px;
+  transform: scale(0.45);
+  background-image: url("/media/planets/textures/earth.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.jupiter .ganymede {
+  left: 900px;
+  top: -70px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/mercury.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.saturn {
+  background-image: url("/media/planets/textures/saturn.jpg");
+  box-shadow: 0 -590px 150px black inset,
+    0 0px 130px 40px rgba(234, 205, 199, 0.6) inset,
+    0 0px 23px 4px rgba(234, 205, 199, 0.6) inset,
+    0 -10px 130px rgba(188, 143, 127, 0.6);
+}
+.solar-explorer-body .solar_systm .planet.saturn .moon h3 {
+  color: #b29d81;
+}
+.solar-explorer-body .solar_systm .planet.saturn .trajectory.ti {
+  width: 1500px;
+  height: 1500px;
+  left: -210px;
+  top: -189px;
+}
+.solar-explorer-body .solar_systm .planet.saturn .trajectory.di {
+  width: 1530px;
+  height: 1530px;
+  left: -165px;
+  top: -130px;
+}
+.solar-explorer-body .solar_systm .planet.saturn .trajectory.enc {
+  width: 1760px;
+  height: 1760px;
+  left: -360px;
+  top: -114px;
+}
+.solar-explorer-body .solar_systm .planet.saturn .titan {
+  left: 100px;
+  top: -100px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/venus.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.saturn .dione {
+  left: 400px;
+  top: -210px;
+  transform: scale(0.45);
+  background-image: url("/media/planets/textures/pluto.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.saturn .enceladus {
+  left: 900px;
+  top: -70px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/mercury.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.uranus {
+  background-image: url("/media/planets/textures/uranus.jpg");
+  box-shadow: 0 -590px 150px black inset,
+    0 0px 130px 40px rgba(234, 205, 199, 0.6) inset,
+    0 0px 23px 4px rgba(234, 205, 199, 0.6) inset,
+    0 -10px 130px rgba(127, 188, 171, 0.6);
+}
+.solar-explorer-body .solar_systm .planet.uranus .moon h3 {
+  color: #8dcdd8;
+}
+.solar-explorer-body .solar_systm .planet.uranus .trajectory.mir {
+  width: 1500px;
+  height: 1500px;
+  left: -210px;
+  top: -189px;
+}
+.solar-explorer-body .solar_systm .planet.uranus .trajectory.ari {
+  width: 1530px;
+  height: 1530px;
+  left: -165px;
+  top: -130px;
+}
+.solar-explorer-body .solar_systm .planet.uranus .trajectory.umb {
+  width: 1760px;
+  height: 1760px;
+  left: -360px;
+  top: -114px;
+}
+.solar-explorer-body .solar_systm .planet.uranus .miranda {
+  left: 100px;
+  top: -100px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/pluto.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.uranus .ariel {
+  left: 400px;
+  top: -210px;
+  transform: scale(0.45);
+  background-image: url("/media/planets/textures/venus.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.uranus .umbriel {
+  left: 900px;
+  top: -70px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/mercury.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.neptune {
+  background-image: url("/media/planets/textures/neptune.jpg");
+  box-shadow: 0 -590px 150px black inset,
+    0 0px 130px 40px rgba(234, 205, 199, 0.6) inset,
+    0 0px 23px 4px rgba(234, 205, 199, 0.6) inset, 0 -10px 130px #2d4153;
+}
+.solar-explorer-body .solar_systm .planet.neptune .moon h3 {
+  color: #4f83e2;
+}
+.solar-explorer-body .solar_systm .planet.neptune .trajectory.tri {
+  width: 1500px;
+  height: 1500px;
+  left: -210px;
+  top: -189px;
+}
+.solar-explorer-body .solar_systm .planet.neptune .trajectory.pro {
+  width: 1530px;
+  height: 1530px;
+  left: -165px;
+  top: -130px;
+}
+.solar-explorer-body .solar_systm .planet.neptune .trajectory.ner {
+  width: 1760px;
+  height: 1760px;
+  left: -360px;
+  top: -114px;
+}
+.solar-explorer-body .solar_systm .planet.neptune .triton {
+  left: 100px;
+  top: -100px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/pluto.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.neptune .proteus {
+  left: 400px;
+  top: -210px;
+  transform: scale(0.45);
+  background-image: url("/media/planets/textures/mercury.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}
+.solar-explorer-body .solar_systm .planet.neptune .nereid {
+  left: 900px;
+  top: -70px;
+  transform: scale(0.4);
+  background-image: url("/media/planets/textures/venus.jpg");
+  z-index: -1;
+  box-shadow: 0px -30px 30px 10px black inset;
+}

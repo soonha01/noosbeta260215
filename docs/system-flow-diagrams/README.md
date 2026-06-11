@@ -108,7 +108,6 @@ flowchart LR
   S --> PY["Python noos_ai CLI<br/>Mac local"]
   S --> WIN["Windows RTX 4080<br/>ACE-Step API :8011"]
   S --> BULB["WiZ bulbs<br/>UDP 38899"]
-  GEM["Gemma<br/>127.0.0.1:8091<br/>현재 기본 비활성"] -. 선택 기능 .-> S
 ```
 
 ## 7. 파일 책임 지도

@@ -16,7 +16,6 @@ export const FEEDBACK_STORAGE_KEY = 'noos_feedback_history';
 export const TRAVEL_RECORDS_STORAGE_KEY = 'noos_travel_records';
 export const MEMO_STORAGE_KEY = 'noos_dashboard_note';
 export const PROFILE_STORAGE_KEY = 'noos_user_profile';
-export const AI_CONTEXT_STORAGE_KEY = 'noos_ai_context';
 export const LIVE_MUSE_SESSION_STORAGE_KEY = 'noos_live_muse_session';
 
 export const TRACK_DURATION_SEC = 226;

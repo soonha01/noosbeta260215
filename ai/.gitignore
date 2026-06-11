@@ -7,7 +7,8 @@ __pycache__/
 
 .cache/
 .venv/
-generated/gemma_cache/
+generated/
+*.egg-info/
 
 # Keep the large upstream checkout local and out of the app repo.
 vendor/ACE-Step-1.5/

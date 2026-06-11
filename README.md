@@ -6,7 +6,7 @@ NOOS AI 모듈은 Muse EEG 상태 인식, 행성 기반 개입 계획, ACE-Step 
 
 - `frontend/`: Muse 연결, 설문, 행성 선택, 여행 플레이어, 조명 미리보기를 담당하는 React/Vite 앱
 - `backend/`: 프론트엔드 요청을 Python AI CLI, ACE-Step, 생성 오디오, WiZ 전구로 연결하는 Spring Boot API
-- `ai/`: EEG 인식, 개입 계획, 조명 명세, 음악 명세, ACE-Step 요청 구성, 선택적 Gemma 보조 작업을 담당하는 Python 패키지
+- `ai/`: EEG 인식, 개입 계획, 조명 명세, 음악 명세, ACE-Step 요청 구성을 담당하는 Python 패키지
 
 ## 처음 읽을 문서
 
@@ -28,8 +28,6 @@ NOOS AI 모듈은 Muse EEG 상태 인식, 행성 기반 개입 계획, ACE-Step 
     -> 음악 생성을 위한 Windows 4080 ACE-Step API
     -> 조명 제어를 위한 로컬 UDP WiZ 전구
 ```
-
-Gemma는 선택 기능이며, 로컬 서비스가 느리면 음악 생성을 막을 수 있으므로 현재 기본값은 `backend/src/main/resources/application.properties`에서 비활성화되어 있습니다.
 
 ## 자주 쓰는 명령
 
@@ -64,7 +62,6 @@ python3 -m unittest discover -s tests
 
 - 프론트엔드: `http://localhost:3000`
 - 백엔드: `http://localhost:8080`
-- 선택적 Gemma 서비스: `http://127.0.0.1:8091`
 - ACE-Step 작업자: `backend/src/main/resources/application.properties`에서 설정
 
 ## 개발 기준

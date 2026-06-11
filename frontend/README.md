@@ -57,15 +57,13 @@ frontend/
       layout/                    # 공통 레이아웃, iframe 래퍼, 화면 전환 overlay
       navigation/                # Vite 앱 고정 내비게이션
       ui/                        # 버튼, 텍스트, 시각 효과 컴포넌트
-    lib/                         # API 클라이언트, 환경값, Muse/Gemma 유틸
+    lib/                         # API 클라이언트, 환경값, Muse 유틸
     pages/
       root/                      # / 라우트: 점프, 로그인, 메인 랜딩 iframe 상태 관리
       home/                      # 점프 페이지 전용 화면
       about/                     # /about 라우트
       ai-objet/                  # /ai-objet 라우트
       solar/                     # /solar-explorer, /space-travel route wrappers
-    legacy/
-      vite-landing/              # 현재 미사용: 예전 Vite-native 랜딩 참고용
 ```
 
 ## 관련 소스 위치
@@ -99,8 +97,6 @@ noosbeta260215/ai-objet-next
 - `src/lib/env.js`: 백엔드 URL, 공개 asset 경로, AI Objet 내부 링크 기본값
 - `src/lib/noosAiApi.js`: NOOS AI 개입 API 클라이언트
 - `src/lib/eegAnalysisApi.js`: EEG 분석 API 클라이언트
-- `src/legacy/vite-landing/LegacyViteLanding.jsx`: 현재 실행하지 않는 예전 Vite 랜딩 구현
-
 ## 백엔드 연결
 
 백엔드 주소는 Vite 환경값으로 관리합니다. 프론트 컴포넌트 안에 `localhost`를 직접 하드코딩하지 않습니다.

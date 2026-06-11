@@ -1,0 +1,65 @@
+
+@keyframes entryLayerLogo {
+  from {
+    opacity: 0;
+    transform: translateY(42px) scale(0.9);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes entryLayerUi {
+  from {
+    opacity: 0;
+    transform: translateX(34vw) translateY(26vh) scale(0.74);
+    filter: blur(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes entryLayerSolar {
+  from {
+    opacity: 0;
+    transform: rotatex(-20deg) scale(0.88);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: rotatex(-20deg) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes entryLayerSystem {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--entry-x, 0px), var(--entry-y, 0px), 0) scale(0.7);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes entryLayerMenu {
+  from {
+    opacity: 0;
+    transform: translateX(42vw) translateY(var(--menu-shift-y, 0px)) scale(0.72);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+    filter: blur(0);
+  }
+}

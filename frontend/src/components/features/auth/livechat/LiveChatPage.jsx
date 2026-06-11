@@ -2,7 +2,7 @@
  * LiveChatPage.jsx
  * ──────────────────────────────────────────────────────────────────────────────
  * 유저 ↔ 관리자 실시간 채팅 페이지
- * 경로: /api.auth/livechat
+ * 경로: /livechat
  *
  * 동작 방식:
  *   1. 페이지 진입 시 /api/auth/me 로 로그인 세션 확인
@@ -20,6 +20,7 @@ import {
   Shield, AlertCircle, Loader, ArrowLeft
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { apiUrl, websocketUrl } from "../../../../lib/env";
 
 // ─── 외부 라이브러리 CDN 동적 로드 ───────────────────────────────────────────
 // SockJS와 STOMP를 npm 대신 동적 스크립트 로드로 사용
@@ -33,9 +34,9 @@ const loadScript = (src) =>
   });
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
-const WS_URL    = "http://localhost:8080/ws";     // WebSocket 서버 엔드포인트
-const AUTH_API  = "http://localhost:8080/api/auth"; // 세션 확인용 REST API
-const CHAT_API  = "http://localhost:8080/api/chat"; // 히스토리 조회용 REST API
+const WS_URL    = websocketUrl("/ws");     // WebSocket 서버 엔드포인트
+const AUTH_API  = apiUrl("/api/auth"); // 세션 확인용 REST API
+const CHAT_API  = apiUrl("/api/chat"); // 히스토리 조회용 REST API
 
 // ─── 날짜 포맷 유틸 ───────────────────────────────────────────────────────────
 const formatTime = (timestamp) => {

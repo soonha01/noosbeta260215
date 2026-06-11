@@ -248,24 +248,15 @@ class InterventionSessionTests(unittest.TestCase):
         self.assertEqual(parsed[0]["status"], 1)
         self.assertIn("/v1/audio", parsed[0]["file"])
 
-    def test_ace_step_client_derives_gemma_unload_url_from_worker_host(self) -> None:
-        with patch.dict(os.environ, {"NOOS_GEMMA_UNLOAD_URL": "", "NOOS_GEMMA_UNLOAD_PORT": "8012"}):
-            client = AceStepClient("http://100.120.77.82:8011")
-            self.assertEqual(client.gemma_unload_url(), "http://100.120.77.82:8012/v1/unload")
-
-    def test_release_task_unloads_gemma_before_music_generation(self) -> None:
+    def test_release_task_posts_directly_without_model_unload(self) -> None:
         call_order: list[str] = []
         client = AceStepClient("http://100.120.77.82:8011")
-
-        def unload() -> bool:
-            call_order.append("unload")
-            return True
 
         def request(method: str, path: str, payload: dict[str, object]) -> dict[str, object]:
             call_order.append(path)
             return {"data": {"task_id": "demo-task"}}
 
-        with patch.object(client, "unload_gemma_before_music", side_effect=unload), patch.object(
+        with patch("noos_ai.integrations.ace_step.urlopen") as urlopen_mock, patch.object(
             client,
             "_request",
             side_effect=request,
@@ -273,7 +264,8 @@ class InterventionSessionTests(unittest.TestCase):
             response = client.release_task({"prompt": "deep work ambient"})
 
         self.assertEqual(response["data"]["task_id"], "demo-task")
-        self.assertEqual(call_order, ["unload", "/release_task"])
+        self.assertEqual(call_order, ["/release_task"])
+        urlopen_mock.assert_not_called()
 
 
 if __name__ == "__main__":

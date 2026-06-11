@@ -29,7 +29,6 @@ ai/
     ├── cli.py
     ├── contracts.py
     ├── eeg/
-    ├── gemma/
     ├── integrations/
     ├── intervention/
     └── sessions/
@@ -45,7 +44,6 @@ Key responsibilities:
 - `noos_ai/intervention/lighting_hardware.py`: hardware handoff payload.
 - `noos_ai/intervention/music.py`: music spec and ACE-Step request payload.
 - `noos_ai/integrations/ace_step.py`: ACE-Step API client.
-- `noos_ai/gemma/`: optional Gemma helper service and task templates.
 
 Tests:
 
@@ -74,7 +72,7 @@ backend/
 Key responsibilities:
 
 - `ai/controller/NoosAiController.java`: `/api/ai/**` and `/api/eeg/results`.
-- `ai/service/NoosAiService.java`: Python CLI orchestration, ACE-Step prewarm/generation, generated audio proxy, optional Gemma calls.
+- `ai/service/NoosAiService.java`: Python CLI orchestration, ACE-Step prewarm/generation, generated audio proxy.
 - `lighting/controller/WizLightingController.java`: `/api/lighting/wiz/**`.
 - `lighting/service/WizLightingService.java`: WiZ UDP commands, primary CCT and secondary RGB alternation.
 - `config/SecurityConfig.java`: public API access rules.
@@ -135,4 +133,3 @@ Do not treat these as source code:
 - Change ACE-Step model/API behavior: `ai/noos_ai/integrations/ace_step.py` and backend `application.properties`.
 - Change generated travel UI: `frontend/src/components/features/solar/SpaceTravel.jsx` and `frontend/src/components/features/solar/travel/`.
 - Change Muse state explanation UI: `frontend/src/components/features/auth/MuseSignalDashboard.jsx`.
-

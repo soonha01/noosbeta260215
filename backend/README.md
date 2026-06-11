@@ -8,7 +8,6 @@ NOOS AI 모듈의 Spring Boot 백엔드입니다.
 - 인식과 개입 계획을 위해 Python `noos_ai` CLI 실행
 - 생성된 오디오 파일을 `/api/ai/audio`로 프록시
 - 원격 ACE-Step 작업자 사전 준비와 생성 요청 호출
-- 선택적으로 로컬 Gemma 보조 서비스 호출
 - 로컬 UDP로 WiZ 전구 제어
 - 로컬 프로토타입 사용을 위해 프론트엔드가 호출하는 주요 엔드포인트를 인증 없이 허용
 
@@ -16,7 +15,7 @@ NOOS AI 모듈의 Spring Boot 백엔드입니다.
 
 - `src/main/java/com/noos/backend/BackendApplication.java`: Spring Boot 진입점
 - `src/main/java/com/noos/backend/ai/controller/NoosAiController.java`: AI 라우트
-- `src/main/java/com/noos/backend/ai/service/NoosAiService.java`: Python CLI, ACE-Step, 오디오 프록시, 선택적 Gemma 호출
+- `src/main/java/com/noos/backend/ai/service/NoosAiService.java`: Python CLI, ACE-Step, 오디오 프록시 조율
 - `src/main/java/com/noos/backend/lighting/controller/WizLightingController.java`: WiZ 라우트
 - `src/main/java/com/noos/backend/lighting/service/WizLightingService.java`: WiZ CCT/RGB 명령 실행과 원상복구
 - `src/main/resources/application.properties`: 로컬 실행 기본값
@@ -35,7 +34,6 @@ NOOS AI 모듈의 Spring Boot 백엔드입니다.
 
 - 프론트엔드는 `http://localhost:8080`의 백엔드와 통신합니다.
 - 백엔드는 `http://192.168.123.114:8011`의 ACE-Step 작업자를 호출합니다.
-- Gemma는 기본적으로 비활성화되어 있습니다.
 - WiZ 자동 적용은 설정된 전구 IP에 대해 활성화되어 있습니다.
 
 로컬 전용 비밀값은 `application-secret.properties`에 둡니다. 인증 정보는 커밋하지 않습니다.

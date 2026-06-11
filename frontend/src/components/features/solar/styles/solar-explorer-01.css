@@ -1,0 +1,432 @@
+@import url("https://fonts.googleapis.com/css?family=Montserrat:300,400,700");
+.solar_systm {
+  transform-style: preserve-3d;
+  pointer-events: none;
+  height: 100%;
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+* {
+  -webkit-user-select: none;
+  /* Chrome all / Safari all */
+  -moz-user-select: none;
+  /* Firefox all */
+  -ms-user-select: none;
+  /* IE 10+ */
+  user-select: none;
+  /* Likely future */
+}
+
+.solar-explorer-body .solar_systm .planet,
+.solar-explorer-body input[type="radio"][name="planet"]::after,
+.solar-explorer-body .overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: auto;
+}
+
+.solar-explorer-body .solar_systm .planet.neptune .trajectory.ner,
+.solar-explorer-body .solar_systm .planet.neptune .trajectory.pro,
+.solar-explorer-body .solar_systm .planet.neptune .trajectory.tri,
+.solar-explorer-body .solar_systm .planet.uranus .trajectory.umb,
+.solar-explorer-body .solar_systm .planet.uranus .trajectory.ari,
+.solar-explorer-body .solar_systm .planet.uranus .trajectory.mir,
+.solar-explorer-body .solar_systm .planet.saturn .trajectory.enc,
+.solar-explorer-body .solar_systm .planet.saturn .trajectory.di,
+.solar-explorer-body .solar_systm .planet.saturn .trajectory.ti,
+.solar-explorer-body .solar_systm .planet.jupiter .trajectory.ga,
+.solar-explorer-body .solar_systm .planet.jupiter .trajectory.eu,
+.solar-explorer-body .solar_systm .planet.jupiter .trajectory.lop,
+.solar-explorer-body .solar_systm .planet.mars .trajectory.p,
+.solar-explorer-body .solar_systm .planet.mars .trajectory.d,
+.solar-explorer-body .solar_systm .planet.earth .trajectory.m {
+  border: 2px dashed white;
+  position: absolute;
+  border-radius: 3400px;
+  background: none !important;
+  z-index: -2;
+}
+
+.solar-explorer-body .solar_systm .planet {
+  height: 1200px;
+  width: 1200px;
+  border-radius: 600px;
+  background: red;
+  transition: transform 2.8s 0.23s cubic-bezier(0.33, 0, 0, 1), opacity 2s 0.8s,
+    box-shadow 0s 0s;
+  background-repeat: repeat-x !important;
+  background-size: auto 100% !important;
+  background-position: 0 center;
+  top: auto;
+  bottom: -920px;
+}
+.solar-explorer-body .solar_systm .planet .moon {
+  height: 200px;
+  width: 200px;
+  border-radius: 600px;
+  background-color: #101010;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: center;
+  position: absolute;
+  text-align: center;
+  color: white;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: all 0.6s 0.2s;
+}
+.solar-explorer-body .solar_systm .planet .moon h2 {
+  font-weight: 100;
+  font-size: 40px;
+  letter-spacing: 5px;
+  margin: 0;
+  position: relative;
+  top: -120px;
+}
+.solar-explorer-body .solar_systm .planet .moon h3 {
+  font-weight: 100;
+  font-size: 20px;
+  letter-spacing: 5px;
+  color: #fea082;
+  margin: 0;
+  position: relative;
+  top: -120px;
+}
+@keyframes planet {
+  from {
+    background-position: 0 center;
+  }
+  to {
+    background-position: -2400px center;
+  }
+}
+
+.solar-explorer-body .solar {
+  position: absolute;
+  transform: rotatex(-20deg);
+  perspective: 800px;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.solar-explorer-body input[type="radio"][name="planet"]::after {
+  width: 220px;
+  height: 220px;
+  border-radius: 550px;
+  appearance: none;
+  outline: none;
+  cursor: pointer;
+  z-index: 12;
+  left: 18px;
+  bottom: 282px;
+}
+
+.solar-explorer-body {
+  overflow: hidden;
+  background: black;
+  height: 100vh;
+  font-family: "Montserrat", sans-serif;
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+  transition: opacity 1.35s ease, filter 1.35s ease, transform 1.35s ease;
+  will-change: opacity, filter, transform;
+}
+
+.solar-explorer-body.is-page-exiting {
+  opacity: 0;
+  filter: blur(8px);
+  transform: scale(0.996);
+  pointer-events: none;
+}
+
+.solar-explorer-body .main-return-button {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 140;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0.08) 34%,
+      rgba(255, 255, 255, 0.02) 100%
+    ),
+    rgba(10, 14, 26, 0.5);
+  color: rgba(241, 245, 255, 0.94);
+  font-family: "Cardinal Fruit", "SF Pro Bold", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(0, 0, 0, 0.44);
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.24s ease, box-shadow 0.24s ease, background 0.24s ease;
+}
+
+.solar-explorer-body .main-return-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.46);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.24) 0%,
+      rgba(255, 255, 255, 0.1) 34%,
+      rgba(255, 255, 255, 0.03) 100%
+    ),
+    rgba(10, 14, 26, 0.56);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 30px rgba(0, 0, 0, 0.48),
+    0 0 20px rgba(123, 166, 255, 0.2);
+}
+
+.solar-explorer-body .main-return-button:active {
+  transform: translateY(0);
+}
+
+.solar-explorer-body .solar-user-actions {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 140;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.solar-explorer-body .solar-user-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.08) 40%,
+      rgba(255, 255, 255, 0.025) 100%
+    ),
+    rgba(10, 14, 26, 0.5);
+  color: rgba(241, 245, 255, 0.94);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 12px 28px rgba(0, 0, 0, 0.38);
+  transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.solar-explorer-body .solar-user-actions button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.46);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.24) 0%,
+      rgba(255, 255, 255, 0.1) 40%,
+      rgba(255, 255, 255, 0.03) 100%
+    ),
+    rgba(10, 14, 26, 0.58);
+}
+
+@media (max-width: 640px) {
+  .solar-explorer-body .solar-user-actions {
+    top: 64px;
+    right: 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.solar-explorer-body .main-return-button__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #89b7ff 64%, #6388d9 100%);
+  box-shadow: 0 0 10px rgba(126, 170, 255, 0.65);
+}
+.solar-explorer-body .logo {
+  color: white;
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  margin: auto;
+  text-align: center;
+  font-size: 14px;
+  text-transform: uppercase;
+  font-weight: 100;
+  letter-spacing: 4px;
+}
+.solar-explorer-body .logo__mark {
+  display: block;
+  width: min(54vw, 240px);
+  height: auto;
+  margin: 0 auto 8px;
+  color: #ffffff;
+  letter-spacing: 0;
+}
+.solar-explorer-body .logo span {
+  font-size: 12px;
+  color: #f39041;
+  display: block;
+}
+.solar-explorer-body label {
+  cursor: pointer;
+}
+.solar-explorer-body label.mercury > .preview {
+  background-image: url("/media/planets/textures/mercury.jpg") !important;
+}
+.solar-explorer-body label.venus > .preview {
+  background-image: url("/media/planets/textures/venus.jpg") !important;
+}
+.solar-explorer-body label.earth > .preview {
+  background-image: url("/media/planets/textures/earth.jpg") !important;
+}
+.solar-explorer-body label.mars > .preview {
+  background-image: url("/media/planets/textures/mars.jpg") !important;
+}
+.solar-explorer-body label.jupiter > .preview {
+  background-image: url("/media/planets/textures/jupiter.jpg") !important;
+}
+.solar-explorer-body label.saturn > .preview {
+  background-image: url("/media/planets/textures/saturn.jpg") !important;
+}
+.solar-explorer-body label.uranus > .preview {
+  background-image: url("/media/planets/textures/uranus.jpg") !important;
+}
+.solar-explorer-body label.neptune > .preview {
+  background-image: url("/media/planets/textures/neptune.jpg") !important;
+}
+.solar-explorer-body label.pluto > .preview {
+  background-image: url("/media/planets/textures/pluto.jpg") !important;
+}
+.solar-explorer-body label.menu {
+  color: white;
+  display: block;
+  position: absolute;
+  cursor: pointer;
+  left: 90px;
+  z-index: 100;
+  pointer-events: auto;
+}
+.solar-explorer-body label.menu:after {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid white;
+  border-radius: 60px;
+  content: "";
+  z-index: 2;
+  position: absolute;
+  top: -4px;
+  left: -4px;
+}
+.solar-explorer-body label.menu:hover h2,
+.solar-explorer-body label.menu:hover h3 {
+  opacity: 1;
+}
+.solar-explorer-body label.menu.mercury h2 .pip {
+  background: #e8927c;
+}
+.solar-explorer-body label.menu.venus h2 .pip {
+  background: #b45d15;
+}
+.solar-explorer-body label.menu.earth h2 .pip {
+  background: #26daaa;
+}
+.solar-explorer-body label.menu.mars h2 .pip {
+  background: #e55f45;
+}
+.solar-explorer-body label.menu.jupiter h2 .pip {
+  background: orange;
+}
+.solar-explorer-body label.menu.saturn h2 .pip {
+  background: #b29d81;
+}
+.solar-explorer-body label.menu.uranus h2 .pip {
+  background: #8dcdd8;
+}
+.solar-explorer-body label.menu.neptune h2 .pip {
+  background: #4f83e2;
+}
+.solar-explorer-body label.menu.pluto h2 .pip {
+  background: #ff8732;
+}
+.solar-explorer-body label.menu .preview {
+  width: 30px;
+  height: 30px;
+  background-color: #05070c;
+  float: left;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: 72% center !important;
+  position: absolute;
+  border-radius: 100px;
+  box-shadow: 0 -13px 10px 2px black inset;
+}
+.solar-explorer-body label.menu .info {
+  position: relative;
+  left: 50px;
+  top: 1px;
+}
+.solar-explorer-body label.menu h2,
+.solar-explorer-body label.menu h3 {
+  text-transform: uppercase;
+  margin: 0;
+  font-weight: 100;
+  letter-spacing: 2px;
+}
+.solar-explorer-body label.menu h2 {
+  font-size: 11px;
+  opacity: 0.4;
+  margin-bottom: 4px;
+}
+.solar-explorer-body label.menu h2 .pip {
+  width: 0;
+  height: 9px;
+  background: #fea082;
+  float: left;
+  position: relative;
+  top: 3px;
+  transition: all 0.3s;
+  margin-right: 0px;
+}
+.solar-explorer-body label.menu h3 {
+  font-size: 8px;
+  letter-spacing: 1px;
+  transition: all 0.3s;
+  opacity: 0.3;
+}
+.solar-explorer-body label.menu:nth-of-type(1) {
+  top: calc(50vh + 100px + ((14px + 34px) * 1) + 0px - 369px);
+}
+.solar-explorer-body label.menu:nth-of-type(2) {
+  top: calc(50vh + 100px + ((14px + 34px) * 2) + 0px - 369px);
+}

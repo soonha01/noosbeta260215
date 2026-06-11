@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { apiUrl, websocketUrl } from "../../../lib/env";
 
-const BOARD_API = "http://localhost:8080/api/auth/board";
-const ADMIN_API = "http://localhost:8080/api/admin";
+const BOARD_API = apiUrl("/api/auth/board");
+const ADMIN_API = apiUrl("/api/admin");
+const AUTH_API = apiUrl("/api/auth");
+const CHAT_API = apiUrl("/api/chat");
+const WS_URL = websocketUrl("/ws");
 
 const boardCategoryLabels = {
   ALL: "전체",
@@ -146,7 +150,7 @@ const AdminBoardManager = () => {
         <h3 style={{ margin: 0, fontSize: 18 }}>게시물 관리 ({total}개)</h3>
         <button
           type="button"
-          onClick={() => window.open("/api.auth/board", "_blank")}
+          onClick={() => window.open("/board", "_blank")}
           style={{ padding: "8px 14px", border: "none", borderRadius: 6, background: "#1976d2", color: "#fff", cursor: "pointer" }}
         >
           게시판 바로가기
@@ -618,7 +622,7 @@ const AdminChatTab = () => {
   const [currentAdmin, setCurrentAdmin] = React.useState(null);
 
   React.useEffect(() => {
-    fetch("http://localhost:8080/api/auth/me", { credentials: "include" })
+    fetch(`${AUTH_API}/me`, { credentials: "include" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
         if (data?.authenticated) {
@@ -659,7 +663,7 @@ const AdminChatTab = () => {
   // 채팅방 목록 주기적 갱신 (5초마다)
   React.useEffect(() => {
     const fetchRooms = () => {
-      fetch("http://localhost:8080/api/chat/rooms", { credentials: "include" })
+      fetch(`${CHAT_API}/rooms`, { credentials: "include" })
         .then((r) => r.ok ? r.json() : [])
         .then((data) => Array.isArray(data) && setRooms(data))
         .catch(() => {});
@@ -672,7 +676,7 @@ const AdminChatTab = () => {
   // 라이브러리 준비 시 WebSocket 연결
   React.useEffect(() => {
     if (!libLoaded) return;
-    const socket = new window.SockJS("http://localhost:8080/ws");
+    const socket = new window.SockJS(WS_URL);
     const client = window.Stomp.over(socket);
     client.debug = null;
     client.connect({}, () => {
@@ -693,7 +697,7 @@ const AdminChatTab = () => {
     setMessages([]);
 
     // 히스토리 불러오기
-    fetch(`http://localhost:8080/api/chat/history/${room.roomId}`, { credentials: "include" })
+    fetch(`${CHAT_API}/history/${room.roomId}`, { credentials: "include" })
       .then((r) => r.ok ? r.json() : [])
       .then((data) => Array.isArray(data) && setMessages(data))
       .catch(() => {});

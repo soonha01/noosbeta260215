@@ -9,7 +9,6 @@ Mac
 - NOOS frontend
 - Spring backend
 - NOOS Python planner / recognition / intervention
-- Gemma는 브라우저 LiteRT 또는 Mac local fallback
 
 Windows RTX 4080 PC
 - ACE-Step API server only
@@ -197,4 +196,3 @@ curl -X POST http://127.0.0.1:8011/v1/init `
 ```
 
 성공하면 `loaded_model`이 `acestep-v15-turbo`인지 확인한다.
-

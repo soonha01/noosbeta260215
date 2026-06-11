@@ -1,4 +1,3 @@
-import { buildNoosLiteRtFallbackResponse, runNoosLiteRtTask } from './noosLiteRtGemma';
 import { API_BASE_URL } from './env';
 
 const parseResponseBody = async (response) => {
@@ -82,8 +81,6 @@ export const buildFallbackCurrentStateFromBandAnalysis = (analysis) => {
   };
 };
 
-const isAbortError = (error) => error?.name === 'AbortError' || /aborted/i.test(String(error?.message || ''));
-
 const postJson = async (path, body, signal, fallbackMessage) => {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
@@ -133,80 +130,6 @@ export const applyWizLightingPlan = async ({ lightingSpec, interventionResult, s
     'WiZ lighting apply failed'
   );
 
-const runCopilotTask = async ({ task, payload, path, signal, errorMessage }) => {
-  try {
-    return await postJson(path, payload, signal, errorMessage);
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw error;
-    }
-    console.warn(`[NOOS Backend] ${task} remote Gemma failed:`, error);
-
-    try {
-      return await runNoosLiteRtTask(task, payload, { signal });
-    } catch (localError) {
-      if (isAbortError(localError)) {
-        throw localError;
-      }
-      console.warn(`[NOOS LiteRT] ${task} browser fallback failed:`, localError);
-      return buildNoosLiteRtFallbackResponse(
-        task,
-        payload,
-        `${error?.message || 'Backend unavailable'} | ${localError?.message || 'LiteRT unavailable'}`
-      );
-    }
-  }
-};
-
-const maybeAttachJourneyCopilotOutputs = async ({
-  bundle,
-  planet,
-  currentState,
-  recognitionResult,
-  durationSec,
-  intentContext,
-  signal,
-}) => {
-  const nextBundle = { ...bundle };
-
-  const explanationPayload = {
-    title: recognitionResult?.state_profile?.label || nextBundle?.stateLabel || '현재 상태',
-    stateLabel: recognitionResult?.state_profile?.label || nextBundle?.stateLabel || '현재 상태',
-    summary: '현재 상태와 목표 행성 사이의 전환 계획을 설명합니다.',
-    currentState: currentState || nextBundle?.currentState || null,
-    targetPlanet: planet,
-  };
-
-  const coachPayload = {
-    planet,
-    intentText: intentContext?.intentText || '',
-    recommendation: intentContext?.recommendation?.output || intentContext?.recommendation || null,
-    recommendedDurationSec: durationSec,
-  };
-
-  if (!nextBundle?.llmStateExplanation?.output) {
-    nextBundle.llmStateExplanation = await runCopilotTask({
-      task: 'state-explanation',
-      payload: explanationPayload,
-      path: '/api/ai/state/explain',
-      signal,
-      errorMessage: 'State explanation failed',
-    });
-  }
-
-  if (!nextBundle?.llmSessionCoach?.output) {
-    nextBundle.llmSessionCoach = await runCopilotTask({
-      task: 'session-coach',
-      payload: coachPayload,
-      path: '/api/ai/session/coach',
-      signal,
-      errorMessage: 'Session coach failed',
-    });
-  }
-
-  return nextBundle;
-};
-
 export const generateJourneyBundle = async ({
   planet,
   currentState,
@@ -244,15 +167,7 @@ export const generateJourneyBundle = async ({
     audioUrl: normalizeApiUrl(responseBody.audioUrl),
   };
 
-  return maybeAttachJourneyCopilotOutputs({
-    bundle: normalizedBundle,
-    planet,
-    currentState,
-    recognitionResult,
-    durationSec: normalizedDurationSec,
-    intentContext,
-    signal,
-  });
+  return normalizedBundle;
 };
 
 export const prewarmJourneyGeneration = async ({ signal } = {}) =>
@@ -262,95 +177,6 @@ export const prewarmJourneyGeneration = async ({ signal } = {}) =>
     signal,
     'Journey generation prewarm failed'
   );
-
-export const requestPlanetRecommendation = async ({
-  intentText,
-  desiredOutcome,
-  memoText,
-  currentState,
-  feedbackHistory,
-  requestedDurationSec,
-  signal,
-}) =>
-  runCopilotTask({
-    task: 'planet-recommendation',
-    payload: {
-      intentText,
-      desiredOutcome,
-      memoText,
-      currentState,
-      feedbackHistory,
-      requestedDurationSec,
-    },
-    path: '/api/ai/planet/recommend',
-    signal,
-    errorMessage: 'Planet recommendation failed',
-  });
-
-export const requestStateExplanation = async ({
-  title,
-  stateLabel,
-  summary,
-  currentState,
-  targetPlanet,
-  signal,
-}) =>
-  runCopilotTask({
-    task: 'state-explanation',
-    payload: {
-      title,
-      stateLabel,
-      summary,
-      currentState,
-      targetPlanet,
-    },
-    path: '/api/ai/state/explain',
-    signal,
-    errorMessage: 'State explanation failed',
-  });
-
-export const requestDashboardSummary = async ({
-  feedbackHistory,
-  memoText,
-  currentState,
-  signal,
-}) =>
-  runCopilotTask({
-    task: 'dashboard-summary',
-    payload: {
-      feedbackHistory,
-      memoText,
-      currentState,
-    },
-    path: '/api/ai/dashboard/summary',
-    signal,
-    errorMessage: 'Dashboard summary failed',
-  });
-
-export const requestSessionCoach = async ({
-  planet,
-  intentText,
-  recommendation,
-  recommendedDurationSec,
-  signal,
-}) =>
-  runCopilotTask({
-    task: 'session-coach',
-    payload: {
-      planet,
-      intentText,
-      recommendation,
-      recommendedDurationSec,
-    },
-    path: '/api/ai/session/coach',
-    signal,
-    errorMessage: 'Session coach failed',
-  });
-
-export const warmNoosLocalCopilot = async () => ({
-  ready: true,
-  engine: 'remote-gemma-backend',
-});
 
 export const buildLightingPreviewFromIntervention = (bundle) => {
   const interventionResult = bundle?.interventionResult || {};

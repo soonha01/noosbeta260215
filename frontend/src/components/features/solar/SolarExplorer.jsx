@@ -2,16 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './SolarExplorer.css';
 import SpaceTravel from './SpaceTravel';
-import ExplorerAssistantPanel from './travel/ExplorerAssistantPanel';
 import NoosLogo from '../../brand/NoosLogo';
 import {
-  AI_CONTEXT_STORAGE_KEY,
-  FEEDBACK_STORAGE_KEY,
-  MEMO_STORAGE_KEY,
   PLANET_MEDIA,
-  STATE_STORAGE_KEY,
 } from './travel/constants';
-import { requestPlanetRecommendation, requestSessionCoach, warmNoosLocalCopilot } from '../../../lib/noosAiApi';
 
 const ENTRY_BURST_DURATION_MS = 2100;
 const BUTTON_APPEAR_DELAY_MS = 4000;
@@ -26,9 +20,6 @@ const PLANET_NAME_BY_ID = {
   neptune: 'Neptune',
   pluto: 'Pluto'
 };
-const PLANET_TITLE_BY_SLUG = Object.fromEntries(
-  Object.entries(PLANET_NAME_BY_ID).map(([slug, title]) => [slug.toLowerCase(), title])
-);
 const MODAL_BACKDROP_BASE_STYLE = Object.freeze({
   position: 'fixed',
   inset: 0,
@@ -91,31 +82,6 @@ const SolarExplorer = ({ onPlanetSelect }) => {
   const [isPageExiting, setIsPageExiting] = useState(false);
   const [isEntryBurst, setIsEntryBurst] = useState(true);
   const [launchButtonTop, setLaunchButtonTop] = useState(null);
-  const [intentText, setIntentText] = useState(() => {
-    try {
-      const raw = window.localStorage.getItem(AI_CONTEXT_STORAGE_KEY);
-      return raw ? JSON.parse(raw)?.intentText || '' : '';
-    } catch {
-      return '';
-    }
-  });
-  const [assistantRecommendation, setAssistantRecommendation] = useState(() => {
-    try {
-      const raw = window.localStorage.getItem(AI_CONTEXT_STORAGE_KEY);
-      return raw ? JSON.parse(raw)?.recommendation || null : null;
-    } catch {
-      return null;
-    }
-  });
-  const [assistantCoach, setAssistantCoach] = useState(() => {
-    try {
-      const raw = window.localStorage.getItem(AI_CONTEXT_STORAGE_KEY);
-      return raw ? JSON.parse(raw)?.coach || null : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isAssistantLoading, setIsAssistantLoading] = useState(false);
   const rootRef = useRef(null);
   const buttonRevealTimeoutRef = useRef(null);
   const entryBurstTimeoutRef = useRef(null);
@@ -130,14 +96,6 @@ const SolarExplorer = ({ onPlanetSelect }) => {
       setShowButton(true);
       buttonRevealTimeoutRef.current = null;
     }, delayMs);
-  }, []);
-
-  const persistAssistantContext = useCallback((nextValue) => {
-    try {
-      window.localStorage.setItem(AI_CONTEXT_STORAGE_KEY, JSON.stringify(nextValue));
-    } catch (error) {
-      console.error('Failed to persist AI context:', error);
-    }
   }, []);
 
   const startSpaceTravel = useCallback((planet) => {
@@ -162,68 +120,6 @@ const SolarExplorer = ({ onPlanetSelect }) => {
     setIsModalExiting(false);
     setIsPageExiting(false);
   }, []);
-
-  const applyRecommendedPlanet = useCallback((planetSlug) => {
-    const nextPlanet = PLANET_TITLE_BY_SLUG[String(planetSlug || '').toLowerCase()];
-    if (!nextPlanet) return;
-
-    const root = rootRef.current;
-    const input = root?.querySelector(`input[name="planet"]#${String(planetSlug).toLowerCase()}`);
-    if (input) {
-      input.checked = true;
-    }
-    setSelectedPlanet(nextPlanet);
-    scheduleButtonReveal(0);
-  }, [scheduleButtonReveal]);
-
-  const handleAnalyzeIntent = useCallback(async () => {
-    const trimmedIntent = intentText.trim();
-    if (!trimmedIntent) return;
-
-    const readJson = (key, fallback) => {
-      try {
-        const raw = window.localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : fallback;
-      } catch {
-        return fallback;
-      }
-    };
-
-    const currentSnapshot = readJson(STATE_STORAGE_KEY, null);
-    const feedbackHistory = readJson(FEEDBACK_STORAGE_KEY, []);
-    const memoText = window.localStorage.getItem(MEMO_STORAGE_KEY) || '';
-
-    setIsAssistantLoading(true);
-    try {
-      const recommendation = await requestPlanetRecommendation({
-        intentText: trimmedIntent,
-        desiredOutcome: PLANET_MEDIA[selectedPlanet.toLowerCase()]?.moodTarget || '',
-        memoText,
-        currentState: currentSnapshot?.canonicalState || null,
-        feedbackHistory,
-        requestedDurationSec: 300,
-      });
-      const coach = await requestSessionCoach({
-        planet: recommendation?.output?.recommended_planet || selectedPlanet.toLowerCase(),
-        intentText: trimmedIntent,
-        recommendation: recommendation?.output || null,
-        recommendedDurationSec: recommendation?.output?.recommended_duration_sec || 300,
-      });
-
-      setAssistantRecommendation(recommendation);
-      setAssistantCoach(coach);
-      persistAssistantContext({
-        intentText: trimmedIntent,
-        recommendation,
-        coach,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error('Failed to analyze NOOS intent:', error);
-    } finally {
-      setIsAssistantLoading(false);
-    }
-  }, [intentText, persistAssistantContext, selectedPlanet]);
 
   const handleEntryComplete = useCallback(({ planet, seat }) => {
     setShowModal(false);
@@ -291,37 +187,6 @@ const SolarExplorer = ({ onPlanetSelect }) => {
       if (entryBurstTimeoutRef.current) {
         clearTimeout(entryBurstTimeoutRef.current);
         entryBurstTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let timeoutId = 0;
-    let idleHandle = 0;
-    let cancelled = false;
-
-    const startWarmup = () => {
-      if (cancelled) return;
-      warmNoosLocalCopilot().catch((error) => {
-        if (!cancelled) {
-          console.warn('NOOS LiteRT prewarm skipped:', error);
-        }
-      });
-    };
-
-    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-      idleHandle = window.requestIdleCallback(startWarmup, { timeout: 3500 });
-    } else {
-      timeoutId = window.setTimeout(startWarmup, 1400);
-    }
-
-    return () => {
-      cancelled = true;
-      if (idleHandle && typeof window.cancelIdleCallback === 'function') {
-        window.cancelIdleCallback(idleHandle);
-      }
-      if (timeoutId) {
-        clearTimeout(timeoutId);
       }
     };
   }, []);
@@ -778,17 +643,6 @@ const SolarExplorer = ({ onPlanetSelect }) => {
           </div>
         </>
       )}
-
-      <ExplorerAssistantPanel
-        intentText={intentText}
-        onIntentChange={setIntentText}
-        onAnalyze={handleAnalyzeIntent}
-        isLoading={isAssistantLoading}
-        recommendation={assistantRecommendation}
-        coach={assistantCoach}
-        selectedPlanet={selectedPlanet}
-        onApplyRecommendedPlanet={applyRecommendedPlanet}
-      />
 
     </div>
   );

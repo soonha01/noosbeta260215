@@ -1,5 +1,6 @@
 .gradle-home/
-ai/generated/ace_step_audio/
+ai/generated/
+frontend/public/embedded/
 
 # JavaScript dependencies and local build outputs
 node_modules/
@@ -13,3 +14,9 @@ dist/
 
 # OS metadata
 .DS_Store
+
+# Python local outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/

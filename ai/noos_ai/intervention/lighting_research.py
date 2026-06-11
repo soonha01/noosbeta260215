@@ -172,9 +172,9 @@ LIGHTING_CITATIONS: dict[str, LightingCitation] = {
     ),
     "castillo_2017": LightingCitation(
         slug="castillo_2017",
-        title="Blue lighting accelerates post-stress relaxation: Results of a preliminary study",
+        title="Blue lighting supports post-stress relaxation: Results of a preliminary study",
         url="https://pmc.ncbi.nlm.nih.gov/articles/PMC5648169/",
-        finding="Blue lighting accelerated objective post-stress relaxation compared with conventional white light, with the strongest benefit in the first roughly 1-5 minutes.",
+        finding="Blue lighting improved objective post-stress relaxation compared with conventional white light, with the strongest benefit in the first roughly 1-5 minutes.",
     ),
     "laborde_2021": LightingCitation(
         slug="laborde_2021",

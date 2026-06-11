@@ -1,2 +1,0 @@
-:HL["/embedded/ai-objet/_next/static/chunks/bc46891ea19c9635.css","style"]
-0:{"buildId":"KvAbpB8pap9q8i0H3WrMm","tree":{"name":"","paramType":null,"paramKey":"","hasRuntimePrefetch":false,"slots":{"children":{"name":"__PAGE__","paramType":null,"paramKey":"__PAGE__","hasRuntimePrefetch":false,"slots":null,"isRootLayout":false}},"isRootLayout":true},"staleTime":300}
