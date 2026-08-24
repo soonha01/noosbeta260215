@@ -81,17 +81,27 @@ NOOS의 기본 흐름은 어렵지 않습니다.
 
 ## 백엔드 API
 
-제가 중심적으로 다룬 백엔드 API 흐름입니다.
+백엔드 API는 Swagger로 기능별로 정리했습니다. README에는 전체 API 표를 길게 넣는 대신, Swagger API 명세서 캡처를 순서대로 첨부했습니다.
 
-| 기능 | API | 설명 |
-| --- | --- | --- |
-| EEG 세션 시작 | `POST /api/eeg/sessions/start` | 사용자의 EEG 측정 세션을 시작합니다. |
-| EEG 결과 분석 | `POST /api/eeg/results` | 프론트엔드에서 받은 EEG 요약 데이터를 분석하고 저장합니다. |
-| 음악, 조명 개입 생성 | `POST /api/ai/intervention/music` | AI 분석 결과를 바탕으로 음악과 조명 계획을 생성합니다. |
-| 음악 생성 준비 | `POST /api/ai/intervention/prewarm` | ACE-Step 서버와 모델 준비 상태를 확인합니다. |
-| 오디오 재생 | `GET /api/ai/audio?path=...` | 생성된 음악 파일을 프론트엔드에서 재생할 수 있게 전달합니다. |
-| WiZ 조명 상태 확인 | `GET /api/lighting/wiz/status` | 조명 연동 상태를 확인합니다. |
-| WiZ 조명 계획 적용 | `POST /api/lighting/wiz/apply-plan` | 생성된 조명 계획을 실제 조명에 적용합니다. |
+### 1. Auth / Admin API
+
+![API 명세서 1 - Auth, Admin](./docs/portfolio/api-spec-1.png)
+
+### 2. EEG / AI API
+
+![API 명세서 2 - EEG, AI](./docs/portfolio/api-spec-2.png)
+
+### 3. Lighting API
+
+![API 명세서 3 - Lighting](./docs/portfolio/api-spec-3.png)
+
+### 4. Board API
+
+![API 명세서 4 - Board](./docs/portfolio/api-spec-4.png)
+
+### 5. Chat API
+
+![API 명세서 5 - Chat](./docs/portfolio/api-spec-5.png)
 
 ## DB 구조
 
