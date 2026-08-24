@@ -129,7 +129,9 @@ DB 구조 이미지는 나중에 이 섹션에 추가할 예정입니다.
 
 NOOS의 전체 흐름을 확인할 수 있는 동작 시연 영상입니다.
 
-### [YouTube에서 동작 시연 영상 보기](https://youtu.be/9vzqvD_II20)
+> ### [Project NOOS 동작 시연 영상 보기](https://youtu.be/9vzqvD_II20)
+>
+> [https://youtu.be/9vzqvD_II20](https://youtu.be/9vzqvD_II20)
 
 ## 화면 흐름
 
