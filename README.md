@@ -16,6 +16,12 @@ NOOS는 Muse S Athena EEG 기기로 사용자의 뇌파 데이터를 받고, Spr
 | 개발 기간 | 2026년 3월 - 2026년 6월 |
 | 내 역할 | 백엔드 및 DB 총괄 |
 
+## 전체 아키텍처
+
+프론트엔드는 사용자 화면과 Muse 연결을 담당하고, 백엔드는 인증, DB, EEG 저장, AI 음악 생성, WiZ 조명 제어를 묶는 중심 서버 역할을 합니다.
+
+![NOOS 전체 아키텍처](./docs/portfolio/system-architecture.png)
+
 ## 내가 개발한 부분
 
 이 프로젝트에서 저는 백엔드와 DB 쪽을 중심으로 개발했습니다. 프론트엔드에서 들어온 요청을 AI 모듈, 음악 생성 서버, 조명 제어 기능과 연결하는 역할을 맡았습니다.
@@ -34,29 +40,13 @@ NOOS는 Muse S Athena EEG 기기로 사용자의 뇌파 데이터를 받고, Spr
 
 ## 프로젝트가 동작하는 방식
 
-NOOS는 로그인 이후 사용자의 상태를 먼저 확인하고, 사용자가 선택한 행성의 환경에 맞춰 음악과 조명을 생성하는 흐름으로 동작합니다.
+NOOS는 사용자의 현재 상태를 확인한 뒤, 선택한 행성의 목표 환경에 맞춰 음악과 조명을 생성합니다.
 
-1. 사용자가 로그인 후 여정을 시작합니다.
-2. Muse S Athena 기기를 보유하고 있는지 확인합니다.
-3. 기기가 있으면 Web Bluetooth로 페어링하고 실시간 뇌파를 측정합니다.
-4. 기기가 없으면 설문조사 방식으로 현재 상태를 측정합니다.
-5. 사용자가 가고 싶은 행성을 선택합니다.
-6. 행성마다 목표 상태와 환경 조성이 다르기 때문에, 선택한 행성에 맞는 환경 목표가 정해집니다.
-7. 백엔드는 현재 상태와 목표 환경을 비교해 AI 음악 생성과 조명 제어를 요청합니다.
-8. 여정 중에는 음악과 함께 실시간 뇌파 스트림을 확인할 수 있습니다.
-9. 여정이 끝나면 이전 측정 기록과 Before / After 비교 그래프를 확인할 수 있습니다.
-
-```text
-로그인
-  -> Muse S Athena 보유 여부 확인
-    -> 기기 있음: Bluetooth 연결 후 EEG 측정
-    -> 기기 없음: 설문조사로 상태 측정
-  -> 행성 선택
-  -> 현재 상태와 목표 환경 비교
-  -> AI 음악 생성 + WiZ 조명 제어
-  -> 여정 진행
-  -> 기록 저장 및 전후 비교
-```
+1. 로그인 후 Muse S Athena 기기 보유 여부를 확인합니다.
+2. 기기가 있으면 실시간 EEG를 측정하고, 없으면 설문으로 상태를 추정합니다.
+3. 사용자가 원하는 행성을 선택하면 행성별 목표 상태가 정해집니다.
+4. 백엔드가 현재 상태와 목표 상태를 비교해 AI 음악 생성과 WiZ 조명 제어를 요청합니다.
+5. 여정이 끝나면 기록을 저장하고 Before / After 비교 그래프를 보여줍니다.
 
 ## 주요 기능
 
@@ -110,16 +100,7 @@ NOOS는 로그인 이후 사용자의 상태를 먼저 확인하고, 사용자�
 
 ## DB 구조
 
-DB 구조 이미지는 나중에 이 섹션에 추가할 예정입니다.
-
-추가하면 좋은 내용:
-
-- ERD 이미지
-- 사용자 테이블 구조
-- EEG 세션 테이블 구조
-- 분석 결과 저장 테이블 구조
-- 여행 기록 테이블 구조
-- 게시판, 댓글 관련 테이블 구조
+DB 구조 이미지는 ERD 완성 후 이 위치에 추가할 예정입니다.
 
 <!--
 ![DB ERD](./docs/portfolio/db-erd.png)
@@ -129,9 +110,9 @@ DB 구조 이미지는 나중에 이 섹션에 추가할 예정입니다.
 
 NOOS의 전체 흐름을 확인할 수 있는 동작 시연 영상입니다.
 
-> ### [Project NOOS 동작 시연 영상 보기](https://youtu.be/9vzqvD_II20)
->
-> [https://youtu.be/9vzqvD_II20](https://youtu.be/9vzqvD_II20)
+### [YouTube에서 Project NOOS 동작 시연 영상 보기](https://youtu.be/9vzqvD_II20)
+
+[영상 주소: https://youtu.be/9vzqvD_II20](https://youtu.be/9vzqvD_II20)
 
 ## 화면 흐름
 
@@ -175,79 +156,38 @@ NOOS의 전체 흐름을 확인할 수 있는 동작 시연 영상입니다.
 
 ## 트러블슈팅
 
-### 1. Spring Boot와 MyBatis 버전 문제
+문제가 생겼을 때 원인을 추적하고 해결한 내용을 핵심 위주로 정리했습니다.
 
-처음 백엔드를 실행했을 때 서버가 켜지지 않고 다음 오류가 발생했습니다.
+<details>
+<summary><strong>1. Spring Boot와 MyBatis 버전 호환성 문제</strong></summary>
 
-```text
-Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required
-```
+- 문제: 서버 실행 시 `Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required` 오류 발생
+- 원인: Spring Boot 4.x와 MyBatis-Spring 3.0.3 버전 호환 문제
+- 해결: Spring Boot를 3.4.x로 변경하고 Gradle Refresh 후 DB 연결 재확인
+- 배운 점: 에러 로그의 `Caused by`를 따라가며 실제 원인을 확인해야 함
 
-처음에는 DB 설정 문제라고 생각했지만, 로그를 계속 따라가 보니 Spring Boot 4.x와 MyBatis-Spring 3.0.3의 버전 호환 문제였습니다.
+</details>
 
-해결 방법:
+<details>
+<summary><strong>2. OAuth2 로그인 후 화면 이동 문제</strong></summary>
 
-- Spring Boot 버전을 3.4.x로 변경
-- Gradle Refresh 후 서버 재실행
-- MyBatis와 DB 연결 정상 확인
+- 문제: 소셜 로그인 성공 후 프론트엔드 화면으로 돌아오지 않음
+- 원인: 로그인 성공 URL이 백엔드 `/main` 경로로 설정되어 사용자 흐름이 끊김
+- 해결: 성공 URL을 `http://localhost:3000/?login=success`로 변경
+- 배운 점: 인증 설정은 백엔드뿐 아니라 프론트엔드 라우팅까지 함께 확인해야 함
 
-배운 점:
+</details>
 
-- 에러가 발생하면 맨 위 로그만 보지 않고 `Caused by`를 따라가야 합니다.
-- 최신 버전이 항상 좋은 것은 아니고, 라이브러리끼리 호환되는 버전을 선택하는 것이 중요합니다.
+<details>
+<summary><strong>3. Muse S Athena Web Bluetooth 연동 문제</strong></summary>
 
-### 2. OAuth2 로그인 후 화면 이동 문제
+- 문제: 기존 `web-muse` 라이브러리로 Muse S Athena EEG 데이터를 읽지 못함
+- 원인: 라이브러리가 찾는 characteristic과 실제 기기에서 노출되는 characteristic이 다름
+- 확인한 차이: 기존 `273e0003`-`273e0007`, 실제 Muse S Athena `273e0013`-`273e0015`
+- 해결: 자체 Web Bluetooth 연결 로직을 구현하고 raw binary packet을 직접 해석
+- 배운 점: 하드웨어 연동은 문서와 라이브러리만 믿기보다 실제 기기에서 데이터를 확인해야 함
 
-소셜 로그인은 성공했지만, 로그인 후 프론트엔드 화면으로 제대로 돌아오지 않는 문제가 있었습니다.
-
-기존 설정은 로그인 성공 후 백엔드의 `/main` 경로로 이동하게 되어 있었습니다.
-
-```java
-.defaultSuccessUrl("/main", true)
-```
-
-하지만 이 프로젝트는 프론트엔드가 `3000`, 백엔드가 `8080`으로 분리되어 있어서 백엔드 경로로 이동하면 사용자 흐름이 끊겼습니다.
-
-해결 방법:
-
-```java
-.defaultSuccessUrl("http://localhost:3000/?login=success", true)
-```
-
-배운 점:
-
-- 백엔드 인증 설정은 프론트엔드 라우팅에도 영향을 줍니다.
-- 로그인 같은 기능은 백엔드만 보는 것이 아니라 전체 사용자 흐름으로 확인해야 합니다.
-
-### 3. Muse S Athena Web Bluetooth 연동 문제
-
-처음에는 기존 `web-muse` 라이브러리를 사용하려고 했지만, 우리가 사용한 Muse S Athena 기기와 데이터 구조가 맞지 않았습니다.
-
-기존 라이브러리가 찾던 EEG characteristic:
-
-```text
-273e0003 / 273e0004 / 273e0005 / 273e0006 / 273e0007
-```
-
-실제 Muse S Athena에서 확인한 data stream characteristic:
-
-```text
-273e0013 / 273e0014 / 273e0015
-```
-
-해결 방법:
-
-- `node_modules` 내부 라이브러리를 직접 수정하지 않음
-- 자체 Web Bluetooth 연결 로직 구현
-- 실제 기기에서 노출되는 characteristic을 확인
-- raw binary packet을 받아 EEG 데이터로 해석하는 흐름 구현
-- 실제 연결이 완료된 후에만 다음 단계로 이동하도록 UI 흐름 개선
-
-배운 점:
-
-- 같은 Muse 제품군이라도 모델에 따라 Bluetooth 데이터 구조가 다를 수 있습니다.
-- 외부 라이브러리를 그대로 믿기보다 실제 기기에서 데이터를 확인해야 합니다.
-- 하드웨어 연동은 코드뿐 아니라 실제 연결 흐름까지 검증해야 합니다.
+</details>
 
 ## 폴더 구조
 
