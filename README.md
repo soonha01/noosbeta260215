@@ -125,6 +125,12 @@ DB 구조 이미지는 나중에 이 섹션에 추가할 예정입니다.
 ![DB ERD](./docs/portfolio/db-erd.png)
 -->
 
+## 동작 시연 영상
+
+NOOS의 전체 흐름을 확인할 수 있는 동작 시연 영상입니다.
+
+[![NOOS 동작 시연 영상](https://img.youtube.com/vi/9vzqvD_II20/0.jpg)](https://youtu.be/9vzqvD_II20)
+
 ## 화면 흐름
 
 로그인 이후 사용자는 Muse S Athena 기기 보유 여부에 따라 실시간 EEG 측정 또는 설문 기반 측정 흐름으로 이동합니다. 이후 원하는 행성을 선택하면, 선택한 행성의 목표 환경과 현재 상태를 비교해 음악과 조명 피드백이 생성됩니다.
