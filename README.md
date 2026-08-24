@@ -127,11 +127,9 @@ DB 구조 이미지는 나중에 이 섹션에 추가할 예정입니다.
 
 ## 동작 시연 영상
 
-NOOS의 전체 흐름을 확인할 수 있는 동작 시연 영상입니다. 아래 이미지를 클릭하면 YouTube 영상으로 이동합니다.
+NOOS의 전체 흐름을 확인할 수 있는 동작 시연 영상입니다.
 
-[![NOOS 동작 시연 영상](./docs/portfolio/flow-4-planet-select.png)](https://youtu.be/9vzqvD_II20)
-
-[YouTube에서 동작 시연 영상 보기](https://youtu.be/9vzqvD_II20)
+### [YouTube에서 동작 시연 영상 보기](https://youtu.be/9vzqvD_II20)
 
 ## 화면 흐름
 
