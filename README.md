@@ -42,7 +42,7 @@ NOOS는 Muse S Athena EEG 기기로 사용자의 뇌파 데이터를 받고, Spr
 
 NOOS는 사용자의 현재 상태를 확인한 뒤, 선택한 행성의 목표 환경에 맞춰 음악과 조명을 생성합니다.
 
-![NOOS 동작 방식](./docs/portfolio/noos-concept-flow.png)
+![NOOS 동작 방식](./docs/portfolio/noos-concept-flow-v2.png)
 
 ## 주요 기능
 
